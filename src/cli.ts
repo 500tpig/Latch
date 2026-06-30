@@ -20,6 +20,7 @@ type Stage =
   | 'finish'
   | 'done'
   | 'blocked'
+  | 'abandoned'
 type Verify = {
   command: string
   status: 'pass' | 'fail'
@@ -29,7 +30,7 @@ type Verify = {
 type Task = {
   id: string
   title: string
-  status: 'active' | 'done' | 'blocked'
+  status: 'active' | 'done' | 'blocked' | 'abandoned'
   stage: Stage
   goal?: string
   scope?: string
@@ -143,6 +144,14 @@ function appendNotes(task: Task, heading: string, lines: string[]) {
   )
 }
 
+function archiveTask(task: Task) {
+  const month = new Date().toISOString().slice(0, 7)
+  const targetDir = join(archiveDir, month)
+  mkdirSync(targetDir, { recursive: true })
+  renameSync(taskPath(task.id), join(targetDir, basename(task.id)))
+  writeJson(statePath, {})
+}
+
 // 进入需要记录结论的阶段时，铺一个空模板，逼 AI 按格子填，不让它自由发挥写散
 // Latch 只负责铺格子，不检查填没填——不当裁判，只让流程不被跳过
 function scaffoldForStage(task: Task, stage: Stage) {
@@ -224,6 +233,7 @@ const validStages = new Set<Stage>([
   'finish',
   'done',
   'blocked',
+  'abandoned',
 ])
 
 switch (command) {
@@ -456,16 +466,24 @@ switch (command) {
     task.status = 'done'
     saveTask(task)
     event(task, 'done')
-    const month = new Date().toISOString().slice(0, 7)
-    const targetDir = join(archiveDir, month)
-    mkdirSync(targetDir, { recursive: true })
-    renameSync(taskPath(task.id), join(targetDir, basename(task.id)))
-    writeJson(statePath, {})
+    archiveTask(task)
     console.log(`Archived ${task.id}`)
+    break
+  }
+  case 'abandon': {
+    const task = activeTask()
+    const reason = option('--reason')
+    task.stage = 'abandoned'
+    task.status = 'abandoned'
+    saveTask(task)
+    event(task, 'abandoned', reason ? { reason } : {})
+    if (reason) appendNotes(task, 'Abandoned', [`reason: ${reason}`])
+    archiveTask(task)
+    console.log(`Abandoned ${task.id}`)
     break
   }
   default:
     console.log(
-      'Usage: latch <init|start|checkpoint|save|next|verify|resume|list|log|done>',
+      'Usage: latch <init|start|checkpoint|save|next|verify|resume|list|log|done|abandon>',
     )
 }

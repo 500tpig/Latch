@@ -93,6 +93,69 @@ test("done rejected outside finish stage", () => {
   assert.notEqual(run(cwd, ["done"]).status, 0);
 });
 
+test("abandon archives active task and preserves failed verification", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Give up task"]);
+  run(cwd, ["verify", "--", process.execPath, "-e", "process.exit(1)"]);
+  const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
+  const result = run(cwd, ["abandon", "--reason", "方向错了"]);
+  assert.equal(result.status, 0);
+
+  const state = JSON.parse(readFileSync(join(cwd, ".latch", "state.json"), "utf8"));
+  assert.deepEqual(state, {});
+  assert.equal(readdirSync(join(cwd, ".latch", "tasks")).length, 0);
+
+  const month = new Date().toISOString().slice(0, 7);
+  const archivedDir = join(cwd, ".latch", "archive", month, taskId);
+  const task = JSON.parse(readFileSync(join(archivedDir, "task.json"), "utf8"));
+  assert.equal(task.status, "abandoned");
+  assert.equal(task.stage, "abandoned");
+  assert.equal(task.latest_verify.status, "fail");
+
+  const events = readFileSync(join(archivedDir, "events.jsonl"), "utf8");
+  assert.match(events, /"type":"abandoned"/);
+  assert.match(events, /方向错了/);
+  const notes = readFileSync(join(archivedDir, "notes.md"), "utf8");
+  assert.match(notes, /Abandoned/);
+  assert.match(notes, /方向错了/);
+
+  assert.equal(run(cwd, ["log", "清掉后可记录"]).status, 0);
+  assert.equal(run(cwd, ["start", "New task"]).status, 0);
+});
+
+test("abandon works for blocked task without reason", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Blocked task"]);
+  assert.equal(run(cwd, ["next", "--to", "blocked"]).status, 0);
+  const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
+  const result = run(cwd, ["abandon"]);
+  assert.equal(result.status, 0);
+
+  const month = new Date().toISOString().slice(0, 7);
+  const archivedDir = join(cwd, ".latch", "archive", month, taskId);
+  const task = JSON.parse(readFileSync(join(archivedDir, "task.json"), "utf8"));
+  assert.equal(task.status, "abandoned");
+  assert.equal(task.stage, "abandoned");
+
+  const events = readFileSync(join(archivedDir, "events.jsonl"), "utf8");
+  assert.match(events, /"type":"abandoned"/);
+  const notes = readFileSync(join(archivedDir, "notes.md"), "utf8");
+  assert.doesNotMatch(notes, /Abandoned/);
+});
+
+test("abandon rejected with no active task", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  const result = run(cwd, ["abandon"]);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /No active task/);
+});
+
 test("resume with no active task exits zero", () => {
   const cwd = mkdtempSync(join(tmpdir(), "latch-"));
 

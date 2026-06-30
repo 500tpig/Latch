@@ -13,6 +13,8 @@ latch verify -- pnpm test
 latch done
 ```
 
+Use `latch abandon [--reason "..."]` to archive a task that should not continue.
+
 See [docs/HANDBOOK.md](docs/HANDBOOK.md) for daily usage and [docs/SPEC_V0.md](docs/SPEC_V0.md) for the v0 behavior.
 
 ## Small fixes: `latch log`
@@ -24,4 +26,4 @@ latch log "Switch alarm_record GraphQL time param from string to seconds Int" \
   --files src/api/network-link.ts
 ```
 
-`log` only appends to `.latch/log.jsonl`. It does not create a task or touch the state machine. If an active task exists, `log` is rejected — advance (`next`) or archive (`done`) the task first, so the same work isn't tracked in two places.
+`log` only appends to `.latch/log.jsonl`. It does not create a task or touch the state machine. If an active task exists, `log` is rejected — advance (`next`), finish (`done`), or abandon the task first, so the same work isn't tracked in two places.
