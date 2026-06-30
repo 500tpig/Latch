@@ -13,7 +13,7 @@ latch verify -- pnpm test
 latch done
 ```
 
-See [docs/SPEC_V0.md](docs/SPEC_V0.md) for the v0 behavior.
+See [docs/HANDBOOK.md](docs/HANDBOOK.md) for daily usage and [docs/SPEC_V0.md](docs/SPEC_V0.md) for the v0 behavior.
 
 ## Small fixes: `latch log`
 

@@ -6,10 +6,29 @@ import { test } from "node:test";
 import { spawnSync } from "node:child_process";
 
 const cli = join(process.cwd(), "dist/cli.js");
+const repoRoot = process.cwd();
 
 function run(cwd, args) {
   return spawnSync(process.execPath, [cli, ...args], { cwd, encoding: "utf8" });
 }
+
+test("public docs do not contain local user paths", () => {
+  const files = [
+    "README.md",
+    "AGENTS.md",
+    "docs/SPEC_V0.md",
+    "docs/HANDBOOK.md",
+    "docs/AI_INSTALL.md",
+    "docs/templates/PROJECT_AGENTS.md",
+    ".agents/skills/latch/SKILL.md",
+    ".opencode/skills/latch/SKILL.md",
+  ];
+
+  for (const file of files) {
+    const content = readFileSync(join(repoRoot, file), "utf8");
+    assert.equal(content.includes("/Users/johnsmith/"), false, file);
+  }
+});
 
 test("task advances only after required fields and verification", () => {
   const cwd = mkdtempSync(join(tmpdir(), "latch-"));
