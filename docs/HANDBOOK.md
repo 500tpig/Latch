@@ -95,6 +95,8 @@ latch next
 latch done
 ```
 
+`git commit`、`git push` 和 `latch done` 都不属于默认后续动作。AI 只有在用户明确说「提交」「推送」或「归档」后，才可执行这些命令。
+
 ### 放弃当前任务
 
 ```bash

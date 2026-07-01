@@ -83,6 +83,8 @@ latch next
 latch done
 ```
 
+`git commit`、`git push` 和 `latch done` 都不属于默认后续动作。只有用户明确说「提交」「推送」或「归档」后，AI 才可执行这些命令。
+
 `done` 不负责 commit。
 
 ## 续接提示
