@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -9,7 +9,11 @@ const cli = join(process.cwd(), "dist/cli.js");
 const repoRoot = process.cwd();
 
 function run(cwd, args) {
-  return spawnSync(process.execPath, [cli, ...args], { cwd, encoding: "utf8" });
+  return spawnSync(process.execPath, [cli, ...args], {
+    cwd,
+    encoding: "utf8",
+    env: { ...process.env, PWD: cwd },
+  });
 }
 
 test("public docs do not contain local user paths", () => {
@@ -245,6 +249,147 @@ test("start --help does not create task", () => {
   assert.equal(existsSync(join(cwd, ".latch")), false);
 });
 
+test("init --help does not create latch dir", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  const result = run(cwd, ["init", "--help"]);
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Usage: latch init/);
+  assert.equal(existsSync(join(cwd, ".latch")), false);
+});
+
+test("list --help does not create latch dir", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  const result = run(cwd, ["list", "--help"]);
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Usage: latch list/);
+  assert.equal(existsSync(join(cwd, ".latch")), false);
+});
+
+test("log --help does not create latch dir", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  const result = run(cwd, ["log", "--help"]);
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Usage: latch log/);
+  assert.equal(existsSync(join(cwd, ".latch")), false);
+});
+
+test("resume --help does not create latch dir", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  const result = run(cwd, ["resume", "--help"]);
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Usage: latch resume/);
+  assert.equal(existsSync(join(cwd, ".latch")), false);
+});
+
+test("context --help does not create latch dir", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  const result = run(cwd, ["context", "--help"]);
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Usage: latch context/);
+  assert.equal(existsSync(join(cwd, ".latch")), false);
+});
+
+test("use --help does not create latch dir", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  const result = run(cwd, ["use", "--help"]);
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Usage: latch use/);
+  assert.equal(existsSync(join(cwd, ".latch")), false);
+});
+
+test("checkpoint --help does not change current task", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Checkpoint help"]);
+  const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
+  const notesBefore = readFileSync(join(cwd, ".latch", "tasks", taskId, "notes.md"), "utf8");
+  const eventsBefore = readFileSync(join(cwd, ".latch", "tasks", taskId, "events.jsonl"), "utf8");
+
+  const result = run(cwd, ["checkpoint", "--help"]);
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Usage: latch checkpoint/);
+  assert.equal(readFileSync(join(cwd, ".latch", "tasks", taskId, "notes.md"), "utf8"), notesBefore);
+  assert.equal(readFileSync(join(cwd, ".latch", "tasks", taskId, "events.jsonl"), "utf8"), eventsBefore);
+});
+
+test("save --help does not change current task", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Save help"]);
+  const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
+  const taskBefore = readFileSync(join(cwd, ".latch", "tasks", taskId, "task.json"), "utf8");
+  const notesBefore = readFileSync(join(cwd, ".latch", "tasks", taskId, "notes.md"), "utf8");
+  const eventsBefore = readFileSync(join(cwd, ".latch", "tasks", taskId, "events.jsonl"), "utf8");
+
+  const result = run(cwd, ["save", "--help"]);
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Usage: latch save/);
+  assert.equal(readFileSync(join(cwd, ".latch", "tasks", taskId, "task.json"), "utf8"), taskBefore);
+  assert.equal(readFileSync(join(cwd, ".latch", "tasks", taskId, "notes.md"), "utf8"), notesBefore);
+  assert.equal(readFileSync(join(cwd, ".latch", "tasks", taskId, "events.jsonl"), "utf8"), eventsBefore);
+});
+
+test("next --help does not advance task", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Next help"]);
+  run(cwd, ["save", "--goal", "G", "--next", "N"]);
+  run(cwd, ["next"]);
+  run(cwd, ["next"]);
+  const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
+  const taskBefore = JSON.parse(readFileSync(join(cwd, ".latch", "tasks", taskId, "task.json"), "utf8"));
+  const eventsBefore = readFileSync(join(cwd, ".latch", "tasks", taskId, "events.jsonl"), "utf8");
+
+  const result = run(cwd, ["next", "--help"]);
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Usage: latch next/);
+  const taskAfter = JSON.parse(readFileSync(join(cwd, ".latch", "tasks", taskId, "task.json"), "utf8"));
+  assert.equal(taskAfter.stage, taskBefore.stage);
+  assert.equal(readFileSync(join(cwd, ".latch", "tasks", taskId, "events.jsonl"), "utf8"), eventsBefore);
+});
+
+test("verify passes through help after separator", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Verify passthrough"]);
+  const result = run(cwd, ["verify", "--", process.execPath, "--help"]);
+  assert.equal(result.status, 0);
+
+  const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
+  const task = JSON.parse(readFileSync(join(cwd, ".latch", "tasks", taskId, "task.json"), "utf8"));
+  assert.equal(task.latest_verify.status, "pass");
+  assert.match(task.latest_verify.command, /--help/);
+});
+
+test("verify child command sees temp cwd instead of repo root", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Verify cwd"]);
+  const result = run(cwd, [
+    "verify",
+    "--",
+    process.execPath,
+    "-e",
+    "if (process.cwd() !== process.env.PWD) process.exit(2)",
+  ]);
+  assert.equal(result.status, 0);
+
+  const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
+  const task = JSON.parse(readFileSync(join(cwd, ".latch", "tasks", taskId, "task.json"), "utf8"));
+  assert.equal(task.latest_verify.status, "pass");
+});
+
 test("abandon archives current task and preserves failed verification", () => {
   const cwd = mkdtempSync(join(tmpdir(), "latch-"));
 
@@ -413,6 +558,44 @@ test("checkpoint appends to current task without creating new one", () => {
 
   const notes = readFileSync(join(cwd, ".latch", "tasks", firstId, "notes.md"), "utf8");
   assert.match(notes, /Checkpoint: triage/);
+});
+
+test("checkpoint fails while latch lock is held", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Locked"]);
+  run(cwd, ["save", "--goal", "Original goal"]);
+  const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
+  const taskPath = join(cwd, ".latch", "tasks", taskId, "task.json");
+  const lockPath = join(cwd, ".latch", ".lock");
+  mkdirSync(lockPath);
+
+  const result = run(cwd, ["checkpoint", "--goal", "Overwritten"]);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Latch is busy/);
+
+  const task = JSON.parse(readFileSync(taskPath, "utf8"));
+  assert.equal(task.goal, "Original goal");
+});
+
+test("save fails while latch lock is held", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Locked"]);
+  run(cwd, ["save", "--goal", "Original goal"]);
+  const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
+  const taskPath = join(cwd, ".latch", "tasks", taskId, "task.json");
+  const lockPath = join(cwd, ".latch", ".lock");
+  mkdirSync(lockPath, { recursive: true });
+
+  const result = run(cwd, ["save", "--goal", "Overwritten"]);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Latch is busy/);
+
+  const task = JSON.parse(readFileSync(taskPath, "utf8"));
+  assert.equal(task.goal, "Original goal");
 });
 
 test("log writes entry with files split by comma", () => {

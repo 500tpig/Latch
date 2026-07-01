@@ -6,6 +6,7 @@ import {
   readFileSync,
   readdirSync,
   renameSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs'
 import { basename, join } from 'node:path'
@@ -47,10 +48,10 @@ const latchDir = join(root, '.latch')
 const tasksDir = join(latchDir, 'tasks')
 const archiveDir = join(latchDir, 'archive')
 const statePath = join(latchDir, 'state.json')
+const lockDir = join(latchDir, '.lock')
 
 const command = process.argv[2]
 const args = process.argv.slice(3)
-const wantsHelp = args.includes('--help') || args.includes('-h')
 const usage =
   'Usage: latch <init|start|checkpoint|save|next|verify|resume|list|log|done|abandon|use|context>'
 
@@ -72,6 +73,29 @@ function ensureInit() {
   mkdirSync(tasksDir, { recursive: true })
   mkdirSync(archiveDir, { recursive: true })
   if (!existsSync(statePath)) writeJson(statePath, {})
+}
+
+function withLock<T>(fn: () => T): T {
+  ensureInit()
+  try {
+    mkdirSync(lockDir)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    die(`Latch is busy: ${message}`)
+  }
+  try {
+    return fn()
+  } finally {
+    rmSync(lockDir, { recursive: true, force: true })
+  }
+}
+
+function runLocked<T>(fn: () => T): T {
+  try {
+    return withLock(fn)
+  } catch (error) {
+    die(error instanceof Error ? error.message : String(error))
+  }
 }
 
 function state(): State {
@@ -227,6 +251,41 @@ function help(message: string) {
   process.exit(0)
 }
 
+function commandEnv(cwd: string) {
+  return { ...process.env, PWD: cwd }
+}
+
+function commandUsage(name: string) {
+  return (
+    {
+      init: 'Usage: latch init',
+      start: 'Usage: latch start <title> [--use]',
+      checkpoint:
+        'Usage: latch checkpoint <title> [--goal ...] [--scope ...] [--acceptance ...] [--next ...]',
+      save: 'Usage: latch save [--goal ...] [--scope ...] [--acceptance ...] [--next ...] [--task <task-id>]',
+      next: 'Usage: latch next [--to <stage>] [--reason <reason>] [--task <task-id>]',
+      verify: 'Usage: latch verify -- <command>',
+      resume: 'Usage: latch resume [--brief] [--task <task-id>]',
+      list: 'Usage: latch list [--json]',
+      log: 'Usage: latch log <summary> [--files a,b,c]',
+      done: 'Usage: latch done',
+      abandon: 'Usage: latch abandon [--reason <reason>] [--task <task-id>]',
+      use: 'Usage: latch use <task-id>',
+      context: 'Usage: latch context [<task-id>] [--brief] [--json]',
+    } as Record<string, string>
+  )[name]
+}
+
+function wantsCommandHelp(name?: string) {
+  if (!name) return false
+  if (name === 'verify') {
+    const separator = args.indexOf('--')
+    const commandArgs = separator >= 0 ? args.slice(0, separator) : args
+    return commandArgs.includes('--help') || commandArgs.includes('-h')
+  }
+  return args.includes('--help') || args.includes('-h')
+}
+
 function slug(title: string) {
   return (
     title
@@ -288,61 +347,28 @@ switch (command) {
   case '-h':
     console.log(usage)
     break
+  default:
+    if (commandUsage(command) && wantsCommandHelp(command)) help(commandUsage(command))
+    break
+}
+
+switch (command) {
+  case undefined:
+  case '--help':
+  case '-h':
+    break
   case 'init': {
     ensureInit()
     console.log('Initialized .latch')
     break
   }
   case 'start': {
-    if (wantsHelp) help('Usage: latch start <title> [--use]')
-    ensureInit()
-    const title = args.filter((arg) => arg !== '--use').join(' ').trim()
-    if (!title) die('Usage: latch start <title>')
-    const id = `${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '')}-${slug(title)}`
-    mkdirSync(taskPath(id), { recursive: true })
-    const task: Task = {
-      id,
-      title,
-      status: 'active',
-      stage: 'triage',
-      created_at: now(),
-      updated_at: now(),
-    }
-    writeJson(join(taskPath(id), 'task.json'), task)
-    writeFileSync(join(taskPath(id), 'notes.md'), `# ${title}\n`)
-    event(task, 'started')
-    const current = currentTaskId()
-    if (!current || args.includes('--use')) writeJson(statePath, { current_task_id: id })
-    console.log(`Started ${id}`)
-    if (current && !args.includes('--use')) {
-      console.log(`Current task is still: ${current}`)
-      console.log(`To switch: latch use ${id}`)
-    }
-    break
-  }
-  case 'use': {
-    const id = args[0]
-    if (!id) die('Usage: latch use <task-id>')
-    readTask(id)
-    writeJson(statePath, { current_task_id: id })
-    console.log(`Switched to ${id}`)
-    break
-  }
-  case 'checkpoint': {
-    ensureInit()
-    const current = currentTaskId()
-    let task: Task
-    let created = false
-    if (!current) {
-      // 没任务就开一个,降低中途补记的进入成本
-      const title = args.find((a) => !a.startsWith('--'))
-      if (!title)
-        die(
-          'Usage: latch checkpoint <title> [--goal ...] [--scope ...] [--acceptance ...] [--next ...]',
-        )
+    runLocked(() => {
+      const title = args.filter((arg) => arg !== '--use').join(' ').trim()
+      if (!title) throw new Error('Usage: latch start <title>')
       const id = `${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '')}-${slug(title)}`
       mkdirSync(taskPath(id), { recursive: true })
-      task = {
+      const task: Task = {
         id,
         title,
         status: 'active',
@@ -352,93 +378,149 @@ switch (command) {
       }
       writeJson(join(taskPath(id), 'task.json'), task)
       writeFileSync(join(taskPath(id), 'notes.md'), `# ${title}\n`)
-      writeJson(statePath, { current_task_id: id })
-      created = true
-    } else {
-      task = targetTask()
-    }
-    const fields = ['goal', 'scope', 'acceptance', 'next'] as const
-    for (const field of fields) {
-      const value = option(`--${field}`)
-      if (value) task[field] = value
-    }
-    saveTask(task)
-    event(task, 'checkpoint', {
-      created,
-      fields: fields.filter((field) => option(`--${field}`)),
+      event(task, 'started')
+      const current = currentTaskId()
+      if (!current || args.includes('--use')) writeJson(statePath, { current_task_id: id })
+      console.log(`Started ${id}`)
+      if (current && !args.includes('--use')) {
+        console.log(`Current task is still: ${current}`)
+        console.log(`To switch: latch use ${id}`)
+      }
     })
-    appendNotes(
-      task,
-      `Checkpoint: ${task.stage}`,
-      fields.map((field) => (task[field] ? `${field}: ${task[field]}` : '')),
-    )
-    console.log(
-      created
-        ? `Started and checkpointed ${task.id}`
-        : `Checkpointed ${task.id}`,
-    )
+    break
+  }
+  case 'use': {
+    runLocked(() => {
+      const id = args[0]
+      if (!id) throw new Error('Usage: latch use <task-id>')
+      readTask(id)
+      writeJson(statePath, { current_task_id: id })
+      console.log(`Switched to ${id}`)
+    })
+    break
+  }
+  case 'checkpoint': {
+    runLocked(() => {
+      const current = currentTaskId()
+      let task: Task
+      let created = false
+      if (!current) {
+        // 没任务就开一个,降低中途补记的进入成本
+        const title = args.find((a) => !a.startsWith('--'))
+        if (!title)
+          throw new Error(
+            'Usage: latch checkpoint <title> [--goal ...] [--scope ...] [--acceptance ...] [--next ...]',
+          )
+        const id = `${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '')}-${slug(title)}`
+        mkdirSync(taskPath(id), { recursive: true })
+        task = {
+          id,
+          title,
+          status: 'active',
+          stage: 'triage',
+          created_at: now(),
+          updated_at: now(),
+        }
+        writeJson(join(taskPath(id), 'task.json'), task)
+        writeFileSync(join(taskPath(id), 'notes.md'), `# ${title}\n`)
+        writeJson(statePath, { current_task_id: id })
+        created = true
+      } else {
+        task = targetTask()
+      }
+      const fields = ['goal', 'scope', 'acceptance', 'next'] as const
+      for (const field of fields) {
+        const value = option(`--${field}`)
+        if (value) task[field] = value
+      }
+      saveTask(task)
+      event(task, 'checkpoint', {
+        created,
+        fields: fields.filter((field) => option(`--${field}`)),
+      })
+      appendNotes(
+        task,
+        `Checkpoint: ${task.stage}`,
+        fields.map((field) => (task[field] ? `${field}: ${task[field]}` : '')),
+      )
+      console.log(
+        created
+          ? `Started and checkpointed ${task.id}`
+          : `Checkpointed ${task.id}`,
+      )
+    })
     break
   }
   case 'save': {
-    const task = targetTask()
-    const fields = ['goal', 'scope', 'acceptance', 'next'] as const
-    for (const field of fields) {
-      const value = option(`--${field}`)
-      if (value) task[field] = value
-    }
-    saveTask(task)
-    event(task, 'saved', {
-      fields: fields.filter((field) => option(`--${field}`)),
+    runLocked(() => {
+      const task = targetTask()
+      const fields = ['goal', 'scope', 'acceptance', 'next'] as const
+      for (const field of fields) {
+        const value = option(`--${field}`)
+        if (value) task[field] = value
+      }
+      saveTask(task)
+      event(task, 'saved', {
+        fields: fields.filter((field) => option(`--${field}`)),
+      })
+      appendNotes(
+        task,
+        `Save: ${task.stage}`,
+        fields.map((field) => (task[field] ? `${field}: ${task[field]}` : '')),
+      )
+      console.log('Saved')
     })
-    appendNotes(
-      task,
-      `Save: ${task.stage}`,
-      fields.map((field) => (task[field] ? `${field}: ${task[field]}` : '')),
-    )
-    console.log('Saved')
     break
   }
   case 'next': {
-    const task = targetTask()
-    const toRaw = option('--to')
-    if (toRaw && !validStages.has(toRaw as Stage))
-      die(`Unknown stage: ${toRaw}`)
-    const to = (toRaw ?? defaultNext(task.stage)) as Stage
-    if (task.stage === 'finish' && to === 'done')
-      die('Use latch done after user asks to finish/archive.')
-    if (!canAdvance(task, to))
-      die(
-        `Cannot advance ${task.stage} -> ${to}; missing required task fields or passing verification.`,
-      )
-    const from = task.stage
-    task.stage = to
-    if (to === 'blocked') task.status = 'blocked'
-    saveTask(task)
-    event(task, 'stage_changed', { from, to, reason: option('--reason') })
-    scaffoldForStage(task, to)
-    console.log(`${from} -> ${to}`)
+    runLocked(() => {
+      const task = targetTask()
+      const toRaw = option('--to')
+      if (toRaw && !validStages.has(toRaw as Stage))
+        throw new Error(`Unknown stage: ${toRaw}`)
+      const to = (toRaw ?? defaultNext(task.stage)) as Stage
+      if (task.stage === 'finish' && to === 'done')
+        throw new Error('Use latch done after user asks to finish/archive.')
+      if (!canAdvance(task, to))
+        throw new Error(
+          `Cannot advance ${task.stage} -> ${to}; missing required task fields or passing verification.`,
+        )
+      const from = task.stage
+      task.stage = to
+      if (to === 'blocked') task.status = 'blocked'
+      saveTask(task)
+      event(task, 'stage_changed', { from, to, reason: option('--reason') })
+      scaffoldForStage(task, to)
+      console.log(`${from} -> ${to}`)
+    })
     break
   }
   case 'verify': {
-    if (wantsHelp) help('Usage: latch verify -- <command>')
     const separator = args.indexOf('--')
     const verifyArgs = separator >= 0 ? args.slice(separator + 1) : args
     if (verifyArgs.length === 0) die('Usage: latch verify -- <command>')
-    const task = targetTask()
-    const result = spawnSync(verifyArgs[0], verifyArgs.slice(1), {
+    runLocked(() => {
+      targetTask()
+    })
+    const verifyResult = spawnSync(verifyArgs[0], verifyArgs.slice(1), {
       cwd: root,
+      env: commandEnv(root),
       stdio: 'inherit',
       shell: false,
     })
-    task.latest_verify = {
-      command: verifyArgs.join(' '),
-      status: result.status === 0 ? 'pass' : 'fail',
-      exit_code: result.status ?? 1,
-      created_at: now(),
-    }
-    saveTask(task)
-    event(task, 'verified', task.latest_verify)
-    process.exit(task.latest_verify.exit_code)
+    const result = runLocked(() => {
+      const task = targetTask()
+      task.latest_verify = {
+        command: verifyArgs.join(' '),
+        status: verifyResult.status === 0 ? 'pass' : 'fail',
+        exit_code: verifyResult.status ?? 1,
+        created_at: now(),
+      }
+      saveTask(task)
+      event(task, 'verified', task.latest_verify)
+      return task.latest_verify.exit_code
+    })
+    process.exit(result)
     break
   }
   case 'resume': {
@@ -555,30 +637,32 @@ switch (command) {
     break
   }
   case 'done': {
-    if (wantsHelp) help('Usage: latch done')
-    const task = targetTask()
-    if (task.stage !== 'finish') die('Task must be in finish stage.')
-    if (task.latest_verify?.status !== 'pass')
-      die('Latest verification must pass.')
-    task.stage = 'done'
-    task.status = 'done'
-    saveTask(task)
-    event(task, 'done')
-    archiveTask(task)
-    console.log(`Archived ${task.id}`)
+    runLocked(() => {
+      const task = targetTask()
+      if (task.stage !== 'finish') throw new Error('Task must be in finish stage.')
+      if (task.latest_verify?.status !== 'pass')
+        throw new Error('Latest verification must pass.')
+      task.stage = 'done'
+      task.status = 'done'
+      saveTask(task)
+      event(task, 'done')
+      archiveTask(task)
+      console.log(`Archived ${task.id}`)
+    })
     break
   }
   case 'abandon': {
-    if (wantsHelp) help('Usage: latch abandon [--reason <reason>] [--task <task-id>]')
-    const task = targetTask()
-    const reason = option('--reason')
-    task.stage = 'abandoned'
-    task.status = 'abandoned'
-    saveTask(task)
-    event(task, 'abandoned', reason ? { reason } : {})
-    if (reason) appendNotes(task, 'Abandoned', [`reason: ${reason}`])
-    archiveTask(task)
-    console.log(`Abandoned ${task.id}`)
+    runLocked(() => {
+      const task = targetTask()
+      const reason = option('--reason')
+      task.stage = 'abandoned'
+      task.status = 'abandoned'
+      saveTask(task)
+      event(task, 'abandoned', reason ? { reason } : {})
+      if (reason) appendNotes(task, 'Abandoned', [`reason: ${reason}`])
+      archiveTask(task)
+      console.log(`Abandoned ${task.id}`)
+    })
     break
   }
   default:
