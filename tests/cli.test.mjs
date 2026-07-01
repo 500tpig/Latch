@@ -52,13 +52,74 @@ test("task advances only after required fields and verification", () => {
   assert.deepEqual(state, {});
 });
 
-test("start rejects duplicate active task", () => {
+test("start allows multiple open tasks and keeps current task", () => {
   const cwd = mkdtempSync(join(tmpdir(), "latch-"));
 
   assert.equal(run(cwd, ["init"]).status, 0);
   assert.equal(run(cwd, ["start", "First task"]).status, 0);
-  // v0 只允许一个 active task，第二次创建必须失败
-  assert.notEqual(run(cwd, ["start", "Second task"]).status, 0);
+  assert.equal(run(cwd, ["start", "Second task"]).status, 0);
+
+  const tasks = readdirSync(join(cwd, ".latch", "tasks"));
+  assert.equal(tasks.length, 2);
+  const state = JSON.parse(readFileSync(join(cwd, ".latch", "state.json"), "utf8"));
+  assert.equal(state.current_task_id, tasks[0]);
+
+  const list = run(cwd, ["list"]);
+  assert.match(list.stdout, new RegExp(`\\* active\\ttriage\\t${tasks[0]}`));
+  assert.match(list.stdout, new RegExp(`  active\\ttriage\\t${tasks[1]}`));
+});
+
+test("use switches current task and resume reads it", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "First task"]);
+  run(cwd, ["start", "Second task"]);
+  const secondId = readdirSync(join(cwd, ".latch", "tasks"))[1];
+  assert.equal(run(cwd, ["use", secondId]).status, 0);
+
+  const state = JSON.parse(readFileSync(join(cwd, ".latch", "state.json"), "utf8"));
+  assert.equal(state.current_task_id, secondId);
+  const resume = run(cwd, ["resume"]);
+  assert.match(resume.stdout, /Task: Second task/);
+});
+
+test("task option targets non-current task", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "First task"]);
+  run(cwd, ["start", "Second task"]);
+  const [firstId, secondId] = readdirSync(join(cwd, ".latch", "tasks"));
+  assert.equal(run(cwd, ["save", "--task", secondId, "--goal", "G", "--next", "N"]).status, 0);
+  assert.equal(run(cwd, ["next", "--task", secondId]).status, 0);
+
+  const first = JSON.parse(readFileSync(join(cwd, ".latch", "tasks", firstId, "task.json"), "utf8"));
+  const second = JSON.parse(readFileSync(join(cwd, ".latch", "tasks", secondId, "task.json"), "utf8"));
+  assert.equal(first.stage, "triage");
+  assert.equal(second.stage, "plan");
+});
+
+test("context emits task summary and json", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["checkpoint", "Context task", "--goal", "G", "--scope", "S", "--acceptance", "A", "--next", "N"]);
+  const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
+
+  const text = run(cwd, ["context"]);
+  assert.match(text.stdout, /Task: Context task/);
+  assert.match(text.stdout, /Goal: G/);
+  assert.match(text.stdout, /Notes:/);
+
+  const json = run(cwd, ["context", taskId, "--json"]);
+  assert.equal(json.status, 0);
+  const data = JSON.parse(json.stdout);
+  assert.equal(data.task_id, taskId);
+  assert.equal(data.goal, "G");
+  assert.equal(data.scope, "S");
+  assert.equal(data.acceptance, "A");
+  assert.equal(data.next, "N");
 });
 
 test("next --to rejects unknown stage", () => {
@@ -93,7 +154,7 @@ test("done rejected outside finish stage", () => {
   assert.notEqual(run(cwd, ["done"]).status, 0);
 });
 
-test("abandon archives active task and preserves failed verification", () => {
+test("abandon archives current task and preserves failed verification", () => {
   const cwd = mkdtempSync(join(tmpdir(), "latch-"));
 
   run(cwd, ["init"]);
@@ -125,6 +186,20 @@ test("abandon archives active task and preserves failed verification", () => {
   assert.equal(run(cwd, ["start", "New task"]).status, 0);
 });
 
+test("abandon non-current task keeps current task", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "First task"]);
+  run(cwd, ["start", "Second task"]);
+  const [firstId, secondId] = readdirSync(join(cwd, ".latch", "tasks"));
+  assert.equal(run(cwd, ["abandon", "--task", secondId]).status, 0);
+
+  const state = JSON.parse(readFileSync(join(cwd, ".latch", "state.json"), "utf8"));
+  assert.equal(state.current_task_id, firstId);
+  assert.deepEqual(readdirSync(join(cwd, ".latch", "tasks")), [firstId]);
+});
+
 test("abandon works for blocked task without reason", () => {
   const cwd = mkdtempSync(join(tmpdir(), "latch-"));
 
@@ -147,22 +222,22 @@ test("abandon works for blocked task without reason", () => {
   assert.doesNotMatch(notes, /Abandoned/);
 });
 
-test("abandon rejected with no active task", () => {
+test("abandon rejected with no current task", () => {
   const cwd = mkdtempSync(join(tmpdir(), "latch-"));
 
   run(cwd, ["init"]);
   const result = run(cwd, ["abandon"]);
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /No active task/);
+  assert.match(result.stderr, /No current task/);
 });
 
-test("resume with no active task exits zero", () => {
+test("resume with no current task exits zero", () => {
   const cwd = mkdtempSync(join(tmpdir(), "latch-"));
 
   assert.equal(run(cwd, ["init"]).status, 0);
   const result = run(cwd, ["resume"]);
   assert.equal(result.status, 0);
-  assert.match(result.stdout, /No active task/);
+  assert.match(result.stdout, /No current task/);
 });
 
 test("resume includes notes content for handoff", () => {
@@ -214,7 +289,7 @@ test("checkpoint creates task when none active", () => {
   const cwd = mkdtempSync(join(tmpdir(), "latch-"));
 
   run(cwd, ["init"]);
-  // 没 active task 时 checkpoint 必须先开任务再记字段
+  // 没 current task 时 checkpoint 必须先开任务再记字段
   const result = run(cwd, ["checkpoint", "Login fix", "--goal", "G", "--next", "N"]);
   assert.equal(result.status, 0);
 
@@ -226,14 +301,14 @@ test("checkpoint creates task when none active", () => {
   assert.equal(task.stage, "triage");
 });
 
-test("checkpoint appends to active task without creating new one", () => {
+test("checkpoint appends to current task without creating new one", () => {
   const cwd = mkdtempSync(join(tmpdir(), "latch-"));
 
   run(cwd, ["init"]);
   run(cwd, ["start", "Existing"]);
   const firstId = readdirSync(join(cwd, ".latch", "tasks"))[0];
 
-  // 有 active task 时 checkpoint 只追加，不该新建第二个任务
+  // 有 current task 时 checkpoint 只追加，不该新建第二个任务
   const result = run(cwd, ["checkpoint", "--goal", "New goal", "--next", "New next"]);
   assert.equal(result.status, 0);
 
@@ -299,16 +374,17 @@ test("log requires summary", () => {
   assert.notEqual(result.status, 0);
 });
 
-test("log rejected when active task exists", () => {
+test("log can record a small task while open tasks exist", () => {
   const cwd = mkdtempSync(join(tmpdir(), "latch-"));
 
   run(cwd, ["init"]);
   run(cwd, ["start", "Active task"]);
-  // 有 active task 时 log 必须拒绝:同一件事不该既进 tasks 又进 log.jsonl
   const result = run(cwd, ["log", "小修一笔", "--files", "a.ts"]);
-  assert.notEqual(result.status, 0);
-  // 拒绝时不能留下半截 log.jsonl
-  assert.equal(existsSync(join(cwd, ".latch", "log.jsonl")), false);
+  assert.equal(result.status, 0);
+  const log = readFileSync(join(cwd, ".latch", "log.jsonl"), "utf8").trim();
+  const entry = JSON.parse(log);
+  assert.equal(entry.summary, "小修一笔");
+  assert.deepEqual(entry.files, ["a.ts"]);
 });
 
 test("resume warns when verify passed outside finish", () => {

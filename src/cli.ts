@@ -40,7 +40,7 @@ type Task = {
   created_at: string
   updated_at: string
 }
-type State = { active_task_id?: string }
+type State = { current_task_id?: string; active_task_id?: string }
 
 const root = process.cwd()
 const latchDir = join(root, '.latch')
@@ -80,10 +80,26 @@ function taskPath(id: string) {
   return join(tasksDir, id)
 }
 
-function activeTask(): Task {
-  const active = state().active_task_id
-  if (!active) die('No active task.')
-  return readJson<Task>(join(taskPath(active), 'task.json'), undefined as never)
+function currentTaskId() {
+  const current = state()
+  return current.current_task_id ?? current.active_task_id
+}
+
+function readTask(id: string): Task {
+  const path = join(taskPath(id), 'task.json')
+  if (!existsSync(path)) die(`Task not found: ${id}`)
+  return readJson<Task>(path, undefined as never)
+}
+
+function currentTask(): Task {
+  const current = currentTaskId()
+  if (!current) die('No current task.')
+  return readTask(current)
+}
+
+function targetTask(): Task {
+  const id = option('--task')
+  return id ? readTask(id) : currentTask()
 }
 
 function saveTask(task: Task) {
@@ -149,7 +165,29 @@ function archiveTask(task: Task) {
   const targetDir = join(archiveDir, month)
   mkdirSync(targetDir, { recursive: true })
   renameSync(taskPath(task.id), join(targetDir, basename(task.id)))
-  writeJson(statePath, {})
+  if (currentTaskId() === task.id) writeJson(statePath, {})
+}
+
+function openTaskIds() {
+  ensureInit()
+  return readdirSync(tasksDir).filter((id) =>
+    existsSync(join(taskPath(id), 'task.json')),
+  )
+}
+
+function taskContext(task: Task) {
+  return {
+    task_id: task.id,
+    title: task.title,
+    status: task.status,
+    stage: task.stage,
+    goal: task.goal ?? null,
+    scope: task.scope ?? null,
+    acceptance: task.acceptance ?? null,
+    next: task.next ?? null,
+    latest_verify: task.latest_verify ?? null,
+    notes_path: join(taskPath(task.id), 'notes.md'),
+  }
 }
 
 // 进入需要记录结论的阶段时，铺一个空模板，逼 AI 按格子填，不让它自由发挥写散
@@ -244,11 +282,8 @@ switch (command) {
   }
   case 'start': {
     ensureInit()
-    const title = args.join(' ').trim()
+    const title = args.filter((arg) => arg !== '--use').join(' ').trim()
     if (!title) die('Usage: latch start <title>')
-    const current = state()
-    if (current.active_task_id)
-      die(`Active task already exists: ${current.active_task_id}`)
     const id = `${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '')}-${slug(title)}`
     mkdirSync(taskPath(id), { recursive: true })
     const task: Task = {
@@ -262,16 +297,29 @@ switch (command) {
     writeJson(join(taskPath(id), 'task.json'), task)
     writeFileSync(join(taskPath(id), 'notes.md'), `# ${title}\n`)
     event(task, 'started')
-    writeJson(statePath, { active_task_id: id })
+    const current = currentTaskId()
+    if (!current || args.includes('--use')) writeJson(statePath, { current_task_id: id })
     console.log(`Started ${id}`)
+    if (current && !args.includes('--use')) {
+      console.log(`Current task is still: ${current}`)
+      console.log(`To switch: latch use ${id}`)
+    }
+    break
+  }
+  case 'use': {
+    const id = args[0]
+    if (!id) die('Usage: latch use <task-id>')
+    readTask(id)
+    writeJson(statePath, { current_task_id: id })
+    console.log(`Switched to ${id}`)
     break
   }
   case 'checkpoint': {
     ensureInit()
-    const current = state()
+    const current = currentTaskId()
     let task: Task
     let created = false
-    if (!current.active_task_id) {
+    if (!current) {
       // 没任务就开一个,降低中途补记的进入成本
       const title = args.find((a) => !a.startsWith('--'))
       if (!title)
@@ -290,10 +338,10 @@ switch (command) {
       }
       writeJson(join(taskPath(id), 'task.json'), task)
       writeFileSync(join(taskPath(id), 'notes.md'), `# ${title}\n`)
-      writeJson(statePath, { active_task_id: id })
+      writeJson(statePath, { current_task_id: id })
       created = true
     } else {
-      task = activeTask()
+      task = targetTask()
     }
     const fields = ['goal', 'scope', 'acceptance', 'next'] as const
     for (const field of fields) {
@@ -318,7 +366,7 @@ switch (command) {
     break
   }
   case 'save': {
-    const task = activeTask()
+    const task = targetTask()
     const fields = ['goal', 'scope', 'acceptance', 'next'] as const
     for (const field of fields) {
       const value = option(`--${field}`)
@@ -337,7 +385,7 @@ switch (command) {
     break
   }
   case 'next': {
-    const task = activeTask()
+    const task = targetTask()
     const toRaw = option('--to')
     if (toRaw && !validStages.has(toRaw as Stage))
       die(`Unknown stage: ${toRaw}`)
@@ -361,7 +409,7 @@ switch (command) {
     const separator = args.indexOf('--')
     const verifyArgs = separator >= 0 ? args.slice(separator + 1) : args
     if (verifyArgs.length === 0) die('Usage: latch verify -- <command>')
-    const task = activeTask()
+    const task = targetTask()
     const result = spawnSync(verifyArgs[0], verifyArgs.slice(1), {
       cwd: root,
       stdio: 'inherit',
@@ -379,12 +427,12 @@ switch (command) {
     break
   }
   case 'resume': {
-    const active = state().active_task_id
-    if (!active) {
-      console.log('No active task.')
+    const current = currentTaskId()
+    if (!current) {
+      console.log('No current task.')
       break
     }
-    const task = activeTask()
+    const task = targetTask()
     const brief = args.includes('--brief')
     console.log(`Task: ${task.title}`)
     console.log(`Stage: ${task.stage}`)
@@ -420,25 +468,59 @@ switch (command) {
     }
     break
   }
+  case 'context': {
+    const id = args.find((arg) => !arg.startsWith('--'))
+    const task = id ? readTask(id) : targetTask()
+    const context = taskContext(task)
+    if (args.includes('--json')) {
+      console.log(JSON.stringify(context, null, 2))
+    } else {
+      console.log(`Task: ${context.title}`)
+      console.log(`Stage: ${context.stage}`)
+      if (!args.includes('--brief')) {
+        if (context.goal) console.log(`Goal: ${context.goal}`)
+        if (context.scope) console.log(`Scope: ${context.scope}`)
+        if (context.acceptance) console.log(`Acceptance: ${context.acceptance}`)
+      }
+      if (context.next) console.log(`Next: ${context.next}`)
+      console.log(
+        `Verify: ${context.latest_verify ? `${context.latest_verify.status} ${context.latest_verify.command}` : 'none'}`,
+      )
+      console.log(`Notes: ${context.notes_path}`)
+    }
+    break
+  }
   case 'list': {
     ensureInit()
-    for (const id of readdirSync(tasksDir)) {
-      const task = readJson<Task>(
-        join(tasksDir, id, 'task.json'),
-        undefined as never,
+    const current = currentTaskId()
+    const tasks = openTaskIds().map((id) => readTask(id))
+    if (args.includes('--json')) {
+      console.log(
+        JSON.stringify(
+          {
+            current_task_id: current,
+            tasks: tasks.map((task) => ({
+              ...taskContext(task),
+              current: task.id === current,
+            })),
+          },
+          null,
+          2,
+        ),
       )
-      console.log(`${task.status}\t${task.stage}\t${task.id}\t${task.title}`)
+    } else {
+      for (const task of tasks) {
+        const marker = task.id === current ? '* ' : '  '
+        console.log(
+          `${marker}${task.status}\t${task.stage}\t${task.id}\t${task.title}`,
+        )
+      }
     }
     break
   }
   case 'log': {
     ensureInit()
-    // log 是纯留痕,不进状态机。有 active task 时拒绝,避免同一件事既进 tasks 又进 log.jsonl 记两本账;先把 active task 推进或归档。
-    const active = state().active_task_id
-    if (active)
-      die(
-        `Active task exists: ${active}. Advance it with next or archive with done before logging; do not keep two books for the same work.`,
-      )
+    // log 是纯留痕,不进状态机。多任务模式下 open task 可以长期存在,log 仍可记录独立小事。
     const summary = args.find(
       (a, index) => !a.startsWith('--') && args[index - 1] !== '--files',
     )
@@ -458,7 +540,7 @@ switch (command) {
     break
   }
   case 'done': {
-    const task = activeTask()
+    const task = targetTask()
     if (task.stage !== 'finish') die('Task must be in finish stage.')
     if (task.latest_verify?.status !== 'pass')
       die('Latest verification must pass.')
@@ -471,7 +553,7 @@ switch (command) {
     break
   }
   case 'abandon': {
-    const task = activeTask()
+    const task = targetTask()
     const reason = option('--reason')
     task.stage = 'abandoned'
     task.status = 'abandoned'
@@ -484,6 +566,6 @@ switch (command) {
   }
   default:
     console.log(
-      'Usage: latch <init|start|checkpoint|save|next|verify|resume|list|log|done|abandon>',
+      'Usage: latch <init|start|checkpoint|save|next|verify|resume|list|log|done|abandon|use|context>',
     )
 }
