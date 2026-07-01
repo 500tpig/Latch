@@ -18,7 +18,7 @@ latch done
 
 Use `latch context [task-id] [--json]` to read a stable task summary for agents or dashboards. Use `latch abandon [--reason "..."]` to archive a task that should not continue.
 
-See [docs/HANDBOOK.md](docs/HANDBOOK.md) for daily usage and [docs/SPEC_V0.md](docs/SPEC_V0.md) for the v0 behavior.
+See [docs/HANDBOOK.md](docs/HANDBOOK.md) for daily usage, [docs/SCENARIOS.md](docs/SCENARIOS.md) for trigger examples, and [docs/SPEC_V0.md](docs/SPEC_V0.md) for the v0 behavior.
 
 ## Small fixes: `latch log`
 

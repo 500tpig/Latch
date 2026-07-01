@@ -8,6 +8,7 @@
 - 小请求不进入 Latch；需要留痕时使用 `latch log`。
 - 误判为小修后任务变长，立即执行 `latch checkpoint` 补记现场。
 - 续接任务先运行 `latch resume --brief`。
+- 如果 AI 工具报 `command not found: latch`，先试 `zsh -ic 'latch resume --brief'`，不要写入本机绝对路径。
 - 验证必须通过 `latch verify -- <command>` 记录。
 - verify 通过后进入 `finish`，补 closure；只有用户确认后才执行 `latch done`。
 

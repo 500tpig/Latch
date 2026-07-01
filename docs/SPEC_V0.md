@@ -7,7 +7,9 @@
 
 Latch 是一个纯 AI coding harness。
 
-小请求不进入 Latch。任务变长或碰风险域时，用 `latch checkpoint` 锁住现场；之后必须经过阶段、验证和用户确认，才能归档完成。
+小请求不进入 Latch。任务变长、碰风险域，或用户要求规划项目后续、完善项目、讨论路线图时，用 `latch checkpoint` 锁住现场；之后必须经过阶段、验证和用户确认，才能归档完成。
+
+具体触发语和阶段选择示例见 `docs/SCENARIOS.md`。规格文件只描述边界和行为，不重复场景文档。
 
 同一项目可以同时保留多个 open task。`state.json` 只保存一个 `current_task_id`，命令默认操作 current task；需要操作其他任务时使用 `--task <id>` 或先执行 `latch use <id>`。
 
@@ -266,6 +268,8 @@ abandoned 可从任意 open task 进入
 
 用户主动触发的发散讨论。常见触发包括 `/brainstorm`、明确要求先讨论方案、明确要求先不要写代码。
 
+项目后续规划、路线图、完善方向这类请求默认进入 `brainstorm`，由 AI 创建或续接 Latch 任务，不要求用户手动敲命令。
+
 记录内容：
 
 ```text
@@ -279,6 +283,8 @@ abandoned 可从任意 open task 进入
 ### `grill`
 
 AI 自动刹车。需求、范围、验收，或数据、认证、存储等难回退决定不清楚时进入。
+
+规划讨论一旦进入执行取舍，例如是否改 CLI、是否更新多个项目、是否发布包、是否改项目规则，应进入 `grill`。
 
 有文档时仍然记录为 `grill`，`grill-with-docs` 只是工作方式，不是阶段名。
 

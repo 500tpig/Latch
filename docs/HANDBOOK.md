@@ -4,6 +4,8 @@ Latch 是一个项目内任务状态锁存器，用在 AI coding 任务碰到风
 
 同一项目可以同时保留多个 open task，但只有一个 current task。命令默认操作 current task；需要操作其他任务时使用 `--task <id>` 或先执行 `latch use <id>`。
 
+常见触发语、初始阶段和 checkpoint 示例见 `docs/SCENARIOS.md`。
+
 ## 什么时候进入 Latch
 
 分三类判断：
@@ -11,6 +13,7 @@ Latch 是一个项目内任务状态锁存器，用在 AI coding 任务碰到风
 - 风险域任务一开始就进入 Latch：登录、权限、路由、认证、状态流、持久化、API 契约、数据迁移、跨模块职责、难回退 UI 或交互流程。
 - 小请求不进入 Latch：单点文案、简单样式、只读解释、低风险单点修复。
 - 低估为小修后变长，立刻中途 `checkpoint`：发现影响面扩大、验收不清楚、需要复现 bug 或需要跨会话续接时，立即锁住现场。
+- 规划类请求由 AI 自动进入 Latch：例如「规划项目后续」「完善项目」「怎么推进更好」「先讨论路线图」。先 checkpoint，再进入 `brainstorm`；如果涉及安装方式、项目规则、跨项目同步、发布、存储、API 契约、权限或迁移等难回退选择，转入 `grill`。
 
 「任务变长时进入」只适用于低估为小修后的补记。能在开始前识别为风险域的任务，应在动手前执行 `latch checkpoint`。
 
@@ -168,8 +171,8 @@ abandoned 可从任意 open task 进入
 | 阶段 | 含义 | 进入或退出条件 |
 | --- | --- | --- |
 | `triage` | 分流 | 判断直接计划、先发散，还是先追问。 |
-| `brainstorm` | 发散讨论 | 用户明确要求先讨论方案时进入。 |
-| `grill` | 需求追问 | 范围、验收、认证、存储等难回退点不清楚时进入。 |
+| `brainstorm` | 发散讨论 | 用户明确要求先讨论方案、规划项目后续或讨论路线图时进入。 |
+| `grill` | 需求追问 | 范围、验收、认证、存储等难回退点不清楚时进入；规划讨论进入执行取舍时也进入。 |
 | `plan` | 最小计划 | 需要已有 `goal` 或 `next`。 |
 | `dev` | 实现 | 需要已有 `next`。 |
 | `check` | 验证 | 实现后进入；必须用 `latch verify -- <command>` 留结果。 |
@@ -262,6 +265,14 @@ latch resume
 
 如果 verify 已经 `pass`，但 stage 还不是 `finish`，`resume` 会提示状态矛盾。此时通常应先 `latch next` 推到 `finish`，再等用户确认 `done`。
 
+AI 工具如果在非交互 shell 中报 `command not found: latch`，先试：
+
+```bash
+zsh -ic 'latch resume --brief'
+```
+
+这通常表示 shell 没加载用户 PATH，不代表 Latch 未安装。不要把本机绝对路径写进项目规则。
+
 ### `context`
 
 `context` 输出任务上下文，供 agent、看板或人读取。
@@ -314,6 +325,8 @@ open task 存在时，`log` 仍可记录无关小事。已经进入 Latch 的同
 ```text
 先运行 latch resume --brief，看当前 stage、next 和最近 verify。只处理 next 指向的范围，不扩大改动；完成后用 latch verify -- <最小相关命令> 记录结果。
 ```
+
+如果 latch 命令找不到，先用 zsh -ic 'latch resume --brief' 复核交互 shell 是否可用；不要直接改用本机绝对路径。
 
 ### 验证已通过后收尾
 

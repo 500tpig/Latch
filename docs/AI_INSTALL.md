@@ -17,7 +17,13 @@ pnpm add --global .
 latch
 ```
 
-如果 `latch` 不可用，停止安装流程，提示用户先完成全局安装或链接。不要把本机绝对路径写进目标项目文档、`AGENTS.md` 或 skill。
+如果 `latch` 报 `command not found`，先判断是不是 AI 工具使用了非交互 shell。可以尝试：
+
+```bash
+zsh -ic 'latch resume --brief'
+```
+
+如果交互 zsh 能找到 `latch`，说明是当前执行环境没有加载用户的 PATH，不要误判为 Latch 未安装。如果仍不可用，停止安装流程，提示用户先完成全局安装或链接。不要把本机绝对路径写进目标项目文档、`AGENTS.md` 或 skill。
 
 允许执行的轻量命令：
 
@@ -54,7 +60,7 @@ latch init
 安装结束前询问用户：
 
 ```text
-是否需要为当前项目生成 AGENTS.md 规则草稿？我只读取项目事实，推断项留空并等你确认。
+是否需要为当前项目生成 AGENTS.md 规则草稿？我只读取项目事实，推断项留空并等用户确认。
 ```
 
 生成草稿时，使用 `docs/templates/PROJECT_AGENTS.md` 作为模板。
@@ -79,13 +85,22 @@ latch init
 
 ## Skill 副本
 
+优先使用全局 skill，例如：
+
+```text
+~/.codex/skills/latch/SKILL.md
+~/.agents/skills/latch/SKILL.md
+```
+
+全局 skill 适合个人多项目共用，更新一次即可影响后续会话。项目内 skill 副本只在需要把某个项目固定在特定 Latch 规则版本时使用。
+
 安装最后询问用户是否需要写入目标项目的 skill 副本，例如：
 
 ```text
 是否需要写入 .agents/skills/latch/SKILL.md 或 .opencode/skills/latch/SKILL.md？
 ```
 
-不默认创建 skill 副本。用户确认后，只写用户当前使用的工具对应目录。
+不默认创建项目内 skill 副本。用户确认后，只写用户当前使用的工具对应目录。
 
 ## 禁止事项
 
