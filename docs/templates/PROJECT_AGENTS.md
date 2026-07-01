@@ -7,10 +7,12 @@
 - 风险域任务开始前执行 `latch checkpoint`。
 - 小请求不进入 Latch；需要留痕时使用 `latch log`。
 - 误判为小修后任务变长，立即执行 `latch checkpoint` 补记现场。
+- AI 接入 Latch 失败、只能靠 shell fallback 继续，或用户指出「这应该被记录」时，立即用 `latch log` 或 `latch checkpoint` 留痕。
 - 续接任务先运行 `latch resume --brief`。
 - 如果 AI 工具报 `command not found: latch`，先试 `zsh -ic 'latch resume --brief'`，不要写入本机绝对路径。
 - 验证必须通过 `latch verify -- <command>` 记录。
-- verify 通过后进入 `finish`，补 closure；只有用户确认后才执行 `latch done`。
+- verify 通过后进入 `finish`，补 closure，写清改动、验证、未覆盖范围和下次接什么；只有用户确认后才执行 `latch done`。
+- 跨项目同步 Latch 规则时，每个被修改的目标项目都用 `latch log` 留痕。
 
 详细流程见 Latch 手册：`docs/HANDBOOK.md`。
 

@@ -154,6 +154,25 @@ test("done rejected outside finish stage", () => {
   assert.notEqual(run(cwd, ["done"]).status, 0);
 });
 
+test("done --help does not archive task", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Help only"]);
+  run(cwd, ["save", "--goal", "G", "--next", "N"]);
+  run(cwd, ["next"]);
+  run(cwd, ["next"]);
+  run(cwd, ["next"]);
+  run(cwd, ["verify", "--", process.execPath, "-e", "process.exit(0)"]);
+  run(cwd, ["next"]);
+
+  const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
+  const result = run(cwd, ["done", "--help"]);
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Usage: latch done/);
+  assert.equal(existsSync(join(cwd, ".latch", "tasks", taskId, "task.json")), true);
+});
+
 test("abandon archives current task and preserves failed verification", () => {
   const cwd = mkdtempSync(join(tmpdir(), "latch-"));
 

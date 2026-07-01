@@ -50,6 +50,9 @@ const statePath = join(latchDir, 'state.json')
 
 const command = process.argv[2]
 const args = process.argv.slice(3)
+const wantsHelp = args.includes('--help') || args.includes('-h')
+const usage =
+  'Usage: latch <init|start|checkpoint|save|next|verify|resume|list|log|done|abandon|use|context>'
 
 function now() {
   return new Date().toISOString()
@@ -275,6 +278,11 @@ const validStages = new Set<Stage>([
 ])
 
 switch (command) {
+  case undefined:
+  case '--help':
+  case '-h':
+    console.log(usage)
+    break
   case 'init': {
     ensureInit()
     console.log('Initialized .latch')
@@ -540,6 +548,10 @@ switch (command) {
     break
   }
   case 'done': {
+    if (wantsHelp) {
+      console.log('Usage: latch done')
+      break
+    }
     const task = targetTask()
     if (task.stage !== 'finish') die('Task must be in finish stage.')
     if (task.latest_verify?.status !== 'pass')
@@ -565,7 +577,5 @@ switch (command) {
     break
   }
   default:
-    console.log(
-      'Usage: latch <init|start|checkpoint|save|next|verify|resume|list|log|done|abandon|use|context>',
-    )
+    console.log(usage)
 }

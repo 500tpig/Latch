@@ -14,6 +14,7 @@ Latch 是一个项目内任务状态锁存器，用在 AI coding 任务碰到风
 - 小请求不进入 Latch：单点文案、简单样式、只读解释、低风险单点修复。
 - 低估为小修后变长，立刻中途 `checkpoint`：发现影响面扩大、验收不清楚、需要复现 bug 或需要跨会话续接时，立即锁住现场。
 - 规划类请求由 AI 自动进入 Latch：例如「规划项目后续」「完善项目」「怎么推进更好」「先讨论路线图」。先 checkpoint，再进入 `brainstorm`；如果涉及安装方式、项目规则、跨项目同步、发布、存储、API 契约、权限或迁移等难回退选择，转入 `grill`。
+- Latch 自身接入反馈进入 Latch：AI 找不到 `latch`、只能靠 shell fallback 继续、记录规则漏触发，或用户指出「这应该被记录」。这是产品反馈，不按普通小修处理。
 
 「任务变长时进入」只适用于低估为小修后的补记。能在开始前识别为风险域的任务，应在动手前执行 `latch checkpoint`。
 
@@ -273,6 +274,8 @@ zsh -ic 'latch resume --brief'
 
 这通常表示 shell 没加载用户 PATH，不代表 Latch 未安装。不要把本机绝对路径写进项目规则。
 
+如果这类问题发生在 Latch 项目本身，先用可用方式恢复命令，再执行 `latch log` 或 `latch checkpoint` 记录。用户指出漏记时，立即补记并说明原判断。
+
 ### `context`
 
 `context` 输出任务上下文，供 agent、看板或人读取。
@@ -294,7 +297,10 @@ latch context --json
 
 - stage 是 `finish`。
 - 最近一次 verify 是 `pass`。
+- `notes.md` 的 finish closure 已写清改了什么、验证了什么、没验证什么、下次接什么；没有未覆盖范围时写「无」。
 - 用户明确确认完成、收尾或归档。
+
+`latch done --help` 只输出帮助，不执行归档。
 
 ### `abandon`
 
