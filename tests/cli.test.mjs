@@ -526,17 +526,21 @@ test("resume with no current task exits zero", () => {
   assert.match(result.stdout, /No current task/);
 });
 
-test("resume includes notes content for handoff", () => {
+test("resume shows saved fields for handoff", () => {
   const cwd = mkdtempSync(join(tmpdir(), "latch-"));
 
   run(cwd, ["init"]);
   run(cwd, ["start", "Handoff task"]);
-  run(cwd, ["save", "--next", "Continue here"]);
+  run(cwd, ["save", "--goal", "G", "--scope", "S", "--acceptance", "A", "--next", "Continue here"]);
   run(cwd, ["next"]);
   const result = run(cwd, ["resume"]);
+  // 跨会话续接靠 resume header 直接从 task.json 打四个字段，不再依赖 notes 里的 Save: 回显
+  assert.match(result.stdout, /Goal: G/);
+  assert.match(result.stdout, /Scope: S/);
+  assert.match(result.stdout, /Acceptance: A/);
   assert.match(result.stdout, /Next: Continue here/);
-  // 跨会话续接靠 notes：save 写进去的段必须出现在 resume，否则下一轮要重新问
-  assert.match(result.stdout, /Save: triage/);
+  // save 不再往 notes 抄字段，Save: 段不该出现
+  assert.doesNotMatch(result.stdout, /Save: triage/);
 });
 
 test("entering grill scaffolds open-questions template", () => {
@@ -605,9 +609,6 @@ test("checkpoint appends to current task without creating new one", () => {
   const task = JSON.parse(readFileSync(join(cwd, ".latch", "tasks", firstId, "task.json"), "utf8"));
   assert.equal(task.goal, "New goal");
   assert.equal(task.next, "New next");
-
-  const notes = readFileSync(join(cwd, ".latch", "tasks", firstId, "notes.md"), "utf8");
-  assert.match(notes, /Checkpoint: triage/);
 });
 
 test("checkpoint fails while latch lock is held", () => {

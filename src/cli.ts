@@ -134,6 +134,37 @@ function saveTask(task: Task) {
   writeJson(join(taskPath(task.id), 'task.json'), task)
 }
 
+function createTask(title: string): Task {
+  const id = `${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '')}-${slug(title)}`
+  mkdirSync(taskPath(id), { recursive: true })
+  const task: Task = {
+    id,
+    title,
+    status: 'active',
+    stage: 'triage',
+    created_at: now(),
+    updated_at: now(),
+  }
+  writeJson(join(taskPath(id), 'task.json'), task)
+  writeFileSync(join(taskPath(id), 'notes.md'), `# ${title}\n`)
+  return task
+}
+
+const TASK_FIELDS = ['goal', 'scope', 'acceptance', 'next'] as const
+
+// 把命令行上给到的 goal/scope/acceptance/next 写进 task，返回本次实际改动的字段名
+function applyFieldOptions(task: Task): string[] {
+  const changed: string[] = []
+  for (const field of TASK_FIELDS) {
+    const value = option(`--${field}`)
+    if (value) {
+      task[field] = value
+      changed.push(field)
+    }
+  }
+  return changed
+}
+
 function event(task: Task, type: string, fields: Record<string, unknown> = {}) {
   writeFileSync(
     join(taskPath(task.id), 'events.jsonl'),
@@ -351,22 +382,12 @@ const validStages = new Set<Stage>([
   'abandoned',
 ])
 
-switch (command) {
-  case undefined:
-  case '--help':
-  case '-h':
-    console.log(usage)
-    break
-  default:
-    if (commandUsage(command) && wantsCommandHelp(command)) help(commandUsage(command))
-    break
-}
+if (command === undefined || command === '--help' || command === '-h')
+  help(usage)
+if (commandUsage(command) && wantsCommandHelp(command))
+  help(commandUsage(command))
 
 switch (command) {
-  case undefined:
-  case '--help':
-  case '-h':
-    break
   case 'init': {
     ensureInit()
     console.log('Initialized .latch')
@@ -376,25 +397,15 @@ switch (command) {
     runLocked(() => {
       const title = args.filter((arg) => arg !== '--use').join(' ').trim()
       if (!title) throw new Error('Usage: latch start <title>')
-      const id = `${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '')}-${slug(title)}`
-      mkdirSync(taskPath(id), { recursive: true })
-      const task: Task = {
-        id,
-        title,
-        status: 'active',
-        stage: 'triage',
-        created_at: now(),
-        updated_at: now(),
-      }
-      writeJson(join(taskPath(id), 'task.json'), task)
-      writeFileSync(join(taskPath(id), 'notes.md'), `# ${title}\n`)
+      const task = createTask(title)
       event(task, 'started')
       const current = currentTaskId()
-      if (!current || args.includes('--use')) writeJson(statePath, { current_task_id: id })
-      console.log(`Started ${id}`)
+      if (!current || args.includes('--use'))
+        writeJson(statePath, { current_task_id: task.id })
+      console.log(`Started ${task.id}`)
       if (current && !args.includes('--use')) {
         console.log(`Current task is still: ${current}`)
-        console.log(`To switch: latch use ${id}`)
+        console.log(`To switch: latch use ${task.id}`)
       }
     })
     break
@@ -421,38 +432,15 @@ switch (command) {
           throw new Error(
             'Usage: latch checkpoint <title> [--goal ...] [--scope ...] [--acceptance ...] [--next ...]',
           )
-        const id = `${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '')}-${slug(title)}`
-        mkdirSync(taskPath(id), { recursive: true })
-        task = {
-          id,
-          title,
-          status: 'active',
-          stage: 'triage',
-          created_at: now(),
-          updated_at: now(),
-        }
-        writeJson(join(taskPath(id), 'task.json'), task)
-        writeFileSync(join(taskPath(id), 'notes.md'), `# ${title}\n`)
-        writeJson(statePath, { current_task_id: id })
+        task = createTask(title)
+        writeJson(statePath, { current_task_id: task.id })
         created = true
       } else {
         task = targetTask()
       }
-      const fields = ['goal', 'scope', 'acceptance', 'next'] as const
-      for (const field of fields) {
-        const value = option(`--${field}`)
-        if (value) task[field] = value
-      }
+      const changed = applyFieldOptions(task)
       saveTask(task)
-      event(task, 'checkpoint', {
-        created,
-        fields: fields.filter((field) => option(`--${field}`)),
-      })
-      appendNotes(
-        task,
-        `Checkpoint: ${task.stage}`,
-        fields.map((field) => (task[field] ? `${field}: ${task[field]}` : '')),
-      )
+      event(task, 'checkpoint', { created, fields: changed })
       console.log(
         created
           ? `Started and checkpointed ${task.id}`
@@ -464,20 +452,9 @@ switch (command) {
   case 'save': {
     runLocked(() => {
       const task = targetTask()
-      const fields = ['goal', 'scope', 'acceptance', 'next'] as const
-      for (const field of fields) {
-        const value = option(`--${field}`)
-        if (value) task[field] = value
-      }
+      const changed = applyFieldOptions(task)
       saveTask(task)
-      event(task, 'saved', {
-        fields: fields.filter((field) => option(`--${field}`)),
-      })
-      appendNotes(
-        task,
-        `Save: ${task.stage}`,
-        fields.map((field) => (task[field] ? `${field}: ${task[field]}` : '')),
-      )
+      event(task, 'saved', { fields: changed })
       console.log('Saved')
     })
     break
@@ -543,8 +520,10 @@ switch (command) {
     const brief = args.includes('--brief')
     console.log(`Task: ${task.title}`)
     console.log(`Stage: ${task.stage}`)
-    if (task.goal) console.log(`Goal: ${task.goal}`)
-    if (task.next) console.log(`Next: ${task.next}`)
+      if (task.goal) console.log(`Goal: ${task.goal}`)
+      if (task.scope) console.log(`Scope: ${task.scope}`)
+      if (task.acceptance) console.log(`Acceptance: ${task.acceptance}`)
+      if (task.next) console.log(`Next: ${task.next}`)
     console.log(
       `Verify: ${task.latest_verify ? `${task.latest_verify.status} ${task.latest_verify.command}` : 'none'}`,
     )
