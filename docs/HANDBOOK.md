@@ -239,6 +239,14 @@ latch next --to grill --reason "验收标准不清楚"
 latch next --to brainstorm --reason "用户要求先讨论方案"
 ```
 
+无 verify 意义的纯文档或 commit 任务，可从规划阶段（`triage`/`brainstorm`/`grill`/`plan`）直接跳级到 `finish`，跳过 `dev`/`check`：
+
+```bash
+latch next --to finish --reason "纯文档任务，无 verify 意义"
+```
+
+跳级门禁要求 `goal`/`scope`/`acceptance`/`next` 都填齐。`dev` 及之后不跳，要让 `check` 的 verify 把关。跳级后 closure 必须写清「没验证什么」。
+
 ### `verify`
 
 `verify` 是唯一记录验证结果的命令。它真实执行后面的命令，并把退出码写入 `task.json` 和 `events.jsonl`。

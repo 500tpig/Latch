@@ -213,7 +213,8 @@ latch log "<summary>" --files a.ts,b.ts
 2. 如果 `.latch/state.json` 有 current task，运行 `latch resume --brief`。
 3. 根据本页判断是否进入 Latch。
 4. 进入后先 `checkpoint`，再决定 `brainstorm`、`grill` 或 `plan`。
-5. 不要求用户手动执行 Latch 命令；用户明确拒绝时除外。
+5. 纯文档或 commit 任务无 verify 意义时，字段填齐后用 `latch next --to finish` 跳级收尾，不强制走 `dev`/`check` 或凑数 `verify`。
+6. 不要求用户手动执行 Latch 命令；用户明确拒绝时除外。
 
 如果 `latch` 报 `command not found`，先试：
 

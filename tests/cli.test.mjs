@@ -78,6 +78,50 @@ test("task advances only after required fields and verification", () => {
   assert.deepEqual(state, {});
 });
 
+test("next --to finish skips dev/check when fields are filled", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Doc tweak"]);
+  // 字段填齐即可从 triage 跳级 finish，跳过 plan/dev/check，不需要 verify
+  run(cwd, ["save", "--goal", "G", "--scope", "S", "--acceptance", "A", "--next", "N"]);
+  const result = run(cwd, ["next", "--to", "finish"]);
+  assert.equal(result.status, 0);
+
+  const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
+  const task = JSON.parse(readFileSync(join(cwd, ".latch", "tasks", taskId, "task.json"), "utf8"));
+  assert.equal(task.stage, "finish");
+  assert.equal(task.latest_verify, undefined);
+});
+
+test("next --to finish rejected when required fields missing", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Doc tweak"]);
+  // 缺 scope/acceptance，跳级门禁不通过
+  run(cwd, ["save", "--goal", "G", "--next", "N"]);
+  const result = run(cwd, ["next", "--to", "finish"]);
+  assert.notEqual(result.status, 0);
+
+  const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
+  const task = JSON.parse(readFileSync(join(cwd, ".latch", "tasks", taskId, "task.json"), "utf8"));
+  assert.equal(task.stage, "triage");
+});
+
+test("next --to finish from dev rejected to keep verify gate", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Code task"]);
+  run(cwd, ["save", "--goal", "G", "--scope", "S", "--acceptance", "A", "--next", "N"]);
+  run(cwd, ["next"]); // triage -> plan
+  run(cwd, ["next"]); // plan -> dev
+  // dev 不能跳级 finish，要走 check 让 verify 把关
+  const result = run(cwd, ["next", "--to", "finish"]);
+  assert.notEqual(result.status, 0);
+});
+
 test("start allows multiple open tasks and keeps current task", () => {
   const cwd = mkdtempSync(join(tmpdir(), "latch-"));
 

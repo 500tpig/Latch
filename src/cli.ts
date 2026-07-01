@@ -298,6 +298,16 @@ function slug(title: string) {
 
 function canAdvance(task: Task, to: Stage) {
   if (to === 'brainstorm' || to === 'grill' || to === 'blocked') return true
+  // 无 verify 意义的纯文档/commit 任务可从规划阶段跳级到 finish，跳过 dev/check；
+  // 门禁为关键字段填齐。dev 及之后不跳，要走 check 让 verify 把关。
+  if (
+    to === 'finish' &&
+    (task.stage === 'triage' ||
+      task.stage === 'brainstorm' ||
+      task.stage === 'grill' ||
+      task.stage === 'plan')
+  )
+    return Boolean(task.goal && task.scope && task.acceptance && task.next)
   if (task.stage === 'triage' && to === 'plan')
     return Boolean(task.goal || task.next)
   if (task.stage === 'brainstorm' && to === 'plan')
