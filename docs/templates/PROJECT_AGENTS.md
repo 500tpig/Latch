@@ -4,10 +4,10 @@
 
 ## Latch 使用规则
 
+- Latch 自身反馈（硬触发，优先于「小请求不进入 Latch」）：`latch` 命令不可用、只能靠 shell fallback、AI 接入 Latch、记录规则漏触发，或用户指出「这应该被记录」。一旦命中，先 `latch checkpoint` 再排查，不得当成小修直接动手或只补 `latch log`。
 - 风险域任务开始前执行 `latch checkpoint`。
 - 小请求不进入 Latch；需要留痕时使用 `latch log`。
 - 误判为小修后任务变长，立即执行 `latch checkpoint` 补记现场。
-- AI 接入 Latch 失败、只能靠 shell fallback 继续，或用户指出「这应该被记录」时，立即用 `latch log` 或 `latch checkpoint` 留痕。
 - 续接任务先运行 `latch resume --brief`。
 - 如果 AI 工具报 `command not found: latch`，先试 `zsh -ic 'latch resume --brief'`，不要写入本机绝对路径。
 - 验证必须通过 `latch verify -- <command>` 记录。
