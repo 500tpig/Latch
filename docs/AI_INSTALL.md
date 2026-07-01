@@ -23,9 +23,9 @@ latch
 zsh -ic 'latch resume --brief'
 ```
 
-如果交互 zsh 能找到 `latch`，说明是当前执行环境没有加载用户的 PATH，不要误判为 Latch 未安装。如果仍不可用，停止安装流程，提示用户先完成全局安装或链接。不要把本机绝对路径写进目标项目文档、`AGENTS.md` 或 skill。
-
 请求本身是在排查 `latch` 命令可用性、fallback 或 AI 接入时，这属于 Latch 自身反馈：先 `latch checkpoint` 再动手改环境或文档，不要当成小环境修直接改 shell 配置。
+
+如果交互 zsh 能找到 `latch`，说明是当前执行环境没有加载用户的 PATH，不要误判为 Latch 未安装。如果仍不可用，停止安装流程，提示用户先完成全局安装或链接。不要把本机绝对路径写进目标项目文档、`AGENTS.md` 或 skill。
 
 允许执行的轻量命令：
 
