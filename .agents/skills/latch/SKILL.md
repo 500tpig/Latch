@@ -7,7 +7,7 @@ description: Use when a coding task becomes long, risky, cross-session, or needs
 
 Latch 是当前 repo 的单任务状态锁存器。进入 Latch 后，先记录现场，再按阶段推进，最后用真实命令验证；只有用户确认后才归档。
 
-详细手册见 `docs/HANDBOOK.md`。常见触发语和阶段选择见 `docs/SCENARIOS.md`。规格边界见 `docs/SPEC_V0.md`。安装或接入新项目时，先读 `docs/AI_INSTALL.md`。
+详细手册见 `docs/HANDBOOK.md`。常见触发语和阶段选择见 `docs/SCENARIOS.md`。设计取舍与边界见 `docs/DESIGN.md`。安装或接入新项目时，先读 `docs/AI_INSTALL.md`。
 
 ## 先做什么
 

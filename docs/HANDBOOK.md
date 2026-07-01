@@ -8,15 +8,10 @@ Latch 是一个项目内任务状态锁存器，用在 AI coding 任务碰到风
 
 ## 什么时候进入 Latch
 
-分三类判断：
+完整触发规则见 `AGENTS.md`（本项目触发正文的出处）。手册这里只补一个操作细节：
 
-- 风险域任务一开始就进入 Latch：登录、权限、路由、认证、状态流、持久化、API 契约、数据迁移、跨模块职责、难回退 UI 或交互流程。
-- 小请求不进入 Latch：单点文案、简单样式、只读解释、低风险单点修复。
-- 低估为小修后变长，立刻中途 `checkpoint`：发现影响面扩大、验收不清楚、需要复现 bug 或需要跨会话续接时，立即锁住现场。
-- 规划类请求由 AI 自动进入 Latch：例如「规划项目后续」「完善项目」「怎么推进更好」「先讨论路线图」。先 checkpoint，再进入 `brainstorm`；如果涉及安装方式、项目规则、跨项目同步、发布、存储、API 契约、权限或迁移等难回退选择，转入 `grill`。
-- Latch 自身接入反馈进入 Latch：AI 找不到 `latch`、只能靠 shell fallback 继续、记录规则漏触发，或用户指出「这应该被记录」。这是产品反馈，不按普通小修处理。
-
-「任务变长时进入」只适用于低估为小修后的补记。能在开始前识别为风险域的任务，应在动手前执行 `latch checkpoint`。
+- 能在动手前识别为风险域的任务，动手前就 `latch checkpoint`。
+- 低估为小修、做着做着变长的，立刻中途 `checkpoint` 补记现场——「任务变长时进入」只适用于这种补记。
 
 ## 一句话规则
 
@@ -171,18 +166,36 @@ blocked 可从任意阶段进入
 abandoned 可从任意 open task 进入
 ```
 
-| 阶段 | 含义 | 进入或退出条件 |
+| 阶段 | 含义 |
+| --- | --- |
+| `triage` | 分流：判断直接计划、先发散，还是先追问。 |
+| `brainstorm` | 发散讨论：用户明确要求先讨论方案、规划项目后续或讨论路线图时进入。 |
+| `grill` | 需求追问：范围、验收、认证、存储等难回退点不清楚时进入；规划讨论进入执行取舍时也进入。 |
+| `plan` | 最小计划。 |
+| `dev` | 实现。 |
+| `check` | 验证：必须用 `latch verify -- <command>` 留结果。 |
+| `finish` | 收尾等待。 |
+| `done` | 已归档。 |
+| `blocked` | 等待外部条件：等用户决定、环境、权限或外部系统。 |
+| `abandoned` | 已放弃：执行 `latch abandon` 后归档，保留现场。 |
+
+## 阶段推进要求
+
+下面把阶段推进时要满足的条件写在一处。标成“CLI 检查”的，才是 `latch next` 里的真实门禁；其余是使用约定。`finish -> done` 不走 `latch next`，而是在用户确认后单独执行 `latch done`。
+
+| 推进 | 要求 | 性质 |
 | --- | --- | --- |
-| `triage` | 分流 | 判断直接计划、先发散，还是先追问。 |
-| `brainstorm` | 发散讨论 | 用户明确要求先讨论方案、规划项目后续或讨论路线图时进入。 |
-| `grill` | 需求追问 | 范围、验收、认证、存储等难回退点不清楚时进入；规划讨论进入执行取舍时也进入。 |
-| `plan` | 最小计划 | 需要已有 `goal` 或 `next`。 |
-| `dev` | 实现 | 需要已有 `next`。 |
-| `check` | 验证 | 实现后进入；必须用 `latch verify -- <command>` 留结果。 |
-| `finish` | 收尾等待 | 最近一次 verify 为 `pass` 后进入。 |
-| `done` | 已归档 | 用户确认后执行 `latch done`。 |
-| `blocked` | 等待外部条件 | 等用户决定、环境、权限或外部系统。 |
-| `abandoned` | 已放弃 | 执行 `latch abandon` 后归档，保留现场。 |
+| `triage -> plan` | 已有 `goal` 或 `next` | CLI 检查 |
+| `triage -> brainstorm` | 用户主动要求发散讨论 | 使用约定 |
+| `triage -> grill` | AI 已说明信息缺口 | 使用约定 |
+| `brainstorm -> plan` | 已有 `goal` 和 `next` | CLI 检查 |
+| `grill -> plan` | 已有 `goal`、`scope` 和 `acceptance` | CLI 检查 |
+| `plan -> dev` | 已有 `next` | CLI 检查 |
+| `dev -> check` | AI 已完成实现，准备验证 | 使用约定 |
+| `check -> finish` | 最近一次 `latest_verify.status` 是 `pass` | CLI 检查 |
+| `finish -> done` | 用户明确要求完成、收尾或归档 | 使用约定 |
+
+纯文档或 commit 任务可从规划阶段（`triage`/`brainstorm`/`grill`/`plan`）跳级到 `finish`。这条是 `latch next --to finish` 的特殊门禁，要求 `goal`/`scope`/`acceptance`/`next` 填齐，详见下方 `next` 一节。
 
 ## 字段和文件
 

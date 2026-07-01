@@ -20,7 +20,7 @@ test("public docs do not contain local user paths", () => {
   const files = [
     "README.md",
     "AGENTS.md",
-    "docs/SPEC_V0.md",
+    "docs/DESIGN.md",
     "docs/HANDBOOK.md",
     "docs/AI_INSTALL.md",
     "docs/templates/PROJECT_AGENTS.md",
