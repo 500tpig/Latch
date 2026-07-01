@@ -222,6 +222,11 @@ function die(message: string): never {
   process.exit(1)
 }
 
+function help(message: string) {
+  console.log(message)
+  process.exit(0)
+}
+
 function slug(title: string) {
   return (
     title
@@ -289,6 +294,7 @@ switch (command) {
     break
   }
   case 'start': {
+    if (wantsHelp) help('Usage: latch start <title> [--use]')
     ensureInit()
     const title = args.filter((arg) => arg !== '--use').join(' ').trim()
     if (!title) die('Usage: latch start <title>')
@@ -414,6 +420,7 @@ switch (command) {
     break
   }
   case 'verify': {
+    if (wantsHelp) help('Usage: latch verify -- <command>')
     const separator = args.indexOf('--')
     const verifyArgs = separator >= 0 ? args.slice(separator + 1) : args
     if (verifyArgs.length === 0) die('Usage: latch verify -- <command>')
@@ -548,10 +555,7 @@ switch (command) {
     break
   }
   case 'done': {
-    if (wantsHelp) {
-      console.log('Usage: latch done')
-      break
-    }
+    if (wantsHelp) help('Usage: latch done')
     const task = targetTask()
     if (task.stage !== 'finish') die('Task must be in finish stage.')
     if (task.latest_verify?.status !== 'pass')
@@ -565,6 +569,7 @@ switch (command) {
     break
   }
   case 'abandon': {
+    if (wantsHelp) help('Usage: latch abandon [--reason <reason>] [--task <task-id>]')
     const task = targetTask()
     const reason = option('--reason')
     task.stage = 'abandoned'

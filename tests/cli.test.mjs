@@ -30,6 +30,22 @@ test("public docs do not contain local user paths", () => {
   }
 });
 
+test("agent skill copies stay identical", () => {
+  const agentsSkill = readFileSync(join(repoRoot, ".agents/skills/latch/SKILL.md"), "utf8");
+  const opencodeSkill = readFileSync(join(repoRoot, ".opencode/skills/latch/SKILL.md"), "utf8");
+
+  assert.equal(opencodeSkill, agentsSkill);
+});
+
+test("top-level help has no side effects", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  assert.match(run(cwd, []).stdout, /Usage: latch/);
+  assert.match(run(cwd, ["--help"]).stdout, /Usage: latch/);
+  assert.match(run(cwd, ["-h"]).stdout, /Usage: latch/);
+  assert.equal(existsSync(join(cwd, ".latch")), false);
+});
+
 test("task advances only after required fields and verification", () => {
   const cwd = mkdtempSync(join(tmpdir(), "latch-"));
 
@@ -171,6 +187,62 @@ test("done --help does not archive task", () => {
   assert.equal(result.status, 0);
   assert.match(result.stdout, /Usage: latch done/);
   assert.equal(existsSync(join(cwd, ".latch", "tasks", taskId, "task.json")), true);
+});
+
+test("done -h does not archive task", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Short help"]);
+  run(cwd, ["save", "--goal", "G", "--next", "N"]);
+  run(cwd, ["next"]);
+  run(cwd, ["next"]);
+  run(cwd, ["next"]);
+  run(cwd, ["verify", "--", process.execPath, "-e", "process.exit(0)"]);
+  run(cwd, ["next"]);
+
+  const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
+  const result = run(cwd, ["done", "-h"]);
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Usage: latch done/);
+  assert.equal(existsSync(join(cwd, ".latch", "tasks", taskId, "task.json")), true);
+});
+
+test("abandon --help does not archive task", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Help only"]);
+  const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
+
+  const result = run(cwd, ["abandon", "--help"]);
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Usage: latch abandon/);
+  assert.equal(existsSync(join(cwd, ".latch", "tasks", taskId, "task.json")), true);
+});
+
+test("verify --help does not write verification", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Verify help"]);
+  const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
+
+  const result = run(cwd, ["verify", "--help"]);
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Usage: latch verify/);
+
+  const task = JSON.parse(readFileSync(join(cwd, ".latch", "tasks", taskId, "task.json"), "utf8"));
+  assert.equal(task.latest_verify, undefined);
+});
+
+test("start --help does not create task", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  const result = run(cwd, ["start", "--help"]);
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Usage: latch start/);
+  assert.equal(existsSync(join(cwd, ".latch")), false);
 });
 
 test("abandon archives current task and preserves failed verification", () => {
