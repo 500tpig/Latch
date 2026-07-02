@@ -363,7 +363,43 @@ test("context emits task summary and json", () => {
   assert.equal(data.acceptance, "A");
   assert.equal(data.next, "N");
   assert.equal(data.knowledge_decision, null);
+  assert.deepEqual(data.artifacts, []);
   assert.equal(data.progress.can_advance, true);
+});
+
+test("save --artifact appends to task.artifacts and shows in context/resume", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["checkpoint", "Artifact task", "--goal", "G", "--scope", "S", "--acceptance", "A", "--next", "N"]);
+  // --artifact 可重复传，每个值形如 "<kind>:<path>"
+  run(cwd, ["save", "--artifact", "brief:docs/briefs/x.md", "--artifact", "prd:docs/prd/y.md"]);
+
+  const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
+  const task = JSON.parse(readFileSync(join(cwd, ".latch", "tasks", taskId, "task.json"), "utf8"));
+  assert.deepEqual(task.artifacts, [
+    { kind: "brief", path: "docs/briefs/x.md" },
+    { kind: "prd", path: "docs/prd/y.md" },
+  ]);
+
+  // context --json 输出整个数组
+  const json = run(cwd, ["context", "--json"]);
+  const data = JSON.parse(json.stdout);
+  assert.deepEqual(data.artifacts, task.artifacts);
+
+  // resume 人读输出里也有 Artifacts 行
+  const text = run(cwd, ["resume", "--brief"]);
+  assert.match(text.stdout, /Artifacts: brief:docs\/briefs\/x\.md  prd:docs\/prd\/y\.md/);
+});
+
+test("save --artifact rejects malformed value", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["checkpoint", "Bad artifact"]);
+  const result = run(cwd, ["save", "--artifact", "no-colon-path"]);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /must be "<kind>:<path>"/);
 });
 
 test("different actors keep separate current tasks", () => {
@@ -902,7 +938,12 @@ test("knowledge generate persists structured decision on task", () => {
   const task = JSON.parse(readFileSync(join(cwd, ".latch", "tasks", taskId, "task.json"), "utf8"));
   assert.equal(task.knowledge_decision, "generate");
   assert.equal(task.knowledge_reason, "生成知识卡");
-  assert.equal(typeof task.knowledge_card_path, "string");
+  // 知识卡路径改由 artifacts 数组里 kind="knowledge_card" 的一项表达
+  assert.ok(Array.isArray(task.artifacts), "artifacts should be an array");
+  const kc = task.artifacts.find((a) => a.kind === "knowledge_card");
+  assert.ok(kc, "artifacts should contain a knowledge_card entry");
+  assert.equal(typeof kc.path, "string");
+  assert.ok(!("knowledge_card_path" in task), "legacy knowledge_card_path field must be gone");
 });
 
 test("checkpoint creates task when none active", () => {

@@ -28,6 +28,8 @@ type Verify = {
   exit_code: number
   created_at: string
 }
+type Artifact = { kind: string; path: string }
+
 type Task = {
   id: string
   title: string
@@ -41,7 +43,9 @@ type Task = {
   knowledge_decision?: 'generate' | 'skip'
   knowledge_reason?: string
   knowledge_decided_at?: string
-  knowledge_card_path?: string
+  // task 指向 .latch/ 外部产物的统一指针；吃掉了旧的 knowledge_card_path，
+  // 改由 kind="knowledge_card" 的一项表达。kind 开放字符串，推荐值见 docs/ARTIFACTS.md。
+  artifacts?: Artifact[]
   latest_verify?: Verify
   created_at: string
   updated_at: string
@@ -309,7 +313,24 @@ function applyFieldOptions(task: Task): string[] {
   }
   if (knowledgeDecision === 'skip' && !knowledgeReason)
     throw new Error('`--knowledge skip` requires `--knowledge-reason`.')
-  if (knowledgeDecision === 'generate') delete task.knowledge_card_path
+  if (knowledgeDecision === 'generate') {
+    // 重新生成知识卡前先清掉旧卡指针，避免 artifacts 里残留过期路径
+    if (task.artifacts) {
+      task.artifacts = task.artifacts.filter((a) => a.kind !== 'knowledge_card')
+      if (task.artifacts.length === 0) delete task.artifacts
+    }
+  }
+  // --artifact 可重复传，每个值形如 "<kind>:<path>"，以第一个冒号切分；kind 必填、path 必填
+  for (const raw of optionAll('--artifact')) {
+    const sep = raw.indexOf(':')
+    if (sep <= 0) throw new Error(`\`--artifact\` must be "<kind>:<path>", got: ${raw}`)
+    const kind = raw.slice(0, sep).trim()
+    const path = raw.slice(sep + 1).trim()
+    if (!kind || !path) throw new Error(`\`--artifact\` kind and path are required, got: ${raw}`)
+    if (!task.artifacts) task.artifacts = []
+    task.artifacts.push({ kind, path })
+    changed.push('artifacts')
+  }
   return changed
 }
 
@@ -376,7 +397,7 @@ function ensureDoneReady(task: Task) {
     )
   if (!task.knowledge_reason)
     throw new Error('Knowledge decision requires `knowledge_reason`.')
-  if (task.knowledge_decision === 'generate' && !task.knowledge_card_path)
+  if (task.knowledge_decision === 'generate' && !knowledgeCardArtifact(task))
     throw new Error(
       'Knowledge decision is generate, but no knowledge card exists. Run `latch knowledge generate` first.',
     )
@@ -418,7 +439,7 @@ function taskContext(task: Task) {
     knowledge_decision: task.knowledge_decision ?? null,
     knowledge_reason: task.knowledge_reason ?? null,
     knowledge_decided_at: task.knowledge_decided_at ?? null,
-    knowledge_card_path: task.knowledge_card_path ?? null,
+    artifacts: task.artifacts ?? [],
     latest_verify: task.latest_verify ?? null,
     progress: progressSummary(task),
     notes_path: join(taskPath(task.id), 'notes.md'),
@@ -436,6 +457,7 @@ function scaffoldForStage(task: Task, stage: Stage) {
       '验证了什么：',
       '没验证什么：(有未覆盖范围必须写;没有写「无」)',
       '知识记忆：用 `latch save --knowledge generate|skip --knowledge-reason "..."` 记录',
+      '产出 artifact：用 `latch save --artifact <kind>:<path>` 记录 brief/prd/knowledge_card 等',
       '下次接什么：',
     ],
   }
@@ -448,6 +470,28 @@ function option(name: string) {
   // 值缺失或撞上下一个 flag 名时视为无值，避免把 "--xxx" 当成字段值写进 task.json
   const value = index >= 0 ? args[index + 1] : undefined
   return value && !value.startsWith('--') ? value : undefined
+}
+
+// 收集可重复 flag 的所有值，比如 --artifact a --artifact b
+function optionAll(name: string) {
+  const values: string[] = []
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] !== name) continue
+    const next = args[i + 1]
+    if (next && !next.startsWith('--')) values.push(next)
+  }
+  return values
+}
+
+// 找到 task.artifacts 里 kind="knowledge_card" 的那一项；knowledge generate 用它代替旧的 knowledge_card_path
+function knowledgeCardArtifact(task: Task): Artifact | undefined {
+  return task.artifacts?.find((a) => a.kind === 'knowledge_card')
+}
+
+// 把 artifacts 数组压成一行，方便 resume/context 人读输出展示给 AI 看
+function formatArtifacts(task: Task): string | null {
+  if (!task.artifacts || task.artifacts.length === 0) return null
+  return task.artifacts.map((a) => `${a.kind}:${a.path}`).join('  ')
 }
 
 const booleanFlags = new Set(['--all', '--draft', '--force', '--help', '--new', '-h'])
@@ -752,7 +796,7 @@ function commandUsage(name: string) {
       start: 'Usage: latch start <title> [--use]',
       checkpoint:
         'Usage: latch checkpoint <title> [--goal ...] [--scope ...] [--acceptance ...] [--next ...] [--task <task-id>] [--new] [--force]',
-      save: 'Usage: latch save [--goal ...] [--scope ...] [--acceptance ...] [--next ...] [--knowledge generate|skip] [--knowledge-reason "..."] [--task <task-id>]',
+      save: 'Usage: latch save [--goal ...] [--scope ...] [--acceptance ...] [--next ...] [--knowledge generate|skip] [--knowledge-reason "..."] [--artifact <kind>:<path> ...] [--task <task-id>]',
       next: 'Usage: latch next [--to <stage>] [--reason <reason>] [--task <task-id>]',
       verify: 'Usage: latch verify -- <command>',
       resume: 'Usage: latch resume [--brief] [--json] [--task <task-id>]',
@@ -1062,6 +1106,8 @@ switch (command) {
     console.log(
       `Verify: ${task.latest_verify ? `${task.latest_verify.status} ${task.latest_verify.command}` : 'none'}`,
     )
+    const artifactsLine = formatArtifacts(task)
+    if (artifactsLine) console.log(`Artifacts: ${artifactsLine}`)
     const progress = progressSummary(task)
     if (progress.advance_to)
       console.log(`Advance target: ${progress.advance_to}`)
@@ -1115,6 +1161,8 @@ switch (command) {
       console.log(
         `Verify: ${context.latest_verify ? `${context.latest_verify.status} ${context.latest_verify.command}` : 'none'}`,
       )
+      if (context.artifacts && context.artifacts.length > 0)
+        console.log(`Artifacts: ${context.artifacts.map((a) => `${a.kind}:${a.path}`).join('  ')}`)
       if (context.progress.advance_to)
         console.log(`Advance target: ${context.progress.advance_to}`)
       console.log(`Can advance: ${context.progress.can_advance ? 'yes' : 'no'}`)
@@ -1154,7 +1202,10 @@ switch (command) {
           task.knowledge_decision = 'generate'
           task.knowledge_reason ??= '生成知识卡'
           task.knowledge_decided_at = now()
-          task.knowledge_card_path = path
+          // 知识卡路径改由 artifacts 数组里 kind="knowledge_card" 的一项表达，统一外部产物指针
+          if (!task.artifacts) task.artifacts = []
+          task.artifacts = task.artifacts.filter((a) => a.kind !== 'knowledge_card')
+          task.artifacts.push({ kind: 'knowledge_card', path })
           saveTask(task)
           console.log(`Generated ${path}`)
           break

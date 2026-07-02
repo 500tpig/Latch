@@ -6,7 +6,7 @@
 
 | 层级 | 位置 | 用途 | 谁来读 |
 | --- | --- | --- | --- |
-| 任务状态 | `.latch/tasks/<id>/task.json` | 当前阶段、目标、验收、知识记忆状态 | CLI、AI |
+| 任务状态 | `.latch/tasks/<id>/task.json` | 当前阶段、目标、验收、知识记忆状态、artifacts 指针 | CLI、AI |
 | 过程记录 | `.latch/tasks/<id>/notes.md` | 取舍、验证、closure、临时上下文 | AI、人 |
 | 知识沉淀 | `.latch/knowledge/tasks/*.md` | 可复用做法、规则、引用 | AI、人 |
 | 正式方案 | `docs/briefs/` 或 `docs/prd/` | 面向人阅读的需求、方案、边界 | 人 |
@@ -61,3 +61,23 @@ PRD 解决的是“大家怎么理解同一件事”，不是“CLI 当前做到
 - `docs/prd/YYYY-MM-DD-<slug>.md`
 
 `slug` 用功能名、改动名或业务名，避免泛泛的 `plan`、`notes`、`update`。
+
+## task 怎么指回正式文档
+
+task 和正式文档的连接靠 `task.json` 上的 `artifacts` 数组，不靠人脑记。每项形如 `{ kind, path }`：
+
+```json
+"artifacts": [
+  { "kind": "brief", "path": "docs/briefs/2026-07-02-x.md" },
+  { "kind": "knowledge_card", "path": ".latch/knowledge/tasks/xxx.md" }
+]
+```
+
+- 写入：`latch save --artifact <kind>:<path>`，可重复传。
+- `kind` 是开放字符串，推荐值：`brief`、`prd`、`adr`、`doc`、`knowledge_card`、`runbook`。
+- `latch knowledge generate` 自动写入 `kind: "knowledge_card"` 一项，不需要手动 `--artifact`。
+- `resume`/`context`/`list --json` 都会带出 `artifacts`，人读输出里也有一行 `Artifacts:`。
+- brief 和 PRD 模板顶部有 `Source-Task: <task-id>` 占位行，反向指回 task；这是模板约定，不由 CLI 校验。
+
+正式文档层和任务状态层就此显式连上，不再靠记忆。
+

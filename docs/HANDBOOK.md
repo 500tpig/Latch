@@ -26,7 +26,7 @@ Latch 是一个项目内任务状态锁存器，用在 AI coding 任务碰到风
 | `latch start "<title>"` | 创建正式任务 | 可创建多个 open task；没有当前 actor 的 current 时自动设为 current。 |
 | `latch use <task-id> [--force]` | 切换当前 actor 的默认任务 | 默认只允许切到自己拥有的任务；`--force` 会接管 owner。 |
 | `latch checkpoint "<title>" ...` | 低摩擦进入 Latch | 没当前 actor 的 current 就创建；有 current 时，不带标题才会追加字段；带标题必须配 `--new`；`--new` 强制新建，不推进阶段。 |
-| `latch save ...` | 保存当前阶段字段 | 只记账，不推进阶段；也可写知识记忆判断。 |
+| `latch save ...` | 保存当前阶段字段 | 只记账，不推进阶段；也可写知识记忆判断和 artifacts 指针。 |
 | `latch next [--to <stage>]` | 推进阶段 | 会检查阶段门禁；进入 `brainstorm`、`grill`、`finish` 时写入模板。 |
 | `latch verify -- <command>` | 运行验证命令 | 真实执行命令，按退出码记录 `pass` 或 `fail`。 |
 | `latch resume` | 续接当前任务 | 输出任务字段和 `notes.md` 全文。 |
@@ -321,6 +321,19 @@ latch save --knowledge generate --knowledge-reason "有复用价值"
 ```
 
 两者都不推进阶段。
+
+外部产物指针也通过 `save` 写入结构化状态。`task.json` 上的 `artifacts` 数组统一表达 task 指向 `.latch/` 外的产物（brief、PRD、知识卡等），不再为每种产物单独加字段：
+
+```bash
+latch save --artifact brief:docs/briefs/2026-07-02-x.md
+latch save --artifact prd:docs/prd/2026-07-02-y.md --artifact adr:docs/decisions/z.md
+```
+
+- `--artifact` 可重复传，每个值形如 `<kind>:<path>`，以第一个冒号切分。
+- `kind` 是开放字符串，推荐值见 `docs/ARTIFACTS.md`。
+- `latch knowledge generate` 生成的知识卡自动以 `kind: "knowledge_card"` 写入 `artifacts`，不再单独写 `knowledge_card_path`。
+- `resume`/`context`/`list --json` 都输出 `artifacts` 数组；人读输出里也会有一行 `Artifacts:`。
+- 暂不支持通过 CLI 移除 artifact，需要更正时直接编辑 `task.json`。
 
 ### `next`
 
