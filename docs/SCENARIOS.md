@@ -209,10 +209,20 @@ latch log "<summary>" --files a.ts,b.ts
 
 1. 先运行 `git status --short`。
 2. 如果 `.latch/state.json` 有 current task，运行 `latch resume --brief`。
-3. 根据本页判断是否进入 Latch。
-4. 进入后先 `checkpoint`，再决定 `brainstorm`、`grill` 或 `plan`。
-5. 纯文档或 commit 任务无 verify 意义时，字段填齐后用 `latch next --to finish` 跳级收尾，不强制走 `dev`/`check` 或凑数 `verify`。
-6. 不要求用户手动执行 Latch 命令；用户明确拒绝时除外。
+3. 如果用户已经明确给了 task ID，先运行 `latch resume --brief --task <id>` 或 `latch context <id>`。
+4. 根据本页判断是否进入 Latch。
+5. 进入后先 `checkpoint`，再决定 `brainstorm`、`grill` 或 `plan`。
+6. 纯文档或 commit 任务无 verify 意义时，字段填齐后用 `latch next --to finish` 跳级收尾，不强制走 `dev`/`check` 或凑数 `verify`。
+7. 不要求用户手动执行 Latch 命令；用户明确拒绝时除外。
+
+任务分流默认规则：
+
+- `resume --brief` 后发现当前 task 和用户这次要处理的是同一件事，继续原 task。
+- 用户已经点名某张 task 时，先读那张 task，不要被“当前 actor 没 current task”误导去新开任务。
+- 只要这次问题已经换题，即使还在同一 repo、同一会话，也必须 `checkpoint --new`。
+- 有 current task 时，带标题的 `checkpoint` 一律视为“新任务”，必须配 `--new`；不然宁可报错，不靠猜。
+- 旧任务已被误记污染时，新问题另开 task，旧任务只补污染说明、误记时间和新 task ID。
+- Latch 写命令必须串行，不并行调度。
 
 如果 `latch` 报 `command not found`，先试：
 

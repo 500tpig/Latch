@@ -12,6 +12,7 @@
 - 如果 AI 工具报 `command not found: latch`，先试 `zsh -ic 'latch resume --brief'`，不要写入本机绝对路径。
 - 验证必须通过 `latch verify -- <command>` 记录。
 - verify 通过后进入 `finish`，补 closure，写清改动、验证、未覆盖范围和下次接什么；只有用户确认后才执行 `latch done`。
+- 不要把 `task.json` 或 `notes.md` 当成正式需求文档；中等功能额外写 `docs/briefs/`，大需求额外写 `docs/prd/`。
 - `git commit`、`git push` 和 `latch done` 都需要用户明确确认；没有明确说「提交」「推送」或「归档」时，AI 不得自动执行。
 - 跨项目同步 Latch 规则时，每个被修改的目标项目都用 `latch log` 留痕。
 
