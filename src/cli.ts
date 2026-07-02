@@ -450,16 +450,26 @@ function option(name: string) {
   return value && !value.startsWith('--') ? value : undefined
 }
 
+const booleanFlags = new Set(['--all', '--draft', '--force', '--help', '--new', '-h'])
+
+function firstPositionalArg(values: string[]) {
+  let skipValue = false
+  for (const value of values) {
+    if (skipValue) {
+      skipValue = false
+      continue
+    }
+    if (value.startsWith('--') || value === '-h') {
+      // 默认把未知 long flag 当成“带值”处理，避免新加字段 flag 时把它的值误认成 title
+      skipValue = !booleanFlags.has(value)
+      continue
+    }
+    return value
+  }
+}
+
 function checkpointTitleArg() {
-  return args.find(
-    (a, index) =>
-      !a.startsWith('--') &&
-      args[index - 1] !== '--task' &&
-      args[index - 1] !== '--goal' &&
-      args[index - 1] !== '--scope' &&
-      args[index - 1] !== '--acceptance' &&
-      args[index - 1] !== '--next',
-  )
+  return firstPositionalArg(args)
 }
 
 function die(message: string): never {
@@ -602,14 +612,6 @@ function writeKnowledgeCard(path: string, meta: KnowledgeCardMeta, body: string)
   writeFileSync(path, lines.join('\n'))
 }
 
-function firstNonFlag(values: string[]) {
-  return values.find((value, index) => {
-    if (value.startsWith('--')) return false
-    const prev = values[index - 1]
-    return prev !== '--task' && prev !== '--line'
-  })
-}
-
 function buildKnowledgeMeta(task: Task) {
   const modules = splitCsv(option('--module'))
   const keywords = splitCsv(option('--keyword'))
@@ -717,12 +719,6 @@ function recallKnowledge() {
       return
     }
   }
-  const taskId = firstNonFlag(args.slice(1))
-  if (taskId) {
-    const task = readTask(taskId)
-    console.log(`${task.id}\ttask\t${join(taskPath(task.id), 'notes.md')}`)
-    return
-  }
   console.log('No knowledge match.')
 }
 
@@ -734,11 +730,12 @@ function verifyKnowledgeCards(taskId?: string) {
   let changed = 0
   for (const card of cards) {
     const citations = card.meta.citations.map((item) => {
-      const exists = existsSync(join(root, item.path))
-      const symbolOk = item.symbol === 'unknown' ? false : spawnSync('rg', ['-n', item.symbol, join(root, item.path)], {
-        encoding: 'utf8',
-        env: commandEnv(root),
-      }).status === 0
+      const sourcePath = join(root, item.path)
+      const exists = existsSync(sourcePath)
+      const symbolOk =
+        exists &&
+        item.symbol !== 'unknown' &&
+        readFileSync(sourcePath, 'utf8').includes(item.symbol)
       const unverified = !(exists && symbolOk)
       if (unverified !== Boolean(item.unverified)) changed += 1
       return unverified ? { ...item, unverified: true } : { path: item.path, symbol: item.symbol, ...(item.line ? { line: item.line } : {}), source_task: item.source_task }

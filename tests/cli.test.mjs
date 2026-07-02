@@ -14,6 +14,7 @@ function run(cwd, args, options = {}) {
     encoding: "utf8",
     env: {
       ...process.env,
+      ...(options.env ?? {}),
       PWD: cwd,
       LATCH_ACTOR: options.actor ?? "default",
     },
@@ -219,6 +220,18 @@ test("knowledge recall follows path then keyword then module", () => {
   assert.match(byModule.stdout, /module\trouter\t/);
 });
 
+test("knowledge recall no longer accepts positional task id", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Recall task"]);
+  const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
+
+  const result = run(cwd, ["knowledge", "recall", taskId]);
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /No knowledge match\./);
+});
+
 test("knowledge verify marks missing citation as unverified", () => {
   const cwd = mkdtempSync(join(tmpdir(), "latch-"));
 
@@ -244,6 +257,36 @@ test("knowledge verify marks missing citation as unverified", () => {
   const files = readdirSync(join(cwd, ".latch", "knowledge", "tasks"));
   const content = readFileSync(join(cwd, ".latch", "knowledge", "tasks", files[0]), "utf8");
   assert.match(content, /unverified/);
+});
+
+test("knowledge verify does not require rg in PATH", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  mkdirSync(join(cwd, "src"), { recursive: true });
+  writeFileSync(join(cwd, "src", "cli.ts"), "export const currentTask = true;\n");
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Verify knowledge without rg"]);
+  run(cwd, ["save", "--goal", "G", "--scope", "S", "--acceptance", "A", "--next", "N"]);
+  run(cwd, [
+    "knowledge",
+    "generate",
+    "--draft",
+    "--module",
+    "router",
+    "--keyword",
+    "current",
+    "--path",
+    "src/cli.ts",
+    "--symbol",
+    "currentTask",
+  ]);
+  const result = run(cwd, ["knowledge", "verify", "--all"], { env: { PATH: "" } });
+  assert.equal(result.status, 0);
+
+  const files = readdirSync(join(cwd, ".latch", "knowledge", "tasks"));
+  const content = readFileSync(join(cwd, ".latch", "knowledge", "tasks", files[0]), "utf8");
+  assert.doesNotMatch(content, /unverified/);
 });
 
 test("start allows multiple open tasks and keeps current task", () => {
@@ -949,6 +992,19 @@ test("checkpoint --new creates a fresh task even when current task exists", () =
   assert.equal(second.next, "New next");
   assert.equal(state.current_task_id, secondId);
   assert.equal(state.actors.default.current_task_id, secondId);
+});
+
+test("checkpoint title parsing skips values of unknown flags", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  const result = run(cwd, ["checkpoint", "--reason", "ignored", "Fresh task", "--goal", "New goal"]);
+  assert.equal(result.status, 0);
+
+  const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
+  const task = JSON.parse(readFileSync(join(cwd, ".latch", "tasks", taskId, "task.json"), "utf8"));
+  assert.equal(task.title, "Fresh task");
+  assert.equal(task.goal, "New goal");
 });
 
 test("checkpoint can update an explicit task with --task without requiring --new", () => {
