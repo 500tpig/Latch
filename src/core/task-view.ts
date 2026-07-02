@@ -1,15 +1,36 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { taskPath } from './task-store.js'
-import { advanceBlockers, defaultNext } from './progress.js'
+import { advanceBlockers, defaultNext, ensureDoneReady } from './progress.js'
 import { recentEvents } from './notes-events.js'
 import { actorId } from './ownership.js'
 import type { Task } from './types.js'
+
+function finishNextAction(task: Task, reason: string) {
+  if (reason.includes('Knowledge decision is required'))
+    return 'run `latch finish --knowledge generate|skip --knowledge-reason "..."`'
+  if (reason.includes('no knowledge card exists'))
+    return 'run `latch knowledge generate`'
+  if (reason.includes('Latest verification must pass'))
+    return 'run `latch verify -- <command>`'
+  return task.next ?? 'fill the remaining finish fields first'
+}
 
 // 把阶段规则压成给人和 AI 读的摘要结构：能不能推进、卡在哪、下一步干什么。
 // 读状态靠 progress 模块的纯规则函数，这里只负责拼输出形状。
 export function progressSummary(task: Task) {
   if (task.stage === 'finish') {
+    try {
+      ensureDoneReady(task)
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      return {
+        advance_to: 'done',
+        can_advance: false,
+        blocked_reasons: [reason],
+        next_action: finishNextAction(task, reason),
+      }
+    }
     return {
       advance_to: 'done',
       can_advance: false,
@@ -75,6 +96,7 @@ export function taskContext(task: Task) {
     latest_verify: task.latest_verify ?? null,
     progress: progressSummary(task),
     notes_path: join(taskPath(task.id), 'notes.md'),
+    recent_events: recentEvents(task, 5),
   }
 }
 
@@ -96,12 +118,14 @@ export function commandUsage(name: string) {
       checkpoint:
         'Usage: latch checkpoint <title> [--goal ...] [--scope ...] [--acceptance ...] [--next ...] [--task <task-id>] [--new] [--force]',
       save: 'Usage: latch save [--goal ...] [--scope ...] [--acceptance ...] [--next ...] [--knowledge generate|skip] [--knowledge-reason "..."] [--artifact <kind>:<path> ...] [--task <task-id>]',
+      finish:
+        'Usage: latch finish [--changes "..."] [--verified "..."] [--unverified "..."] [--followup "..."] [--knowledge generate|skip] [--knowledge-reason "..."] [--artifact <kind>:<path> ...] [--task <task-id>] [--force]',
       next: 'Usage: latch next [--to <stage>] [--reason <reason>] [--task <task-id>]',
       verify: 'Usage: latch verify -- <command>',
       resume: 'Usage: latch resume [--brief] [--json] [--task <task-id>]',
       list: 'Usage: latch list [--json]',
       log: 'Usage: latch log <summary> [--files a,b,c]',
-      done: 'Usage: latch done',
+      done: 'Usage: latch done [--task <task-id>|--all --yes] [--force]',
       abandon: 'Usage: latch abandon [--reason <reason>] [--task <task-id>]',
       use: 'Usage: latch use <task-id> [--force]',
       context: 'Usage: latch context [<task-id>] [--brief] [--json]',

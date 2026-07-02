@@ -5,6 +5,31 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { run } from "./helpers.mjs";
 
+function startTask(cwd, title) {
+  const result = run(cwd, ["start", title]);
+  assert.equal(result.status, 0);
+  const match = result.stdout.match(/Started (\S+)/);
+  assert.ok(match, "start should print task id");
+  return match[1];
+}
+
+function moveTaskToFinish(cwd, taskId, { knowledge = true } = {}) {
+  assert.equal(run(cwd, ["save", "--task", taskId, "--goal", "G", "--next", "N"]).status, 0);
+  assert.equal(run(cwd, ["next", "--task", taskId]).status, 0);
+  assert.equal(run(cwd, ["next", "--task", taskId]).status, 0);
+  assert.equal(run(cwd, ["next", "--task", taskId]).status, 0);
+  assert.equal(
+    run(cwd, ["verify", "--task", taskId, "--", process.execPath, "-e", "process.exit(0)"]).status,
+    0,
+  );
+  assert.equal(run(cwd, ["next", "--task", taskId]).status, 0);
+  if (knowledge)
+    assert.equal(
+      run(cwd, ["save", "--task", taskId, "--knowledge", "skip", "--knowledge-reason", "一次性任务"]).status,
+      0,
+    );
+}
+
 test("knowledge generate --draft writes task card before finish", () => {
   const cwd = mkdtempSync(join(tmpdir(), "latch-"));
 
@@ -186,6 +211,41 @@ test("done passes after explicit skip knowledge decision", () => {
   run(cwd, ["save", "--knowledge", "skip", "--knowledge-reason", "一次性任务"]);
 
   assert.equal(run(cwd, ["done"]).status, 0);
+});
+
+test("done accepts a unique task id prefix", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  const taskId = startTask(cwd, "拆分 cli.ts 第一刀");
+  moveTaskToFinish(cwd, taskId);
+
+  const prefix = taskId.split("-")[0];
+  const result = run(cwd, ["done", "--task", prefix]);
+  assert.equal(result.status, 0);
+  assert.equal(readdirSync(join(cwd, ".latch", "tasks")).length, 0);
+});
+
+test("done --all --yes archives every ready finish task and leaves blocked ones", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  const readyA = startTask(cwd, "Ready A");
+  const readyB = startTask(cwd, "Ready B");
+  const blocked = startTask(cwd, "Blocked C");
+  moveTaskToFinish(cwd, readyA);
+  moveTaskToFinish(cwd, readyB);
+  moveTaskToFinish(cwd, blocked, { knowledge: false });
+
+  const result = run(cwd, ["done", "--all", "--yes"]);
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, new RegExp(`Archived ${readyA}`));
+  assert.match(result.stdout, new RegExp(`Archived ${readyB}`));
+  assert.match(result.stdout, /Skipped finish tasks:/);
+  assert.match(result.stdout, new RegExp(`${blocked}: Knowledge decision is required`));
+
+  const tasks = readdirSync(join(cwd, ".latch", "tasks"));
+  assert.deepEqual(tasks, [blocked]);
 });
 
 test("save rejects skip knowledge decision without reason", () => {

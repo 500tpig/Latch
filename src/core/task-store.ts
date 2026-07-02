@@ -101,15 +101,24 @@ export function clearTaskFromState(id: string) {
   writeJson(statePath, next)
 }
 
+function resolveOpenTaskId(id: string) {
+  const exactPath = join(taskPath(id), 'task.json')
+  if (existsSync(exactPath)) return id
+  const matches = openTaskIds().filter((taskId) => taskId.startsWith(id))
+  if (matches.length === 1) return matches[0]
+  if (matches.length > 1)
+    throw new Error(`Task id is ambiguous: ${id}. Matches: ${matches.join(', ')}`)
+  throw new Error(`Task not found: ${id}`)
+}
+
 export function readTask(id: string): Task {
-  const path = join(taskPath(id), 'task.json')
-  if (!existsSync(path)) die(`Task not found: ${id}`)
+  const path = join(taskPath(resolveOpenTaskId(id)), 'task.json')
   return readJson<Task>(path, undefined as never)
 }
 
 export function currentTask(): Task {
   const current = currentTaskId()
-  if (!current) die('No current task.')
+  if (!current) throw new Error('No current task.')
   return readTask(current)
 }
 

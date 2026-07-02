@@ -5,94 +5,26 @@ description: Use when a coding task becomes long, risky, cross-session, or needs
 
 # Latch
 
-Latch 是当前 repo 的单任务状态锁存器。进入 Latch 后，先记录现场，再按阶段推进，最后用真实命令验证；只有用户确认后才归档。
+Latch 是当前 repo 的任务状态锁存器。进入后先记录现场，再按阶段推进，最后用真实命令验证；只有用户确认后才归档。完整流程、命令清单和阶段门禁见 `docs/HANDBOOK.md`，本文只给入口。
 
-详细手册见 `docs/HANDBOOK.md`。常见触发语和阶段选择见 `docs/SCENARIOS.md`。设计取舍与边界见 `docs/DESIGN.md`。安装或接入新项目时，先读 `docs/AI_INSTALL.md`。
+## 真源
+
+- 流程和命令清单：`docs/HANDBOOK.md`
+- 文档分层（何时只用 Latch / 加 brief / 加 PRD）：`docs/ARTIFACTS.md`
+- 何时进入 Latch（触发正文）：`AGENTS.md`
+- 安装或接入新项目：`docs/AI_INSTALL.md`
+- 触发语和阶段示例：`docs/SCENARIOS.md`；设计取舍：`docs/DESIGN.md`
 
 ## 先做什么
 
-1. 代码工作开始前先看 `git status --short`。
-2. 如果 `.latch/state.json` 有 active task，先运行：
+1. `git status --short`。
+2. AI 续接默认入口：`latch context --json`（无参读当前 actor 的 current task）。需要看用户点名 task 时用 `latch context <task-id> --json`；多 task 时用 `latch list --json`。
+3. 非 interactive shell 报 `command not found: latch` 时，先试 `zsh -ic 'latch context --json'`。不要把本机绝对路径写进项目规则或 skill。
 
-```bash
-latch resume --brief
-```
+## 硬触发（Latch 自身反馈）
 
-如果 AI 工具的非交互 shell 报 `command not found: latch`，先试：
+`latch` 命令不可用、只能靠 shell fallback、AI 接入 Latch、记录规则漏触发，或用户指出「这应该被记录」——一旦命中，先 `latch checkpoint` 再排查，不得当成小修直接动手。其余触发（风险域、跨会话续接、规划类、用户显式要求等）见 `AGENTS.md`。
 
-```bash
-zsh -ic 'latch resume --brief'
-```
+## 阶段一句话
 
-不要把 `/Users/...` 这类本机绝对路径写进项目规则或 skill。确实在开发 Latch 本仓库且全局命令不可用时，才用 `pnpm build && node dist/cli.js ...`。
-
-3. 如果当前任务需要进入 Latch，立刻 checkpoint：
-
-```bash
-latch checkpoint "<任务标题>" \
-  --goal "<目标>" \
-  --scope "<范围>" \
-  --acceptance "<验收>" \
-  --next "<下一步>"
-```
-
-## 什么时候进入 Latch
-
-- Latch 自身反馈（硬触发，优先于「小请求不进入 Latch」）：`latch` 命令不可用、只能靠 shell fallback、AI 接入 Latch、记录规则漏触发，或用户指出「这应该被记录」。一旦命中，先 `latch checkpoint` 再排查，不得当成小修直接动手。
-- 认证、登录、权限、路由、状态流、持久化、API 契约、数据迁移。
-- 需要复现 bug、跨会话续接、方案讨论后再实现。
-- 用户要求规划项目后续、完善项目、讨论路线图或先讨论怎么推进。
-- 用户明确要求记录任务、可追溯、收尾归档。
-
-小请求不进入 Latch。没进 Latch 的小修只需要留痕时，用：
-
-```bash
-latch log "<summary>" --files a.ts,b.ts
-```
-
-## 阶段流程
-
-```text
-triage -> brainstorm? -> grill? -> plan -> dev -> check -> finish -> done
-blocked 可从任意阶段进入
-```
-
-`latch next` 只推进阶段，不替 AI 规划，也不运行验证。
-
-规划类请求默认由 AI 自动 checkpoint 后进入 `brainstorm`，不要求用户手动敲命令。讨论涉及安装方式、项目规则、跨项目同步、发布、存储、API 契约、权限或迁移等难回退选择时，AI 应主动转入 `grill`。
-
-## 验证和收尾
-
-验证必须用：
-
-```bash
-latch verify -- <command>
-```
-
-推荐跑最小相关验证。全项目有既有失败时，不把全量失败当成小修门槛；在 finish closure 写清没验证什么。
-
-verify 通过后：
-
-```bash
-latch next
-```
-
-进入 `finish` 后必须补 closure：写清改了什么、验证了什么、没验证什么、下次接什么。只有用户明确确认完成、收尾或归档时，才执行：
-
-```bash
-latch done
-```
-
-`git commit`、`git push` 和 `latch done` 都不属于默认后续动作。只有用户明确说「提交」「推送」或「归档」后，AI 才可执行这些命令。
-
-`done` 不负责 commit。
-
-## 续接提示
-
-继续任务时，先用：
-
-```bash
-latch resume --brief
-```
-
-只处理 `Next` 指向的范围，不扩大改动。失败时只看相关报错，修完用同一类 `latch verify` 重新记录结果。
+`triage -> brainstorm? -> grill? -> plan -> dev -> check -> finish -> done`，`blocked` 可从任意阶段进入。`latch next` 只推进阶段，不替 AI 规划，也不运行验证。验证必须用 `latch verify -- <command>`。归档用 `latch done`，且只有用户明确确认后才执行；`done` 不负责 commit。

@@ -217,6 +217,24 @@ test("save --help does not change current task", () => {
   assert.equal(readFileSync(join(cwd, ".latch", "tasks", taskId, "events.jsonl"), "utf8"), eventsBefore);
 });
 
+test("finish --help does not change current task", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Finish help"]);
+  const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
+  const taskBefore = readFileSync(join(cwd, ".latch", "tasks", taskId, "task.json"), "utf8");
+  const notesBefore = readFileSync(join(cwd, ".latch", "tasks", taskId, "notes.md"), "utf8");
+  const eventsBefore = readFileSync(join(cwd, ".latch", "tasks", taskId, "events.jsonl"), "utf8");
+
+  const result = run(cwd, ["finish", "--help"]);
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Usage: latch finish/);
+  assert.equal(readFileSync(join(cwd, ".latch", "tasks", taskId, "task.json"), "utf8"), taskBefore);
+  assert.equal(readFileSync(join(cwd, ".latch", "tasks", taskId, "notes.md"), "utf8"), notesBefore);
+  assert.equal(readFileSync(join(cwd, ".latch", "tasks", taskId, "events.jsonl"), "utf8"), eventsBefore);
+});
+
 test("next --help does not advance task", () => {
   const cwd = mkdtempSync(join(tmpdir(), "latch-"));
 
@@ -273,4 +291,18 @@ test("save fails while latch lock is held", () => {
 
   const task = JSON.parse(readFileSync(taskPath, "utf8"));
   assert.equal(task.goal, "Original goal");
+});
+
+test("done with missing task clears lock before exiting", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+
+  const result = run(cwd, ["done", "--task", "missing-task"]);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Task not found/);
+  assert.equal(existsSync(join(cwd, ".latch", ".lock")), false);
+
+  const followUp = run(cwd, ["start", "After missing done"]);
+  assert.equal(followUp.status, 0);
 });

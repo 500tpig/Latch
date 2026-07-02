@@ -157,6 +157,16 @@ test("done rejected outside finish stage", () => {
   assert.notEqual(run(cwd, ["done"]).status, 0);
 });
 
+test("finish rejected outside finish stage", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Too early"]);
+  const result = run(cwd, ["finish", "--changes", "还没到 finish"]);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Task must be in finish stage/);
+});
+
 test("entering grill scaffolds open-questions template", () => {
   const cwd = mkdtempSync(join(tmpdir(), "latch-"));
 
@@ -188,6 +198,52 @@ test("entering finish scaffolds closure template", () => {
   assert.match(notes, /下次接什么：/);
   // 「没验证什么」格子必须带固定提示,逼 AI 写清未覆盖范围或显式写「无」
   assert.match(notes, /没有写「无」/);
+});
+
+test("finish writes closure and structured fields in one command", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Finish command"]);
+  run(cwd, ["save", "--goal", "G", "--next", "N"]);
+  run(cwd, ["next"]);
+  run(cwd, ["next"]);
+  run(cwd, ["next"]);
+  run(cwd, ["verify", "--", process.execPath, "-e", "process.exit(0)"]);
+  run(cwd, ["next"]);
+
+  const result = run(cwd, [
+    "finish",
+    "--changes",
+    "收口 finish 流程",
+    "--verified",
+    "pnpm test",
+    "--unverified",
+    "无",
+    "--followup",
+    "等用户确认后 done",
+    "--knowledge",
+    "skip",
+    "--knowledge-reason",
+    "一次性调整",
+    "--artifact",
+    "brief:docs/briefs/x.md",
+  ]);
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Saved finish closure/);
+
+  const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
+  const task = JSON.parse(readFileSync(join(cwd, ".latch", "tasks", taskId, "task.json"), "utf8"));
+  assert.equal(task.knowledge_decision, "skip");
+  assert.equal(task.knowledge_reason, "一次性调整");
+  assert.deepEqual(task.artifacts, [{ kind: "brief", path: "docs/briefs/x.md" }]);
+
+  const notes = readFileSync(join(cwd, ".latch", "tasks", taskId, "notes.md"), "utf8");
+  assert.match(notes, /## Finish closure/);
+  assert.match(notes, /改了什么：收口 finish 流程/);
+  assert.match(notes, /验证了什么：pnpm test/);
+  assert.match(notes, /没验证什么：无/);
+  assert.match(notes, /下次接什么：等用户确认后 done/);
 });
 
 test("checkpoint creates task when none active", () => {

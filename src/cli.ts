@@ -51,7 +51,7 @@ import type { Stage, Task } from './core/types.js'
 const command = process.argv[2]
 const args = process.argv.slice(3)
 const usage =
-  'Usage: latch <init|start|checkpoint|save|next|verify|resume|list|log|done|abandon|use|context|knowledge>'
+  'Usage: latch <init|start|checkpoint|save|finish|next|verify|resume|list|log|done|abandon|use|context|knowledge>'
 
 function wantsForce() {
   return args.includes('--force')
@@ -63,6 +63,14 @@ function targetTask(options: { write?: boolean } = {}): Task {
   if (options.write) claimTask(task, wantsForce())
   else if (!id) ensureTaskOwnedByActor(task)
   return task
+}
+
+function orDie<T>(fn: () => T): T {
+  try {
+    return fn()
+  } catch (error) {
+    die(error instanceof Error ? error.message : String(error))
+  }
 }
 
 const KNOWLEDGE_DECISIONS = new Set(['generate', 'skip'])
@@ -131,7 +139,7 @@ function optionAll(name: string) {
   return values
 }
 
-const booleanFlags = new Set(['--all', '--draft', '--force', '--help', '--new', '-h'])
+const booleanFlags = new Set(['--all', '--draft', '--force', '--help', '--new', '--yes', '-h'])
 
 function firstPositionalArg(values: string[]) {
   let skipValue = false
@@ -151,6 +159,15 @@ function firstPositionalArg(values: string[]) {
 
 function checkpointTitleArg() {
   return firstPositionalArg(args)
+}
+
+function finishClosureFields() {
+  return {
+    changes: option('--changes'),
+    verified: option('--verified'),
+    unverified: option('--unverified'),
+    followup: option('--followup'),
+  }
 }
 
 function help(message: string) {
@@ -269,6 +286,34 @@ switch (command) {
     })
     break
   }
+  case 'finish': {
+    runLocked(() => {
+      const task = targetTask({ write: true })
+      if (task.stage !== 'finish')
+        throw new Error('Task must be in finish stage.')
+      const closure = finishClosureFields()
+      const changed = applyFieldOptions(task)
+      const hasClosure =
+        closure.changes || closure.verified || closure.unverified || closure.followup
+      if (!hasClosure && changed.length === 0)
+        throw new Error(commandUsage('finish'))
+      if (hasClosure) {
+        appendNotes(task, 'Finish closure', [
+          `改了什么：${closure.changes ?? ''}`,
+          `验证了什么：${closure.verified ?? ''}`,
+          `没验证什么：${closure.unverified ?? ''}`,
+          `下次接什么：${closure.followup ?? ''}`,
+        ])
+      }
+      saveTask(task)
+      event(task, 'finish_saved', {
+        closure: hasClosure,
+        fields: changed,
+      })
+      console.log('Saved finish closure')
+    })
+    break
+  }
   case 'next': {
     runLocked(() => {
       const task = targetTask({ write: true })
@@ -329,13 +374,13 @@ switch (command) {
       console.log('No current task.')
       break
     }
-    const task = id ? readTask(id) : targetTask()
+    const task = orDie(() => (id ? readTask(id) : targetTask()))
     printResume(task, { brief: args.includes('--brief'), json: args.includes('--json') })
     break
   }
   case 'context': {
     const id = args.find((arg) => !arg.startsWith('--'))
-    const task = id ? readTask(id) : targetTask()
+    const task = orDie(() => (id ? readTask(id) : targetTask()))
     printContext(task, { brief: args.includes('--brief'), json: args.includes('--json') })
     break
   }
@@ -433,6 +478,47 @@ switch (command) {
   }
   case 'done': {
     runLocked(() => {
+      if (args.includes('--all') && option('--task'))
+        throw new Error('Use either `latch done --task <task-id>` or `latch done --all --yes`.')
+      if (args.includes('--all')) {
+        if (!args.includes('--yes'))
+          throw new Error('`latch done --all` requires `--yes`.')
+        const ready: Task[] = []
+        const blocked: string[] = []
+        for (const id of openTaskIds()) {
+          const task = readTask(id)
+          if (task.stage !== 'finish') continue
+          try {
+            ensureDoneReady(task)
+            claimTask(task, wantsForce())
+            ready.push(task)
+          } catch (error) {
+            blocked.push(
+              `${task.id}: ${error instanceof Error ? error.message : String(error)}`,
+            )
+          }
+        }
+        if (ready.length === 0) {
+          if (blocked.length > 0)
+            throw new Error(
+              `No finish tasks ready to archive.\n${blocked.join('\n')}`,
+            )
+          throw new Error('No finish tasks ready to archive.')
+        }
+        for (const task of ready) {
+          task.stage = 'done'
+          task.status = 'done'
+          saveTask(task)
+          event(task, 'done')
+          archiveTask(task)
+          console.log(`Archived ${task.id}`)
+        }
+        if (blocked.length > 0) {
+          console.log('Skipped finish tasks:')
+          for (const message of blocked) console.log(`- ${message}`)
+        }
+        return
+      }
       const task = targetTask({ write: true })
       ensureDoneReady(task)
       task.stage = 'done'

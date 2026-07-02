@@ -144,6 +144,22 @@ test("resume --task can read an explicit task without current task", () => {
   assert.match(result.stdout, /Blocked by: missing goal or next/);
 });
 
+test("resume --task rejects ambiguous task id prefix", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "First task"]);
+  run(cwd, ["start", "Second task"]);
+  const [firstId, secondId] = readdirSync(join(cwd, ".latch", "tasks")).sort();
+  const prefix = firstId.slice(0, 4);
+
+  const result = run(cwd, ["resume", "--task", prefix]);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Task id is ambiguous/);
+  assert.match(result.stderr, new RegExp(firstId));
+  assert.match(result.stderr, new RegExp(secondId));
+});
+
 test("resume --json returns the same structured context", () => {
   const cwd = mkdtempSync(join(tmpdir(), "latch-"));
 
@@ -199,6 +215,24 @@ test("resume explains verify gate when check cannot advance", () => {
   assert.match(result.stdout, /Blocked by: missing latest verify/);
 });
 
+test("resume explains finish prerequisites before user confirmation", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Finish gate"]);
+  run(cwd, ["save", "--goal", "G", "--scope", "S", "--acceptance", "A", "--next", "N"]);
+  run(cwd, ["next"]);
+  run(cwd, ["next"]);
+  run(cwd, ["next"]);
+  run(cwd, ["verify", "--", process.execPath, "-e", "process.exit(0)"]);
+  run(cwd, ["next"]);
+
+  const result = run(cwd, ["resume", "--brief"]);
+  assert.match(result.stdout, /Advance target: done/);
+  assert.match(result.stdout, /Next action: run `latch finish --knowledge generate\|skip --knowledge-reason "\.\.\."`/);
+  assert.match(result.stdout, /Knowledge decision is required/);
+});
+
 test("context --json includes progress summary", () => {
   const cwd = mkdtempSync(join(tmpdir(), "latch-"));
 
@@ -214,4 +248,7 @@ test("context --json includes progress summary", () => {
     blocked_reasons: ["missing goal or next"],
     next_action: "fill the missing task fields first",
   });
+  // recent_events: AI 默认入口 context --json 必须带最近动作线索
+  assert.ok(Array.isArray(context.recent_events));
+  assert.ok(context.recent_events.length >= 1);
 });

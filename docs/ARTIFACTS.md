@@ -7,11 +7,13 @@
 | 层级 | 位置 | 用途 | 谁来读 |
 | --- | --- | --- | --- |
 | 任务状态 | `.latch/tasks/<id>/task.json` | 当前阶段、目标、验收、知识记忆状态、artifacts 指针 | CLI、AI |
-| 过程记录 | `.latch/tasks/<id>/notes.md` | 取舍、验证、closure、临时上下文 | AI、人 |
+| 过程记录 | `.latch/tasks/<id>/notes.md` | 取舍、验证、closure、临时上下文 | 人主读；AI 写 closure/events，需追溯细节时兜底读 |
 | 知识沉淀 | `.latch/knowledge/tasks/*.md` | 可复用做法、规则、引用 | AI、人 |
 | 正式方案 | `docs/briefs/` 或 `docs/prd/` | 面向人阅读的需求、方案、边界 | 人 |
 
 前两层是运行时内存，不追求好看。后两层才是正式产物。
+
+`notes.md` 的兜底读时机：当 `context --json` 的 `recent_events` 指向未展开内容，或 `progress.next_action` 卡住时，AI 再读 `notes.md` 取细节；顺利路径下不必读。
 
 ## 什么时候只用 Latch
 
