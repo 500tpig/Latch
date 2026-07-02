@@ -181,7 +181,7 @@ latch next --to grill --reason "Latch 自身反馈属于规则判断问题"
 完成标准：
 
 - 先 checkpoint，再排查；不当成小环境修直接改 shell 配置。
-- `latch` 不可用时先用 `zsh -ic 'latch resume --brief'` 恢复命令；这一步只为让命令先跑起来，不代表要续接旧任务。恢复后如果命中本场景，第一步仍是 checkpoint。
+- `latch` 不可用时先用 `zsh -ic 'latch context --json'` 恢复命令；这一步只为让命令先跑起来，不代表要续接旧任务。恢复后如果命中本场景，第一步仍是 checkpoint。
 - 改动只动 Latch 相关段落，不整理无关内容。
 - 跨 skill 副本同步改，源头和副本保持一致。
 
@@ -208,8 +208,8 @@ latch log "<summary>" --files a.ts,b.ts
 新会话或新请求开始时：
 
 1. 先运行 `git status --short`。
-2. 如果 `.latch/state.json` 有 current task，运行 `latch resume --brief`。
-3. 如果用户已经明确给了 task ID，先运行 `latch resume --brief --task <id>` 或 `latch context <id>`。
+2. 如果 `.latch/state.json` 有 current task，运行 `latch context --json`。
+3. 如果用户已经明确给了 task ID，先运行 `latch context <id> --json` 或 `latch resume --brief --task <id>`。
 4. 根据本页判断是否进入 Latch。
 5. 进入后先 `checkpoint`，再决定 `brainstorm`、`grill` 或 `plan`。
 6. 纯文档或 commit 任务无 verify 意义时，字段填齐后用 `latch next --to finish` 跳级收尾，不强制走 `dev`/`check` 或凑数 `verify`。
@@ -217,7 +217,7 @@ latch log "<summary>" --files a.ts,b.ts
 
 任务分流默认规则：
 
-- `resume --brief` 后发现当前 task 和用户这次要处理的是同一件事，继续原 task。
+- `context --json` 后发现当前 task 和用户这次要处理的是同一件事，继续原 task。
 - 用户已经点名某张 task 时，先读那张 task，不要被“当前 actor 没 current task”误导去新开任务。
 - 只要这次问题已经换题，即使还在同一 repo、同一会话，也必须 `checkpoint --new`。
 - 有 current task 时，带标题的 `checkpoint` 一律视为“新任务”，必须配 `--new`；不然宁可报错，不靠猜。
@@ -227,7 +227,7 @@ latch log "<summary>" --files a.ts,b.ts
 如果 `latch` 报 `command not found`，先试：
 
 ```bash
-zsh -ic 'latch resume --brief'
+zsh -ic 'latch context --json'
 ```
 
 不要把本机绝对路径写入项目规则或 skill。

@@ -20,7 +20,7 @@ latch
 如果 `latch` 报 `command not found`，先判断是不是 AI 工具使用了非交互 shell。可以尝试：
 
 ```bash
-zsh -ic 'latch resume --brief'
+zsh -ic 'latch context --json'
 ```
 
 请求本身是在排查 `latch` 命令可用性、fallback 或 AI 接入时，这属于 Latch 自身反馈：先 `latch checkpoint` 再动手改环境或文档，不要当成小环境修直接改 shell 配置。

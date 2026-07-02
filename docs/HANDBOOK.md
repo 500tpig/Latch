@@ -104,7 +104,7 @@ latch save --task <task-id> --force --next "..."
 ### 正常开发流程
 
 ```bash
-latch resume --brief
+latch context --json
 latch next
 latch save --next "实现最小改动"
 latch next
@@ -162,7 +162,7 @@ latch save --next "修复 eslint 报错后重新 verify"
 任务停在 `check`。下一轮先执行：
 
 ```bash
-latch resume --brief
+latch context --json
 ```
 
 看清失败命令、下一步和 notes 路径，再继续修。
@@ -416,7 +416,7 @@ latch resume --json --task <task-id>
 AI 工具如果在非交互 shell 中报 `command not found: latch`，先试：
 
 ```bash
-zsh -ic 'latch resume --brief'
+zsh -ic 'latch context --json'
 ```
 
 这通常表示 shell 没加载用户 PATH，不代表 Latch 未安装。不要把本机绝对路径写进项目规则。
@@ -488,10 +488,10 @@ open task 存在时，`log` 仍可记录无关小事。已经进入 Latch 的同
 ### 继续当前任务
 
 ```text
-先运行 latch resume --brief，看当前 stage、next 和最近 verify。只处理 next 指向的范围，不扩大改动；完成后用 latch verify -- <最小相关命令> 记录结果。
+先运行 latch context --json，看当前 stage、next、最近 verify 和 recent_events。只处理 next 指向的范围，不扩大改动；完成后用 latch verify -- <最小相关命令> 记录结果。
 ```
 
-如果 latch 命令找不到，先用 zsh -ic 'latch resume --brief' 复核交互 shell 是否可用；不要直接改用本机绝对路径。
+如果 latch 命令找不到，先用 zsh -ic 'latch context --json' 复核交互 shell 是否可用；不要直接改用本机绝对路径。
 
 ### 验证已通过后收尾
 
