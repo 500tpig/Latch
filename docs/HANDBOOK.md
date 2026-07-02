@@ -293,7 +293,7 @@ abandoned 可从任意 open task 进入
 | 文件 | 用途 |
 | --- | --- |
 | `task.json` | CLI 读取的结构化状态。 |
-| `notes.md` | 人和 AI 读取的过程记录、阶段模板和 closure。 |
+| `notes.md` | 人主读、AI 兜底读的过程记录、阶段模板和 closure。 |
 | `events.jsonl` | 追加事件，用于追溯最近动作。 |
 
 正式文档不放在 `.latch/` 里。中等需求写到 `docs/briefs/`，大需求写到 `docs/prd/`，模板见 `docs/templates/`。

@@ -24,7 +24,7 @@ v0 不做这些能力,只有跑通后、且缺了会明显影响使用时才加:
 ## 关键取舍
 
 - **CLI 不当裁判**:进入需要结论的阶段时只铺空模板,逼 AI 按格子填,但不解析 `notes.md` 判断填得好不好。Latch 只保证流程不被跳过,不评价内容质量。
-- **`notes.md` 是给人和 AI 读的,不是 CLI 的结构化输入**:结构化状态在 `task.json`,过程记录在 `notes.md`,追溯用 `events.jsonl`。三者分开,CLI 只读结构化部分。
+- **`notes.md` 默认给人读,AI 需追溯细节时兜底读;不是 CLI 的结构化输入**:结构化状态在 `task.json`,过程记录在 `notes.md`,追溯用 `events.jsonl`。三者分开,CLI 只读结构化部分。
 - **`done` 不负责 commit**:归档和版本控制分开。`git commit` / `git push` / `latch done` 都要用户明确确认,不做默认后续动作。
 - **默认任务按 actor 隔离,不是共享全局指针**:多 agent 并行时,共享一个 `current_task_id` 天然会互抢。Latch 改成 actor 各自持有默认任务,任务 owner 只在显式 `--force` 时转移,把“默认命令串任务”从模型上拿掉。
 
