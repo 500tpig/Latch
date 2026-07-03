@@ -65,7 +65,7 @@ export function ensureDoneReady(task: Task) {
     throw new Error('Latest verification must pass.')
   if (!task.knowledge_decision)
     throw new Error(
-      'Knowledge decision is required. Run `latch save --knowledge generate|skip --knowledge-reason "..."` first.',
+      'Knowledge decision is required. Run `latch finish ...` to record closure and default skip, or pass `--knowledge generate` when the task should become a knowledge card.',
     )
   if (!task.knowledge_reason)
     throw new Error('Knowledge decision requires `knowledge_reason`.')
@@ -85,7 +85,7 @@ export function scaffoldForStage(task: Task, stage: Stage) {
       '改了什么：',
       '验证了什么：',
       '没验证什么：(有未覆盖范围必须写;没有写「无」)',
-      '知识记忆：用 `latch save --knowledge generate|skip --knowledge-reason "..."` 记录',
+      '知识记忆：`latch finish` 默认 skip；需要沉淀规则时用 `--knowledge generate --knowledge-reason "..."`',
       '产出 artifact：用 `latch save --artifact <kind>:<path>` 记录 brief/prd/knowledge_card 等',
       '下次接什么：',
     ],

@@ -57,10 +57,12 @@ ID = `时间戳-slug`，slug 来自标题（含中文）。`--task` 等命令按
 ## 5. finish 强制 knowledge_decision（设计取舍，繁琐）
 
 ### 现象
-纯重构这种明显无沉淀价值的任务，每次也要 `save --knowledge skip --knowledge-reason "..."` 写一句理由。
+纯重构这种明显无沉淀价值的任务，此前每次也要手动写 skip reason。
 
 ### 取舍
 逼思考是否沉淀的初衷对，但对纯重构仪式化。建议保持强制，但可考虑 `--knowledge-reason` 允许更短或给个 skip 默认模板。改动小，但要想清楚别让 skip 太容易（那就等于不强制了）。
+
+2026-07-03 更新：`latch finish` 已默认写入 knowledge skip；需要沉淀规则时显式传 `--knowledge generate --knowledge-reason "..."`。
 
 ## 6. closure 要手 edit notes.md（体验）
 

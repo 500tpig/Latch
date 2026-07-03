@@ -5,7 +5,7 @@
 ## 判断原则
 
 - 规划类请求由 AI 自动进入 Latch，不要求用户手动敲命令。
-- 进入 Latch 前先用 `latch list --json` 查同题 open task；确实没有同题任务时，再用 `checkpoint` 锁住现场。阶段推进交给 `next`。
+- 进入 Latch 前先用 `latch list --json --brief` 查同题 open task；确实没有同题任务时，再用 `checkpoint` 锁住现场。阶段推进交给 `next`。
 
 ## 场景速查
 
@@ -167,7 +167,7 @@ AI 总是不知道怎么用这个项目规则，要不要改 skill 或 AGENTS？
 记录规则漏了。
 ```
 
-命中即属于硬触发，优先于「小请求不进入 Latch」。先用 `latch list --json` 查 open task；有同题任务就续接，确实没有再 `latch checkpoint` 锁现场并排查：
+命中即属于硬触发，优先于「小请求不进入 Latch」。先用 `latch list --json --brief` 查 open task；有同题任务就续接，确实没有再 `latch checkpoint` 锁现场并排查：
 
 ```bash
 latch checkpoint "处理 Latch 流程反馈" \
@@ -208,17 +208,18 @@ latch log "<summary>" --files a.ts,b.ts
 新会话或新请求开始时：
 
 1. 先运行 `git status --short`。
-2. 运行 `latch list --json`，先看是否已有同题 open task。
-3. 如果 `.latch/state.json` 有 current task，运行 `latch context --json`。
-4. 如果用户已经明确给了 task ID，先运行 `latch context <id> --json` 或 `latch resume --brief --task <id>`。
+2. 运行 `latch list --json --brief`，先看是否已有同题 open task。
+3. 如果 `.latch/state.json` 有 current task，运行 `latch context --json --brief`。
+4. 如果用户已经明确给了 task ID，先运行 `latch context <id> --json --brief` 或 `latch resume --brief --task <id>`。
 5. 根据本页判断是否进入 Latch。
 6. 进入后续接同题 task，或在确实没有同题任务时 `checkpoint`，再决定 `brainstorm`、`grill` 或 `plan`。
 7. 纯文档或 commit 任务无 verify 意义时，字段填齐后用 `latch next --to finish` 跳级收尾，不强制走 `dev`/`check` 或凑数 `verify`。
-8. 不要求用户手动执行 Latch 命令；用户明确拒绝时除外。
+8. 代码任务 verify 通过后，优先用 `latch finish --changes "..." --verified "..." --unverified "..." --followup "..."` 直接补 closure；knowledge 默认 skip，需要沉淀规则时显式 `--knowledge generate`。
+9. 不要求用户手动执行 Latch 命令；用户明确拒绝时除外。
 
 任务分流默认规则：
 
-- `list --json` 或 `context --json` 后发现已有 task 和用户这次要处理的是同一件事，继续原 task。
+- `list --json --brief` 或 `context --json --brief` 后发现已有 task 和用户这次要处理的是同一件事，继续原 task。
 - 用户已经点名某张 task 时，先读那张 task，不要被“当前 actor 没 current task”误导去新开任务。
 - 只要这次问题已经换题，即使还在同一 repo、同一会话，也必须 `checkpoint --new`。
 - 有 current task 时，带标题的 `checkpoint` 一律视为“新任务”，必须配 `--new`；不然宁可报错，不靠猜。

@@ -32,6 +32,39 @@ test("context emits task summary and json", () => {
   assert.equal(data.progress.can_advance, true);
 });
 
+test("context --json --brief emits the handoff core without full fields", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["checkpoint", "Brief context", "--goal", "G", "--scope", "S", "--acceptance", "A", "--next", "N"]);
+  const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
+
+  const brief = run(cwd, ["context", taskId, "--json", "--brief"]);
+  assert.equal(brief.status, 0);
+  const data = JSON.parse(brief.stdout);
+  assert.equal(data.task_id, taskId);
+  assert.equal(data.title, "Brief context");
+  assert.equal(data.status, "active");
+  assert.equal(data.stage, "triage");
+  assert.equal(data.owner, "default");
+  assert.equal(data.current, true);
+  assert.equal(data.next, "N");
+  assert.equal(data.latest_verify, null);
+  assert.equal(data.progress.can_advance, true);
+  assert.ok(Array.isArray(data.recent_events));
+  assert.equal("goal" in data, false);
+  assert.equal("scope" in data, false);
+  assert.equal("acceptance" in data, false);
+  assert.equal("knowledge_decision" in data, false);
+  assert.equal("artifacts" in data, false);
+
+  const full = JSON.parse(run(cwd, ["context", taskId, "--json"]).stdout);
+  assert.equal(full.goal, "G");
+  assert.equal(full.scope, "S");
+  assert.equal(full.acceptance, "A");
+  assert.deepEqual(full.artifacts, []);
+});
+
 test("save --artifact appends to task.artifacts and shows in context/resume", () => {
   const cwd = mkdtempSync(join(tmpdir(), "latch-"));
 
@@ -196,6 +229,18 @@ test("list --json includes structured progress for each task", () => {
   const second = data.tasks.find((task) => task.task_id === secondId);
   assert.equal(second.progress.advance_to, "dev");
   assert.equal(second.progress.can_advance, true);
+  assert.equal(second.goal, "G");
+
+  const briefResult = run(cwd, ["list", "--json", "--brief"]);
+  assert.equal(briefResult.status, 0);
+  const brief = JSON.parse(briefResult.stdout);
+  const briefSecond = brief.tasks.find((task) => task.task_id === secondId);
+  assert.equal(briefSecond.next, "N");
+  assert.equal(typeof briefSecond.current, "boolean");
+  assert.equal(briefSecond.progress.advance_to, "dev");
+  assert.equal("goal" in briefSecond, false);
+  assert.equal("scope" in briefSecond, false);
+  assert.equal("acceptance" in briefSecond, false);
 });
 
 test("resume explains verify gate when check cannot advance", () => {
@@ -229,7 +274,7 @@ test("resume explains finish prerequisites before user confirmation", () => {
 
   const result = run(cwd, ["resume", "--brief"]);
   assert.match(result.stdout, /Advance target: done/);
-  assert.match(result.stdout, /Next action: run `latch finish --knowledge generate\|skip --knowledge-reason "\.\.\."`/);
+  assert.match(result.stdout, /Next action: run `latch finish --changes "\.\.\." --verified "\.\.\." --unverified "\.\.\." --followup "\.\.\."`/);
   assert.match(result.stdout, /Knowledge decision is required/);
 });
 
@@ -251,4 +296,30 @@ test("context --json includes progress summary", () => {
   // recent_events: AI 默认入口 context --json 必须带最近动作线索
   assert.ok(Array.isArray(context.recent_events));
   assert.ok(context.recent_events.length >= 1);
+});
+
+test("recent events truncate long verify commands but keep events jsonl complete", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Long verify"]);
+  const longMarker = `LONG_${"x".repeat(220)}`;
+  const longScript = `process.stdout.write("${longMarker}")`;
+  const verify = run(cwd, ["verify", "--", process.execPath, "-e", longScript]);
+  assert.equal(verify.status, 0);
+
+  const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
+  const brief = JSON.parse(run(cwd, ["context", "--json", "--brief"]).stdout);
+  const verifiedEvent = brief.recent_events.find((line) => line.includes("verified"));
+  assert.ok(verifiedEvent);
+  assert.match(verifiedEvent, /\.\.\./);
+  assert.equal(verifiedEvent.includes(longMarker), false);
+  assert.equal(brief.latest_verify.command.includes(longMarker), false);
+
+  const full = JSON.parse(run(cwd, ["context", "--json"]).stdout);
+  assert.equal(full.latest_verify.command.includes(longMarker), true);
+  assert.equal(full.recent_events.some((line) => line.includes(longMarker)), true);
+
+  const events = readFileSync(join(cwd, ".latch", "tasks", taskId, "events.jsonl"), "utf8");
+  assert.equal(events.includes(longMarker), true);
 });

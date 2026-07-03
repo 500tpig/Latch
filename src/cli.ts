@@ -75,6 +75,7 @@ function orDie<T>(fn: () => T): T {
 }
 
 const KNOWLEDGE_DECISIONS = new Set(['generate', 'skip'])
+const DEFAULT_KNOWLEDGE_SKIP_REASON = '默认跳过；如有可复用规则再显式生成知识卡'
 
 // 把命令行上给到的 goal/scope/acceptance/next 写进 task，返回本次实际改动的字段名
 function applyFieldOptions(task: Task): string[] {
@@ -140,7 +141,7 @@ function optionAll(name: string) {
   return values
 }
 
-const booleanFlags = new Set(['--all', '--draft', '--force', '--help', '--new', '--yes', '-h'])
+const booleanFlags = new Set(['--all', '--brief', '--draft', '--force', '--help', '--json', '--new', '--yes', '-h'])
 
 function firstPositionalArg(values: string[]) {
   let skipValue = false
@@ -168,6 +169,37 @@ function finishClosureFields() {
     verified: option('--verified'),
     unverified: option('--unverified'),
     followup: option('--followup'),
+  }
+}
+
+function hasFinishClosure(closure: ReturnType<typeof finishClosureFields>) {
+  return Boolean(closure.changes || closure.verified || closure.unverified || closure.followup)
+}
+
+function enterFinishForFinishCommand(task: Task) {
+  if (task.stage === 'finish') return null
+  if (task.stage !== 'check') throw new Error('Task must be in finish stage.')
+  const blockers = advanceBlockers(task, 'finish')
+  if (blockers.length > 0)
+    throw new Error(`Cannot advance ${task.stage} -> finish: ${blockers.join('; ')}.`)
+  const from = task.stage
+  task.stage = 'finish'
+  return from
+}
+
+function applyFinishDefaults(task: Task, changed: string[], followup?: string) {
+  if (followup && !option('--next')) {
+    task.next = followup
+    changed.push('next')
+  }
+  if (!task.knowledge_decision) {
+    task.knowledge_decision = 'skip'
+    task.knowledge_reason = DEFAULT_KNOWLEDGE_SKIP_REASON
+    task.knowledge_decided_at = now()
+    changed.push('knowledge_decision', 'knowledge_reason')
+  } else if (task.knowledge_decision === 'skip' && !task.knowledge_reason) {
+    task.knowledge_reason = DEFAULT_KNOWLEDGE_SKIP_REASON
+    changed.push('knowledge_reason')
   }
 }
 
@@ -290,14 +322,15 @@ switch (command) {
   case 'finish': {
     runLocked(() => {
       const task = targetTask({ write: true })
-      if (task.stage !== 'finish')
-        throw new Error('Task must be in finish stage.')
+      const advancedFrom = enterFinishForFinishCommand(task)
       const closure = finishClosureFields()
       const changed = applyFieldOptions(task)
-      const hasClosure =
-        closure.changes || closure.verified || closure.unverified || closure.followup
+      const hasClosure = hasFinishClosure(closure)
       if (!hasClosure && changed.length === 0)
         throw new Error(commandUsage('finish'))
+      if (advancedFrom && !hasClosure)
+        throw new Error('Finish closure is required when finishing from check.')
+      applyFinishDefaults(task, changed, closure.followup)
       if (hasClosure) {
         appendNotes(task, 'Finish closure', [
           `改了什么：${closure.changes ?? ''}`,
@@ -307,6 +340,12 @@ switch (command) {
         ])
       }
       saveTask(task)
+      if (advancedFrom)
+        event(task, 'stage_changed', {
+          from: advancedFrom,
+          to: 'finish',
+          reason: 'finish command after passing verification',
+        })
       event(task, 'finish_saved', {
         closure: hasClosure,
         fields: changed,
@@ -382,7 +421,12 @@ switch (command) {
   case 'context': {
     const id = args.find((arg) => !arg.startsWith('--'))
     const task = orDie(() => (id ? readTask(id) : targetTask()))
-    printContext(task, { brief: args.includes('--brief'), json: args.includes('--json') })
+    const current = existsSync(statePath) ? currentTaskId() : undefined
+    printContext(task, {
+      brief: args.includes('--brief'),
+      json: args.includes('--json'),
+      current: task.id === current,
+    })
     break
   }
   case 'knowledge': {
@@ -452,7 +496,7 @@ switch (command) {
   case 'list': {
     const current = existsSync(statePath) ? currentTaskId() : undefined
     const tasks = openTaskIds().map((id) => readTask(id))
-    printList(tasks, current, { json: args.includes('--json') })
+    printList(tasks, current, { json: args.includes('--json'), brief: args.includes('--brief') })
     break
   }
   case 'log': {

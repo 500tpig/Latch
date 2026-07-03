@@ -32,25 +32,25 @@ zsh -ic 'latch --help'
 ```bash
 git status --short
 latch --help
-latch list --json
-latch context --json
-latch context <task-id> --json
+latch list --json --brief
+latch context --json --brief
+latch context <task-id> --json --brief
 latch resume --brief
 latch resume --brief --task <task-id>
 ```
 
-准备进入 Latch 或新开 checkpoint 前，先运行 `latch list --json` 查 open task。已有同题任务时续接，确实没有再新建。
+准备进入 Latch 或新开 checkpoint 前，先运行 `latch list --json --brief` 查 open task。已有同题任务时续接，确实没有再新建。
 
-如果 `context --json` 显示已有 current task，AI 必须先判断是不是同一件事：
+如果 `context --json --brief` 显示已有 current task，AI 必须先判断是不是同一件事：
 
 - 同一件事续接：继续用 `save`、`next`、`verify`，或不带标题的 `checkpoint` 补字段。
 - 另一件新事：必须用 `latch checkpoint --new "<title>" ...`，不能在有 current task 时带标题直接跑 `checkpoint`。
 
 旧任务一旦被误记污染，先把新问题切到新的 task；旧任务只补污染说明和新 task ID，不继续混写。
 
-如果用户已经明确指定 task ID，先用 `latch context <task-id> --json` 或 `latch resume --brief --task <task-id>` 读取现场；`<task-id>` 可以是完整 ID，也可以是唯一前缀。不要因为当前 actor 没有 current task，就先新开 `checkpoint`。
+如果用户已经明确指定 task ID，先用 `latch context <task-id> --json --brief` 或 `latch resume --brief --task <task-id>` 读取现场；`<task-id>` 可以是完整 ID，也可以是唯一前缀。不要因为当前 actor 没有 current task，就先新开 `checkpoint`。
 
-进入 `finish` 后，推荐用一条命令补收尾：`latch finish --changes "..." --verified "..." --unverified "..." --followup "..." --knowledge skip --knowledge-reason "..."`。用户要求收尾、提交、结束或归档时，先用 `latch list --json` 看全局 open task；非当前 owner 的 `finish` task 不静默忽略，先提示是否 `--force`。只有用户确认后才执行 `latch done`。
+验证通过后，推荐用一条命令补收尾：`latch finish --changes "..." --verified "..." --unverified "..." --followup "..."`。如果当前还在 `check` 且最近 verify 已通过，`finish` 会自动进入 `finish` 阶段；知识记忆默认 skip，需要沉淀规则时显式加 `--knowledge generate --knowledge-reason "..."`。用户要求收尾、提交、结束或归档时，先用 `latch list --json --brief` 看全局 open task；非当前 owner 的 `finish` task 不静默忽略，先提示是否 `--force`。只有用户确认后才执行 `latch done`。
 
 Latch 的写命令（`checkpoint`、`save`、`finish`、`next`、`verify`、`done`、`abandon`、`use --force`）按串行调用设计。不要并行执行多个写命令，否则会撞 `.latch/.lock`。
 

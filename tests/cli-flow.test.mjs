@@ -167,6 +167,25 @@ test("finish rejected outside finish stage", () => {
   assert.match(result.stderr, /Task must be in finish stage/);
 });
 
+test("finish from check still requires passing verification", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Check gate"]);
+  run(cwd, ["save", "--goal", "G", "--next", "N"]);
+  run(cwd, ["next"]);
+  run(cwd, ["next"]);
+  run(cwd, ["next"]);
+
+  const result = run(cwd, ["finish", "--changes", "没有验证不能收尾"]);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Cannot advance check -> finish: missing latest verify/);
+
+  const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
+  const task = JSON.parse(readFileSync(join(cwd, ".latch", "tasks", taskId, "task.json"), "utf8"));
+  assert.equal(task.stage, "check");
+});
+
 test("entering grill scaffolds open-questions template", () => {
   const cwd = mkdtempSync(join(tmpdir(), "latch-"));
 
@@ -194,7 +213,7 @@ test("entering finish scaffolds closure template", () => {
   const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
   const notes = readFileSync(join(cwd, ".latch", "tasks", taskId, "notes.md"), "utf8");
   assert.match(notes, /Scaffold: finish/);
-  assert.match(notes, /知识记忆：用 `latch save --knowledge generate\|skip --knowledge-reason "\.\.\."` 记录/);
+  assert.match(notes, /知识记忆：`latch finish` 默认 skip/);
   assert.match(notes, /下次接什么：/);
   // 「没验证什么」格子必须带固定提示,逼 AI 写清未覆盖范围或显式写「无」
   assert.match(notes, /没有写「无」/);
@@ -222,10 +241,6 @@ test("finish writes closure and structured fields in one command", () => {
     "无",
     "--followup",
     "等用户确认后 done",
-    "--knowledge",
-    "skip",
-    "--knowledge-reason",
-    "一次性调整",
     "--artifact",
     "brief:docs/briefs/x.md",
   ]);
@@ -235,7 +250,8 @@ test("finish writes closure and structured fields in one command", () => {
   const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
   const task = JSON.parse(readFileSync(join(cwd, ".latch", "tasks", taskId, "task.json"), "utf8"));
   assert.equal(task.knowledge_decision, "skip");
-  assert.equal(task.knowledge_reason, "一次性调整");
+  assert.equal(task.knowledge_reason, "默认跳过；如有可复用规则再显式生成知识卡");
+  assert.equal(task.next, "等用户确认后 done");
   assert.deepEqual(task.artifacts, [{ kind: "brief", path: "docs/briefs/x.md" }]);
 
   const notes = readFileSync(join(cwd, ".latch", "tasks", taskId, "notes.md"), "utf8");
@@ -244,6 +260,76 @@ test("finish writes closure and structured fields in one command", () => {
   assert.match(notes, /验证了什么：pnpm test/);
   assert.match(notes, /没验证什么：无/);
   assert.match(notes, /下次接什么：等用户确认后 done/);
+});
+
+test("finish advances from verified check and records closure", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Finish from check"]);
+  run(cwd, ["save", "--goal", "G", "--next", "开发前下一步"]);
+  run(cwd, ["next"]);
+  run(cwd, ["next"]);
+  run(cwd, ["next"]);
+  run(cwd, ["verify", "--", process.execPath, "-e", "process.exit(0)"]);
+
+  const result = run(cwd, [
+    "finish",
+    "--changes",
+    "直接收尾",
+    "--verified",
+    "node -e pass",
+    "--unverified",
+    "无",
+    "--followup",
+    "等用户确认后 done",
+  ]);
+  assert.equal(result.status, 0);
+
+  const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
+  const task = JSON.parse(readFileSync(join(cwd, ".latch", "tasks", taskId, "task.json"), "utf8"));
+  assert.equal(task.stage, "finish");
+  assert.equal(task.next, "等用户确认后 done");
+  assert.equal(task.knowledge_decision, "skip");
+  assert.equal(task.knowledge_reason, "默认跳过；如有可复用规则再显式生成知识卡");
+
+  const events = readFileSync(join(cwd, ".latch", "tasks", taskId, "events.jsonl"), "utf8");
+  assert.match(events, /"type":"stage_changed","from":"check","to":"finish"/);
+  assert.match(events, /"type":"finish_saved"/);
+
+  const notes = readFileSync(join(cwd, ".latch", "tasks", taskId, "notes.md"), "utf8");
+  assert.match(notes, /改了什么：直接收尾/);
+  assert.match(notes, /下次接什么：等用户确认后 done/);
+});
+
+test("finish from verified check requires closure even with structured fields", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Finish needs closure"]);
+  run(cwd, ["save", "--goal", "G", "--next", "N"]);
+  run(cwd, ["next"]);
+  run(cwd, ["next"]);
+  run(cwd, ["next"]);
+  run(cwd, ["verify", "--", process.execPath, "-e", "process.exit(0)"]);
+
+  const result = run(cwd, [
+    "finish",
+    "--artifact",
+    "brief:docs/briefs/x.md",
+    "--knowledge",
+    "generate",
+    "--knowledge-reason",
+    "需要复用",
+  ]);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Finish closure is required/);
+
+  const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
+  const task = JSON.parse(readFileSync(join(cwd, ".latch", "tasks", taskId, "task.json"), "utf8"));
+  assert.equal(task.stage, "check");
+  assert.equal(task.artifacts, undefined);
+  assert.equal(task.knowledge_decision, undefined);
 });
 
 test("checkpoint creates task when none active", () => {

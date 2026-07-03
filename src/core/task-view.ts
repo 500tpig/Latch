@@ -2,13 +2,13 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { taskPath } from './task-store.js'
 import { advanceBlockers, defaultNext, ensureDoneReady } from './progress.js'
-import { recentEvents } from './notes-events.js'
+import { recentEvents, truncateEventValue } from './notes-events.js'
 import { actorId } from './ownership.js'
 import type { Task } from './types.js'
 
 function finishNextAction(task: Task, reason: string) {
   if (reason.includes('Knowledge decision is required'))
-    return 'run `latch finish --knowledge generate|skip --knowledge-reason "..."`'
+    return 'run `latch finish --changes "..." --verified "..." --unverified "..." --followup "..."`'
   if (reason.includes('no knowledge card exists'))
     return 'run `latch knowledge generate`'
   if (reason.includes('Latest verification must pass'))
@@ -100,6 +100,32 @@ export function taskContext(task: Task) {
   }
 }
 
+function latestVerifyBrief(task: Task) {
+  if (!task.latest_verify) return null
+  return {
+    status: task.latest_verify.status,
+    exit_code: task.latest_verify.exit_code,
+    created_at: task.latest_verify.created_at,
+    command: truncateEventValue(task.latest_verify.command),
+  }
+}
+
+export function taskBriefContext(task: Task, opts: { current?: boolean } = {}) {
+  return {
+    task_id: task.id,
+    title: task.title,
+    status: task.status,
+    stage: task.stage,
+    owner: task.owner ?? null,
+    current: opts.current ?? false,
+    next: task.next ?? null,
+    latest_verify: latestVerifyBrief(task),
+    progress: progressSummary(task),
+    notes_path: join(taskPath(task.id), 'notes.md'),
+    recent_events: recentEvents(task, 5, { truncateValues: true }),
+  }
+}
+
 export function knowledgeUsage() {
   return [
     'Usage: latch knowledge <generate|recall|refresh-modules|verify> [options]',
@@ -123,7 +149,7 @@ export function commandUsage(name: string) {
       next: 'Usage: latch next [--to <stage>] [--reason <reason>] [--task <task-id>]',
       verify: 'Usage: latch verify -- <command>',
       resume: 'Usage: latch resume [--brief] [--json] [--task <task-id>]',
-      list: 'Usage: latch list [--json]',
+      list: 'Usage: latch list [--json] [--brief]',
       log: 'Usage: latch log <summary> [--files a,b,c]',
       done: 'Usage: latch done [--task <task-id>|--all --yes] [--force]',
       abandon: 'Usage: latch abandon [--reason <reason>] [--task <task-id>]',
@@ -167,7 +193,7 @@ export function printResume(task: Task, opts: { brief: boolean; json: boolean })
   // 跨会话续接靠 notes.md：上次 grill 结论、plan 取舍、closure 都在里面，省得下一轮重新问一遍
   // brief 模式:砍 notes 全文(任务长时堆积成噪音),改输出最近 5 条 events + notes 路径,AI 想看细节自己读文件。
   if (opts.brief) {
-    const events = recentEvents(task, 5)
+    const events = recentEvents(task, 5, { truncateValues: true })
     if (events.length) {
       console.log('Recent events:')
       for (const line of events) console.log(`  ${line}`)
@@ -185,12 +211,13 @@ export function printResume(task: Task, opts: { brief: boolean; json: boolean })
   }
 }
 
-export function printContext(task: Task, opts: { brief: boolean; json: boolean }) {
-  const context = taskContext(task)
+export function printContext(task: Task, opts: { brief: boolean; json: boolean; current?: boolean }) {
   if (opts.json) {
+    const context = opts.brief ? taskBriefContext(task, { current: opts.current }) : taskContext(task)
     console.log(JSON.stringify(context, null, 2))
     return
   }
+  const context = taskContext(task)
   console.log(`Task: ${context.title}`)
   if (context.owner) console.log(`Owner: ${context.owner}`)
   console.log(`Stage: ${context.stage}`)
@@ -214,17 +241,21 @@ export function printContext(task: Task, opts: { brief: boolean; json: boolean }
   console.log(`Notes: ${context.notes_path}`)
 }
 
-export function printList(tasks: Task[], current: string | undefined, opts: { json: boolean }) {
+export function printList(tasks: Task[], current: string | undefined, opts: { json: boolean; brief: boolean }) {
   if (opts.json) {
     console.log(
       JSON.stringify(
         {
           actor: actorId(),
           current_task_id: current,
-          tasks: tasks.map((task) => ({
-            ...taskContext(task),
-            current: task.id === current,
-          })),
+          tasks: tasks.map((task) =>
+            opts.brief
+              ? taskBriefContext(task, { current: task.id === current })
+              : {
+                  ...taskContext(task),
+                  current: task.id === current,
+                },
+          ),
         },
         null,
         2,

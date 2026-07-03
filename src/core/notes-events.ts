@@ -4,6 +4,8 @@ import { taskPath } from './task-store.js'
 import { now } from './utils.js'
 import type { Task } from './types.js'
 
+const MAX_EVENT_VALUE_LENGTH = 160
+
 export function event(task: Task, type: string, fields: Record<string, unknown> = {}) {
   writeFileSync(
     join(taskPath(task.id), 'events.jsonl'),
@@ -12,8 +14,18 @@ export function event(task: Task, type: string, fields: Record<string, unknown> 
   )
 }
 
+export function truncateEventValue(value: unknown, maxLength = MAX_EVENT_VALUE_LENGTH): string {
+  const text = String(value ?? '').replace(/\s+/g, ' ').trim()
+  if (text.length <= maxLength) return text
+  return `${text.slice(0, Math.max(0, maxLength - 3))}...`
+}
+
 // 把一条 event 压成一行:type + 关键字段 + 时间。brief 模式替代 notes 全文,让 AI 看到最近动作而不被 markdown 噪音淹没。
-export function formatEvent(entry: Record<string, unknown>): string {
+type FormatEventOptions = {
+  truncateValues?: boolean
+}
+
+export function formatEvent(entry: Record<string, unknown>, options: FormatEventOptions = {}): string {
   const type = entry.type as string
   const time = entry.created_at as string
   let detail = ''
@@ -28,7 +40,7 @@ export function formatEvent(entry: Record<string, unknown>): string {
       detail = `${entry.from}->${entry.to}`
       break
     case 'verified':
-      detail = `${entry.status} ${entry.command}`
+      detail = `${entry.status} ${options.truncateValues ? truncateEventValue(entry.command) : entry.command}`
       break
     default:
       detail = ''
@@ -37,7 +49,7 @@ export function formatEvent(entry: Record<string, unknown>): string {
 }
 
 // 取 events.jsonl 最后 N 条并格式化成一行。events.jsonl 是追加的 jsonl,tail 即最近。
-export function recentEvents(task: Task, count: number): string[] {
+export function recentEvents(task: Task, count: number, options: FormatEventOptions = {}): string[] {
   const eventsPath = join(taskPath(task.id), 'events.jsonl')
   if (!existsSync(eventsPath)) return []
   const lines = readFileSync(eventsPath, 'utf8')
@@ -46,7 +58,7 @@ export function recentEvents(task: Task, count: number): string[] {
     .filter(Boolean)
   return lines
     .slice(-count)
-    .map((line) => formatEvent(JSON.parse(line) as Record<string, unknown>))
+    .map((line) => formatEvent(JSON.parse(line) as Record<string, unknown>, options))
 }
 
 export function appendNotes(task: Task, heading: string, lines: string[]) {
