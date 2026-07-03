@@ -23,7 +23,7 @@ latch
 zsh -ic 'latch --help'
 ```
 
-请求本身是在排查 `latch` 命令可用性、fallback 或 AI 接入时，这属于 Latch 自身反馈：先 `latch checkpoint` 再动手改环境或文档，不要当成小环境修直接改 shell 配置。
+请求本身是在排查 `latch` 命令可用性或 fallback 时，先按安装和环境问题处理，不进入 Latch 流程。命令恢复后，如果发现项目规则、skill 或接入文档需要修改，再按普通触发规则进入 Latch。
 
 如果交互 zsh 能找到 `latch`，说明是当前执行环境没有加载用户的 PATH，不要误判为 Latch 未安装。如果仍不可用，停止安装流程，提示用户先完成全局安装或链接。不要把本机绝对路径写进目标项目文档、`AGENTS.md` 或 skill。
 
@@ -32,11 +32,14 @@ zsh -ic 'latch --help'
 ```bash
 git status --short
 latch --help
+latch list --json
 latch context --json
 latch context <task-id> --json
 latch resume --brief
 latch resume --brief --task <task-id>
 ```
+
+准备进入 Latch 或新开 checkpoint 前，先运行 `latch list --json` 查 open task。已有同题任务时续接，确实没有再新建。
 
 如果 `context --json` 显示已有 current task，AI 必须先判断是不是同一件事：
 
@@ -47,7 +50,7 @@ latch resume --brief --task <task-id>
 
 如果用户已经明确指定 task ID，先用 `latch context <task-id> --json` 或 `latch resume --brief --task <task-id>` 读取现场；`<task-id>` 可以是完整 ID，也可以是唯一前缀。不要因为当前 actor 没有 current task，就先新开 `checkpoint`。
 
-进入 `finish` 后，推荐用一条命令补收尾：`latch finish --changes "..." --verified "..." --unverified "..." --followup "..." --knowledge skip --knowledge-reason "..."`。只有用户确认后才执行 `latch done`。
+进入 `finish` 后，推荐用一条命令补收尾：`latch finish --changes "..." --verified "..." --unverified "..." --followup "..." --knowledge skip --knowledge-reason "..."`。用户要求收尾、提交、结束或归档时，先用 `latch list --json` 看全局 open task；非当前 owner 的 `finish` task 不静默忽略，先提示是否 `--force`。只有用户确认后才执行 `latch done`。
 
 Latch 的写命令（`checkpoint`、`save`、`finish`、`next`、`verify`、`done`、`abandon`、`use --force`）按串行调用设计。不要并行执行多个写命令，否则会撞 `.latch/.lock`。
 

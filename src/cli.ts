@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process'
-import { writeFileSync } from 'node:fs'
+import { existsSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   latchDir,
   repoRoot as root,
+  statePath,
 } from './core/paths.js'
 import { commandEnv, die, now } from './core/utils.js'
 import { claimTask, ensureTaskOwnedByActor } from './core/ownership.js'
@@ -449,8 +450,7 @@ switch (command) {
     break
   }
   case 'list': {
-    ensureInit()
-    const current = currentTaskId()
+    const current = existsSync(statePath) ? currentTaskId() : undefined
     const tasks = openTaskIds().map((id) => readTask(id))
     printList(tasks, current, { json: args.includes('--json') })
     break

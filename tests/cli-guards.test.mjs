@@ -30,10 +30,10 @@ test("agent skill copies stay identical", () => {
   assert.equal(opencodeSkill, agentsSkill);
 });
 
-// 护栏:只防止 SCENARIOS 误删 Latch 自身反馈场景,不验证规则是否被遵守
-test("scenarios doc keeps latch self-feedback section", () => {
+// 护栏:只防止 SCENARIOS 误删 Latch 流程反馈场景,不验证规则是否被遵守
+test("scenarios doc keeps latch process-feedback section", () => {
   const content = readFileSync(join(repoRoot, "docs/SCENARIOS.md"), "utf8");
-  assert.match(content, /## \d+\. Latch 自身反馈/);
+  assert.match(content, /## \d+\. Latch 流程反馈/);
 });
 
 test("top-level help has no side effects", () => {
@@ -145,6 +145,17 @@ test("list --help does not create latch dir", () => {
   assert.equal(result.status, 0);
   assert.match(result.stdout, /Usage: latch list/);
   assert.equal(existsSync(join(cwd, ".latch")), false);
+});
+
+test("list --json without init is read-only", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  const result = run(cwd, ["list", "--json"]);
+  assert.equal(result.status, 0);
+  assert.equal(existsSync(join(cwd, ".latch")), false);
+
+  const data = JSON.parse(result.stdout);
+  assert.deepEqual(data.tasks, []);
 });
 
 test("log --help does not create latch dir", () => {

@@ -11,6 +11,7 @@ Latch 是一个项目内任务状态锁存器，用在 AI coding 任务碰到风
 
 完整触发规则见 `AGENTS.md`（本项目触发正文的出处）。手册这里只补一个操作细节：
 
+- 准备进入 Latch 前，先用 `latch list --json` 查 open task；同题任务优先续接，确实没有再新建。
 - 能在动手前识别为风险域的任务，动手前就 `latch checkpoint`。
 - 低估为小修、做着做着变长的，立刻中途 `checkpoint` 补记现场——「任务变长时进入」只适用于这种补记。
 
@@ -306,6 +307,8 @@ abandoned 可从任意 open task 进入
 
 `checkpoint` 是进入 Latch 的低摩擦入口。没当前 actor 的 current task 时会自动创建任务；有 current task 时，只能在不带标题的情况下追加字段。只要命令里出现新标题，就必须显式加 `--new`，否则直接报错，避免把新问题误记进旧任务。
 
+`checkpoint` 不负责判断两个标题是不是同一件事。AI 准备新建任务前先跑 `latch list --json`；有同题 open task 就用 `latch context <id> --json` 或 `latch use <id> --force` 续接，没有再 `checkpoint --new`。
+
 默认判断很简单：
 
 - 继续同一件事：`latch checkpoint --goal ... --next ...`
@@ -423,7 +426,7 @@ zsh -ic 'latch --help'
 
 这通常表示 shell 没加载用户 PATH，不代表 Latch 未安装。不要把本机绝对路径写进项目规则。
 
-如果这类问题发生在 Latch 项目本身，先用可用方式恢复命令，再执行 `latch log` 或 `latch checkpoint` 记录。用户指出漏记时，立即补记并说明原判断。
+命令可用性本身不进入 Latch 流程。恢复命令后，如果发现项目规则、skill 或接入文档需要修改，再按普通触发规则进入 Latch；用户指出漏记时，立即补记并说明原判断。
 
 ### `context`
 
@@ -451,6 +454,8 @@ latch context --json
 ### `done`
 
 `done` 只负责归档，不负责 commit。
+
+用户说「收尾」「提交」「结束」或「归档」时，先运行 `latch list --json` 看全局 open task。当前 actor 已满足门禁的 `finish` task 等用户确认后 `done`；非当前 owner 已满足门禁的 `finish` task 先提示用户决定是否 `done --task <id> --force` 或 `done --all --yes --force`；非 `finish` 的 open task 先提示保留或 `abandon`。
 
 执行前必须满足：
 
@@ -487,6 +492,12 @@ open task 存在时，`log` 仍可记录无关小事。已经进入 Latch 的同
 
 ## 推荐给 AI 的续接提示
 
+### 新请求准备进入 Latch
+
+```text
+先运行 latch list --json，看是否已有同题 open task。用户点名 task 时直接读那张 task；有同题任务就续接或 use --force，确实没有再 checkpoint。不要用新 checkpoint 补记旧任务。
+```
+
 ### 继续当前任务
 
 ```text
@@ -499,6 +510,12 @@ open task 存在时，`log` 仍可记录无关小事。已经进入 Latch 的同
 
 ```text
 verify 已经 pass。继续收尾：执行 latch next 到 finish，用 latch finish 补 closure 和 knowledge/artifact，等用户确认后再 latch done。不要扩大改动范围，不要自动 git add。
+```
+
+### 最终回复前收尾自检
+
+```text
+用户要求收尾、提交、结束或归档时，先运行 latch list --json。还有已满足门禁的 finish task 时提示用户确认归档；还有非 finish open task 时提示保留或 abandon；非当前 owner 的 finish task 不静默忽略，先提示是否 --force。
 ```
 
 ### 真实业务任务验证失败

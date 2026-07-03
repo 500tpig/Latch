@@ -153,7 +153,7 @@ export function archiveTask(task: Task) {
 }
 
 export function openTaskIds() {
-  ensureInit()
+  if (!existsSync(tasksDir)) return []
   return readDirSync(tasksDir).filter((id) =>
     existsSync(join(taskPath(id), 'task.json')),
   )

@@ -59,7 +59,7 @@
 - `AGENTS.md` 已包含：
   - AI 续接入口 -> `latch context --json`
   - `command not found: latch` -> `zsh -ic 'latch --help'`
-  - Latch 自身接入反馈先 `checkpoint`
+  - Latch 流程反馈先 `latch list --json` 查重，再续接或 `checkpoint`
   - `verify -> latch next -> finish closure -> 用户确认后 done`
 - `.agents/skills/latch/SKILL.md` 已压成薄入口
 
@@ -68,7 +68,7 @@
 - `AGENTS.md` 已包含：
   - AI 续接入口 -> `latch context --json`
   - `command not found: latch` -> `zsh -ic 'latch --help'`
-  - Latch 自身接入反馈先 `checkpoint`
+  - Latch 流程反馈先 `latch list --json` 查重，再续接或 `checkpoint`
   - `verify -> latch next -> finish closure -> 用户确认后 done`
 - `CLAUDE.md` 已改为通用 `latch ...`，不再写本机绝对路径
 - `.agents/skills/latch/SKILL.md` 已压成薄入口
@@ -78,5 +78,5 @@
 - `AGENTS.md` 已包含：
   - AI 续接入口 -> `latch context --json`
   - `command not found: latch` -> `zsh -ic 'latch --help'`
-  - Latch 自身接入反馈先 `checkpoint`
+  - Latch 流程反馈先 `latch list --json` 查重，再续接或 `checkpoint`
 - `.gitignore` 已忽略 `.latch/`

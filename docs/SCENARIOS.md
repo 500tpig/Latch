@@ -5,14 +5,15 @@
 ## 判断原则
 
 - 规划类请求由 AI 自动进入 Latch，不要求用户手动敲命令。
-- 默认先用 `checkpoint` 锁住现场；阶段推进交给 `next`。
+- 进入 Latch 前先用 `latch list --json` 查同题 open task；确实没有同题任务时，再用 `checkpoint` 锁住现场。阶段推进交给 `next`。
 
 ## 场景速查
 
 | 用户请求 | 是否进入 | 初始阶段 | 关键判断 |
 | --- | --- | --- | --- |
 | 「规划项目后续」「完善项目」「怎么推进更好」 | 是 | `brainstorm` | 先讨论方向，不急着实现。 |
-| 「latch 不可用」「没按 Latch 流程走」「这应该被记录」 | 是 | `grill` | 硬触发，优先于小请求；先 `checkpoint` 再排查。 |
+| 「latch 不可用」 | 否 | 无 | 安装或环境排障；先恢复命令，恢复后需要改规则或文档时再进入 Latch。 |
+| 「没按 Latch 流程走」「这应该被记录」 | 是 | `grill` | 流程反馈，优先于小请求；先查同题 open task，再续接或 checkpoint。 |
 | 「要不要改 CLI / 规则 / 安装方式 / 多项目同步」 | 是 | `grill` | 涉及难回退取舍，先确认目标、范围和验收。 |
 | 「修复这个反复出现的 bug」 | 是 | `grill` | 先复现和确认根因，不用 workaround 盖过去。 |
 | 「做一个跨 API / 状态 / 路由 / 权限的功能」 | 是 | `grill` | 先确认契约和验收，再写代码。 |
@@ -156,32 +157,31 @@ AI 总是不知道怎么用这个项目规则，要不要改 skill 或 AGENTS？
 - 跨项目同步规则时，每个被修改的目标项目都用 `latch log` 记录同步原因和文件；不需要为每个项目创建正式任务。
 - 同步全局和项目内 skill 副本时，源头文档和副本规则要一致；不能只改其中一份。
 
-## 6. Latch 自身反馈
+## 6. Latch 流程反馈
 
 触发语：
 
 ```text
-非交互 shell 找不到 latch。
-是不是要改环境配置？
 你为什么没按 Latch 流程走？
 这应该被记录。
+记录规则漏了。
 ```
 
-命中即属于硬触发，优先于「小请求不进入 Latch」。先 `latch checkpoint` 锁现场，再排查：
+命中即属于硬触发，优先于「小请求不进入 Latch」。先用 `latch list --json` 查 open task；有同题任务就续接，确实没有再 `latch checkpoint` 锁现场并排查：
 
 ```bash
-latch checkpoint "处理 latch 命令或流程反馈" \
-  --goal "先记录 AI 漏走流程或 latch 不可用问题，再判断根因和改动范围" \
+latch checkpoint "处理 Latch 流程反馈" \
+  --goal "先记录 AI 漏走流程或记录规则缺口，再判断根因和改动范围" \
   --scope "当前 repo 的 skill、文档、接入说明" \
   --acceptance "明确根因、记录决策、只做最小修复" \
   --next "进入 grill 确认是不是规则问题"
-latch next --to grill --reason "Latch 自身反馈属于规则判断问题"
+latch next --to grill --reason "Latch 流程反馈属于规则判断问题"
 ```
 
 完成标准：
 
-- 先 checkpoint，再排查；不当成小环境修直接改 shell 配置。
-- `latch` 不可用时先用 `zsh -ic 'latch --help'` 确认交互 shell 能加载命令；这一步只为让命令先跑起来，不代表要续接旧任务。恢复后如果命中本场景，第一步仍是 checkpoint。
+- 先查 open task，再续接或 checkpoint；不当成小修直接跳过记录。
+- `latch` 不可用不属于本场景，先按安装或环境问题恢复命令；恢复后需要改规则或文档时，再按普通触发规则进入 Latch。
 - 改动只动 Latch 相关段落，不整理无关内容。
 - 跨 skill 副本同步改，源头和副本保持一致。
 
@@ -208,16 +208,17 @@ latch log "<summary>" --files a.ts,b.ts
 新会话或新请求开始时：
 
 1. 先运行 `git status --short`。
-2. 如果 `.latch/state.json` 有 current task，运行 `latch context --json`。
-3. 如果用户已经明确给了 task ID，先运行 `latch context <id> --json` 或 `latch resume --brief --task <id>`。
-4. 根据本页判断是否进入 Latch。
-5. 进入后先 `checkpoint`，再决定 `brainstorm`、`grill` 或 `plan`。
-6. 纯文档或 commit 任务无 verify 意义时，字段填齐后用 `latch next --to finish` 跳级收尾，不强制走 `dev`/`check` 或凑数 `verify`。
-7. 不要求用户手动执行 Latch 命令；用户明确拒绝时除外。
+2. 运行 `latch list --json`，先看是否已有同题 open task。
+3. 如果 `.latch/state.json` 有 current task，运行 `latch context --json`。
+4. 如果用户已经明确给了 task ID，先运行 `latch context <id> --json` 或 `latch resume --brief --task <id>`。
+5. 根据本页判断是否进入 Latch。
+6. 进入后续接同题 task，或在确实没有同题任务时 `checkpoint`，再决定 `brainstorm`、`grill` 或 `plan`。
+7. 纯文档或 commit 任务无 verify 意义时，字段填齐后用 `latch next --to finish` 跳级收尾，不强制走 `dev`/`check` 或凑数 `verify`。
+8. 不要求用户手动执行 Latch 命令；用户明确拒绝时除外。
 
 任务分流默认规则：
 
-- `context --json` 后发现当前 task 和用户这次要处理的是同一件事，继续原 task。
+- `list --json` 或 `context --json` 后发现已有 task 和用户这次要处理的是同一件事，继续原 task。
 - 用户已经点名某张 task 时，先读那张 task，不要被“当前 actor 没 current task”误导去新开任务。
 - 只要这次问题已经换题，即使还在同一 repo、同一会话，也必须 `checkpoint --new`。
 - 有 current task 时，带标题的 `checkpoint` 一律视为“新任务”，必须配 `--new`；不然宁可报错，不靠猜。
