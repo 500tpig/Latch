@@ -6,6 +6,8 @@
 
 Latch 是一个纯 AI coding harness:项目内的任务状态锁存器。小请求不进入;任务变长、碰风险域,或用户要求规划项目、讨论路线图时,锁住现场,之后必须经过阶段、验证和用户确认才能归档。
 
+Latch 以运行命令时的当前目录作为项目根,`.latch/` 会写在这个目录下。通常在仓库根执行;如果在子目录执行,会在子目录生成独立 `.latch/`。
+
 同一项目可以同时保留多个 open task。默认任务不再是全局唯一: `state.json` 为每个 actor 保存自己的 `current_task_id`，任务本身记录 `owner`。命令默认操作当前 actor 的 current task；`--task <id>` 可显式指定任务，`latch use <id> --force` 可接管别的 actor 任务。`checkpoint --new` 用来明确“这是另一张新任务”，不再靠是否已有 current 猜意图。
 
 ## 非目标
@@ -53,5 +55,5 @@ v1 只服务当前 repo 的 AI coding 续接,不扩成通用个人脑系统。
 - 模块卡只是派生视图,不单独当真源维护
 - 正式知识卡只在 `finish` 阶段生成
 - citation 最少包含 `path`、`symbol` 和 `source_task`,`line` 可选
-- 默认召回顺序固定为:文件路径 -> 关键词 -> 模块卡 -> 原始任务
+- 默认召回顺序固定为:文件路径 -> 关键词 -> 模块卡;没有命中时返回无匹配
 - 第一版直接扫描 `.latch/knowledge/tasks/*.md`,先不引入显式索引目录

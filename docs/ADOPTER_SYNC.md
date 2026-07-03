@@ -34,7 +34,9 @@
 
 | 日期 | 变更 | 需要同步的项目 | 要改什么 |
 | --- | --- | --- | --- |
-| 2026-07-01 | 接入规则统一改为优先使用全局 `latch` 命令；`command not found: latch` 时先试 `zsh -ic 'latch resume --brief'`；新增“Latch 自身接入反馈”触发；`verify` 通过后先 `latch next` 进入 `finish`，补 closure，再等用户确认 `latch done`；`Locus` 补 `.latch/` 忽略规则 | `appearance-sec`、`monitoring`、`Locus` | `appearance-sec/AGENTS.md` 补触发和收尾口径；`monitoring/AGENTS.md` 补触发和收尾口径；`monitoring/CLAUDE.md` 去掉 `/Users/.../dist/cli.js` 绝对路径，改用 `latch ...`；`Locus/AGENTS.md` 补 `resume --brief`、fallback 和“先 checkpoint 再排查”；`Locus/.gitignore` 加 `.latch/` |
+| 2026-07-01 | 初次统一接入全局 `latch` 命令、新增“Latch 自身接入反馈”触发、明确 `verify -> finish -> 用户确认后 done` 收尾流程；`Locus` 补 `.latch/` 忽略规则 | `appearance-sec`、`monitoring`、`Locus` | 三个项目补 Latch 触发和收尾口径；`monitoring/CLAUDE.md` 去掉本机绝对路径，改用通用 `latch ...`；`Locus/.gitignore` 加 `.latch/` |
+| 2026-07-02 | AI 默认续接入口改为 `latch context --json`；`command not found: latch` fallback 改为 `zsh -ic 'latch context --json'`；项目内 Latch skill 副本压成薄入口 | `appearance-sec`、`monitoring`、`Locus` | `appearance-sec/AGENTS.md` 和 `.agents/skills/latch/SKILL.md` 同步入口；`monitoring/AGENTS.md`、`CLAUDE.md` 和 `.agents/skills/latch/SKILL.md` 同步入口；`Locus/AGENTS.md` 同步入口 |
+| 2026-07-03 | `command not found: latch` fallback 改为 `zsh -ic 'latch --help'`，避免用 `context --json` 在未初始化目录创建 `.latch/` | `appearance-sec`、`monitoring`、`Locus` | 同步 AGENTS/CLAUDE/项目内 skill 里的 fallback 命令；AI 默认续接入口仍是 `latch context --json` |
 
 ## 每次任务收尾怎么写
 
@@ -55,22 +57,26 @@
 ### appearance-sec
 
 - `AGENTS.md` 已包含：
-  - `command not found: latch` -> `zsh -ic 'latch resume --brief'`
+  - AI 续接入口 -> `latch context --json`
+  - `command not found: latch` -> `zsh -ic 'latch --help'`
   - Latch 自身接入反馈先 `checkpoint`
   - `verify -> latch next -> finish closure -> 用户确认后 done`
+- `.agents/skills/latch/SKILL.md` 已压成薄入口
 
 ### monitoring
 
 - `AGENTS.md` 已包含：
-  - `command not found: latch` -> `zsh -ic 'latch resume --brief'`
+  - AI 续接入口 -> `latch context --json`
+  - `command not found: latch` -> `zsh -ic 'latch --help'`
   - Latch 自身接入反馈先 `checkpoint`
   - `verify -> latch next -> finish closure -> 用户确认后 done`
 - `CLAUDE.md` 已改为通用 `latch ...`，不再写本机绝对路径
+- `.agents/skills/latch/SKILL.md` 已压成薄入口
 
 ### Locus
 
 - `AGENTS.md` 已包含：
-  - `latch resume --brief`
-  - `command not found: latch` -> `zsh -ic 'latch resume --brief'`
+  - AI 续接入口 -> `latch context --json`
+  - `command not found: latch` -> `zsh -ic 'latch --help'`
   - Latch 自身接入反馈先 `checkpoint`
 - `.gitignore` 已忽略 `.latch/`

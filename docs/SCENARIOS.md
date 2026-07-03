@@ -181,7 +181,7 @@ latch next --to grill --reason "Latch 自身反馈属于规则判断问题"
 完成标准：
 
 - 先 checkpoint，再排查；不当成小环境修直接改 shell 配置。
-- `latch` 不可用时先用 `zsh -ic 'latch context --json'` 恢复命令；这一步只为让命令先跑起来，不代表要续接旧任务。恢复后如果命中本场景，第一步仍是 checkpoint。
+- `latch` 不可用时先用 `zsh -ic 'latch --help'` 确认交互 shell 能加载命令；这一步只为让命令先跑起来，不代表要续接旧任务。恢复后如果命中本场景，第一步仍是 checkpoint。
 - 改动只动 Latch 相关段落，不整理无关内容。
 - 跨 skill 副本同步改，源头和副本保持一致。
 
@@ -227,7 +227,7 @@ latch log "<summary>" --files a.ts,b.ts
 如果 `latch` 报 `command not found`，先试：
 
 ```bash
-zsh -ic 'latch context --json'
+zsh -ic 'latch --help'
 ```
 
 不要把本机绝对路径写入项目规则或 skill。

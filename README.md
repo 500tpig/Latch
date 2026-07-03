@@ -2,7 +2,7 @@
 
 Latch is a small AI coding harness for formal coding tasks.
 
-Small requests stay out of Latch. Formal tasks are kept as open tasks in the current project. One task is marked as current, and stage commands operate on that task unless `--task <id>` is provided; `<id>` can be a full task ID or a unique prefix.
+Small requests stay out of Latch. Formal tasks are kept as open tasks in the current project. Each actor has its own current task, and stage commands operate on that task unless `--task <id>` is provided; `<id>` can be a full task ID or a unique prefix.
 
 ```bash
 latch init

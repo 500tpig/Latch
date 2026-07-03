@@ -39,6 +39,8 @@ Latch 是一个项目内任务状态锁存器，用在 AI coding 任务碰到风
 | `latch done [--task <task-id>|--all --yes] [--force]` | 归档任务 | 单任务模式只允许在 `finish` 且最近 verify 为 `pass` 时执行；`--all --yes` 会批量归档所有已满足门禁的 `finish` 任务。 |
 | `latch knowledge ...` | 生成和召回知识卡 | v1 只服务当前 repo 的 AI coding 续接。 |
 
+所有 `.latch/` 路径都基于运行 `latch` 时的当前目录。通常在仓库根执行；在子目录执行会在子目录创建独立 `.latch/`。
+
 显式 task ID 支持完整目录名，也支持唯一前缀；如果命中多个 open task，会报歧义错误，要求改用更长的 ID。
 
 ## 常用流程
@@ -136,7 +138,7 @@ latch knowledge verify --all
 - 知识卡格式固定为 `md + YAML frontmatter`
 - 正式知识卡只在 `finish` 阶段生成，且最近 verify 必须是 `pass`
 - `--draft` 允许提前生成草稿卡
-- 默认召回顺序是：文件路径 -> 关键词 -> 模块卡 -> 原始任务
+- 默认召回顺序是：文件路径 -> 关键词 -> 模块卡；没有命中时返回无匹配
 - v1 不建向量库，不接 MindOS，不做重 UI
 - 到 `finish` 收尾时，先补 closure；推荐直接用 `latch finish --changes "..." --verified "..." --unverified "..." --followup "..."` 一次写完
 - 知识记忆判断可以继续用 `latch save --knowledge generate|skip --knowledge-reason "..."`，也可以直接并在 `latch finish ...` 里一起写
@@ -416,7 +418,7 @@ latch resume --json --task <task-id>
 AI 工具如果在非交互 shell 中报 `command not found: latch`，先试：
 
 ```bash
-zsh -ic 'latch context --json'
+zsh -ic 'latch --help'
 ```
 
 这通常表示 shell 没加载用户 PATH，不代表 Latch 未安装。不要把本机绝对路径写进项目规则。
@@ -491,7 +493,7 @@ open task 存在时，`log` 仍可记录无关小事。已经进入 Latch 的同
 先运行 latch context --json，看当前 stage、next、最近 verify 和 recent_events。只处理 next 指向的范围，不扩大改动；完成后用 latch verify -- <最小相关命令> 记录结果。
 ```
 
-如果 latch 命令找不到，先用 zsh -ic 'latch context --json' 复核交互 shell 是否可用；不要直接改用本机绝对路径。
+如果 latch 命令找不到，先用 zsh -ic 'latch --help' 复核交互 shell 是否可用；不要直接改用本机绝对路径。
 
 ### 验证已通过后收尾
 
