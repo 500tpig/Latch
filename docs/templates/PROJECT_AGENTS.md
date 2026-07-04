@@ -11,7 +11,8 @@
 - 新开 Latch 任务前先运行 `latch list --json --brief`，避免同题重复 task。
 - 续接任务先运行 `latch context --json --brief`；需要完整字段时再运行 `latch context --json`。
 - 如果 AI 工具报 `command not found: latch`，先试 `zsh -ic 'latch --help'`，不要写入本机绝对路径。
-- 验证必须通过 `latch verify -- <command>` 记录。
+- 多 AI 并行时，每个 agent 必须使用稳定且不同的 `LATCH_ACTOR`；没有线程 ID 的环境不要共用默认 `default` actor。
+- 验证必须通过 `latch verify -- <command>` 记录；`verify` 不经过 shell，`&&`、管道、glob 和 `$VAR` 展开需要拆成多次验证。
 - verify 通过后进入 `finish`，补 closure，写清改动、验证、未覆盖范围和下次接什么；用户要求收尾、提交、结束或归档时先运行 `latch list --json --brief` 看全局 open task，只有用户确认后才执行 `latch done`。
 - 不要把 `task.json` 或 `notes.md` 当成正式需求文档；中等功能额外写 `docs/briefs/`，大需求额外写 `docs/prd/`。
 - `git commit`、`git push` 和 `latch done` 都需要用户明确确认；没有明确说「提交」「推送」或「归档」时，AI 不得自动执行。

@@ -52,9 +52,11 @@ latch resume --brief --task <task-id>
 
 验证通过后，推荐用一条命令补收尾：`latch finish --changes "..." --verified "..." --unverified "..." --followup "..."`。如果当前还在 `check` 且最近 verify 已通过，`finish` 会自动进入 `finish` 阶段；知识记忆默认 skip，需要沉淀规则时显式加 `--knowledge generate --knowledge-reason "..."`。用户要求收尾、提交、结束或归档时，先用 `latch list --json --brief` 看全局 open task；非当前 owner 的 `finish` task 不静默忽略，先提示是否 `--force`。只有用户确认后才执行 `latch done`。
 
+`latch verify -- <command>` 直接执行一个进程，不经过 shell。不要把 `pnpm a && pnpm b`、管道、glob 或 `$VAR` 展开写成一条 verify；需要多条验证时，分开执行多次 `latch verify -- <command>`。
+
 Latch 的写命令（`checkpoint`、`save`、`finish`、`next`、`verify`、`done`、`abandon`、`use --force`）按串行调用设计。不要并行执行多个写命令，否则会撞 `.latch/.lock`。
 
-多 agent 场景下，接入方应给每个 agent 提供稳定的 `LATCH_ACTOR`。如果没显式设置，Latch 会退回到当前线程 ID（例如 Codex 的 `CODEX_THREAD_ID`）。不要让多个并发 agent 共用同一个 `LATCH_ACTOR`。
+多 agent 场景下，接入方应给每个 agent 提供稳定的 `LATCH_ACTOR`。如果没显式设置，Latch 会退回到当前线程 ID（例如 Codex 的 `CODEX_THREAD_ID`）；两者都没有时会使用 `default`。Claude Code 等没有线程 ID 的环境必须显式设置 `LATCH_ACTOR`，不要让多个并发 agent 共用同一个 actor。
 
 安装阶段不要自动执行目标项目的 `typecheck`、`test` 或 `build`。这些命令可能很慢、已有失败，或产生副作用。
 

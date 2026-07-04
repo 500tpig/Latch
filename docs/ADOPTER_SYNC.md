@@ -38,6 +38,7 @@
 | 2026-07-03 | `command not found: latch` fallback 改为 `zsh -ic 'latch --help'`，避免用 `context --json` 在未初始化目录创建 `.latch/`；Latch 流程反馈和收尾前先用 `latch list --json` 查 open task | `appearance-sec`、`monitoring` | 同步 AGENTS/CLAUDE/项目内 skill 里的 fallback、查重和收尾前全局查看 open task 规则；AI 默认续接入口仍是 `latch context --json` |
 | 2026-07-03 | `latch finish` 可在 `check` 且 verify pass 时直接进入 `finish`；`--followup` 同步 `next`；knowledge 默认 skip | `appearance-sec`、`monitoring` | 同步收尾路径为 `verify -> latch finish closure -> 用户确认后 done`；需要知识沉淀时再显式 `--knowledge generate` |
 | 2026-07-04 | 新增 `latch list --json --brief` 和 `latch context --json --brief`；AI 默认入口改为 brief JSON；full JSON 保留完整字段 | `appearance-sec`、`monitoring` | 同步 AGENTS/CLAUDE/项目内 skill 里的默认入口；需要完整字段时再使用不带 `--brief` 的 JSON |
+| 2026-07-04 | 文档明确 `verify` 不经过 shell；多 agent 并行时必须设置稳定 `LATCH_ACTOR`；`done` 的 closure 质量属于使用约定，不由 CLI 解析 | `appearance-sec`、`monitoring` | 同步 AGENTS/CLAUDE/项目内 skill 里的 verify 限制、`LATCH_ACTOR` 要求和收尾口径 |
 
 ## 每次任务收尾怎么写
 

@@ -88,7 +88,7 @@ latch next --task 2026-07-01-0900-修复登录态过期跳转
 
 ### 多 agent 协作
 
-- 每个 agent 要有稳定的 actor 标识。CLI 默认读取 `LATCH_ACTOR`；在 Codex 里没有显式设置时，会退回 `CODEX_THREAD_ID`。
+- 每个 agent 要有稳定的 actor 标识。CLI 默认读取 `LATCH_ACTOR`；在 Codex 里没有显式设置时，会退回 `CODEX_THREAD_ID`；两者都没有时会使用 `default`。Claude Code 等没有线程 ID 的环境应显式设置 `LATCH_ACTOR`，避免多个会话共用同一个 current task。
 - task 会记录 `owner`。默认只能读写自己拥有的任务。
 - 需要接手别的 agent 任务时，显式执行：
 
@@ -245,7 +245,7 @@ abandoned 可从任意 open task 进入
 | `grill -> plan` | 已有 `goal`、`scope` 和 `acceptance` | CLI 检查 |
 | `plan -> dev` | 已有 `next` | CLI 检查 |
 | `dev -> check` | AI 已完成实现，准备验证 | 使用约定 |
-| `check -> finish` | 最近一次 `latest_verify.status` 是 `pass` | CLI 检查；可用 `latch next`，也可直接用 `latch finish ...` 收尾 |
+| `check -> finish` | 最近一次 `latest_verify.status` 是 `pass` | CLI 检查；`latch finish ...` 会同时要求 closure，`latch next` 只推进阶段并铺模板 |
 | `finish -> done` | 用户明确要求完成、收尾或归档 | 使用约定 |
 
 纯文档或 commit 任务可从规划阶段（`triage`/`brainstorm`/`grill`/`plan`）跳级到 `finish`。这条是 `latch next --to finish` 的特殊门禁，要求 `goal`/`scope`/`acceptance`/`next` 填齐，详见下方 `next` 一节。
@@ -362,11 +362,13 @@ latch next --to brainstorm --reason "用户要求先讨论方案"
 latch next --to finish --reason "纯文档任务，无 verify 意义"
 ```
 
-跳级门禁要求 `goal`/`scope`/`acceptance`/`next` 都填齐。`dev` 及之后不跳，要让 `check` 的 verify 把关。跳级后 closure 必须写清「没验证什么」。
+跳级门禁要求 `goal`/`scope`/`acceptance`/`next` 都填齐。`dev` 及之后不跳，要让 `check` 的 verify 把关。`next --to finish` 只推进阶段并铺 closure 模板；跳级后仍要用 `latch finish --changes "..." --verified "..." --unverified "..." --followup "..."` 写清「没验证什么」。
 
 ### `verify`
 
 `verify` 是唯一记录验证结果的命令。它真实执行后面的命令，并把退出码写入 `task.json` 和 `events.jsonl`。
+
+`verify` 直接执行一个进程，不经过 shell。`&&`、管道、glob 和 `$VAR` 展开不会自动生效；需要验证多条命令时，分开执行多次 `latch verify -- <command>`。
 
 推荐跑最小相关验证：
 
@@ -458,13 +460,16 @@ latch context --json
 
 用户说「收尾」「提交」「结束」或「归档」时，先运行 `latch list --json --brief` 看全局 open task。当前 actor 已满足门禁的 `finish` task 等用户确认后 `done`；非当前 owner 已满足门禁的 `finish` task 先提示用户决定是否 `done --task <id> --force` 或 `done --all --yes --force`；非 `finish` 的 open task 先提示保留或 `abandon`。
 
-执行前必须满足：
+CLI 会检查：
 
 - stage 是 `finish`。
-- 代码任务最近一次 verify 是 `pass`；从规划阶段直接 `next --to finish` 的纯文档/commit 任务可无 verify，但 closure 必须写清未验证范围。
-- `notes.md` 的 finish closure 已写清改了什么、验证了什么、没验证什么、下次接什么；没有未覆盖范围时写「无」。
+- 代码任务最近一次 verify 是 `pass`；从规划阶段直接 `next --to finish` 的纯文档/commit 任务可无 verify。
 - `task.json` 里已经记录知识记忆判断和理由；默认由 `latch finish` 写入 skip，需要沉淀时显式 generate。
 - 如果判断是 `generate`，对应 task 的知识卡必须已经生成。
+
+使用约定：
+
+- `notes.md` 的 finish closure 已写清改了什么、验证了什么、没验证什么、下次接什么；没有未覆盖范围时写「无」。纯文档/commit 跳级任务要写清未验证范围。CLI 不解析 `notes.md` 判断 closure 写得好不好。
 - 用户明确确认完成、收尾或归档。
 
 `latch done --help` 只输出帮助，不执行归档。
