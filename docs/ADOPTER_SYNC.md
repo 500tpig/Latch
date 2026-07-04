@@ -62,6 +62,8 @@
   - AI 续接入口 -> `latch context --json --brief`
   - `command not found: latch` -> `zsh -ic 'latch --help'`
   - Latch 流程反馈先 `latch list --json --brief` 查重，再续接或 `checkpoint`
+  - 多 AI 并行时设置稳定 `LATCH_ACTOR`
+  - `latch verify -- <command>` 不经过 shell，复合命令拆成多次验证
   - `verify -> latch finish closure -> 用户确认后 done`
 - `.agents/skills/latch/SKILL.md` 已压成薄入口
 
@@ -71,5 +73,7 @@
   - AI 续接入口 -> `latch context --json --brief`
   - `command not found: latch` -> `zsh -ic 'latch --help'`
   - Latch 流程反馈先 `latch list --json --brief` 查重，再续接或 `checkpoint`
+  - 多 AI 并行时设置稳定 `LATCH_ACTOR`
+  - `latch verify -- <command>` 不经过 shell，复合命令拆成多次验证
   - `verify -> latch finish closure -> 用户确认后 done`
 - `CLAUDE.md` 已改为通用 `latch ...`，不再写本机绝对路径
