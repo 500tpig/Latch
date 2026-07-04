@@ -47,6 +47,60 @@ test("next --to finish skips dev/check when fields are filled", () => {
   assert.equal(task.latest_verify, undefined);
 });
 
+test("done accepts documentation task that jumped to finish without verify", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Doc only"]);
+  run(cwd, ["save", "--goal", "G", "--scope", "S", "--acceptance", "A", "--next", "N"]);
+  run(cwd, ["next", "--to", "finish", "--reason", "纯文档任务，无 verify 意义"]);
+  run(cwd, [
+    "finish",
+    "--changes",
+    "只改文档",
+    "--verified",
+    "无，纯文档跳级",
+    "--unverified",
+    "未运行测试",
+    "--followup",
+    "等用户确认后 done",
+  ]);
+  const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
+  const task = JSON.parse(readFileSync(join(cwd, ".latch", "tasks", taskId, "task.json"), "utf8"));
+  assert.equal(task.latest_verify, undefined);
+
+  const result = run(cwd, ["done"]);
+  assert.equal(result.status, 0);
+
+  const state = JSON.parse(readFileSync(join(cwd, ".latch/state.json"), "utf8"));
+  assert.deepEqual(state, {});
+});
+
+test("done rejects jumped finish task when latest verify failed", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Doc with failed verify"]);
+  run(cwd, ["save", "--goal", "G", "--scope", "S", "--acceptance", "A", "--next", "N"]);
+  run(cwd, ["verify", "--", process.execPath, "-e", "process.exit(1)"]);
+  run(cwd, ["next", "--to", "finish", "--reason", "纯文档任务，无 verify 意义"]);
+  run(cwd, [
+    "finish",
+    "--changes",
+    "只改文档",
+    "--verified",
+    "无",
+    "--unverified",
+    "verify 失败",
+    "--followup",
+    "等用户确认后 done",
+  ]);
+
+  const result = run(cwd, ["done"]);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Latest verification must pass/);
+});
+
 test("next --to finish rejected when required fields missing", () => {
   const cwd = mkdtempSync(join(tmpdir(), "latch-"));
 

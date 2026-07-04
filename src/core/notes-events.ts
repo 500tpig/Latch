@@ -61,6 +61,16 @@ export function recentEvents(task: Task, count: number, options: FormatEventOpti
     .map((line) => formatEvent(JSON.parse(line) as Record<string, unknown>, options))
 }
 
+export function taskEvents(task: Task): Record<string, unknown>[] {
+  const eventsPath = join(taskPath(task.id), 'events.jsonl')
+  if (!existsSync(eventsPath)) return []
+  return readFileSync(eventsPath, 'utf8')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, unknown>)
+}
+
 export function appendNotes(task: Task, heading: string, lines: string[]) {
   writeFileSync(
     join(taskPath(task.id), 'notes.md'),

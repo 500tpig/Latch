@@ -37,7 +37,7 @@ Latch 是一个项目内任务状态锁存器，用在 AI coding 任务碰到风
 | `latch context [task-id]` | 输出任务上下文 | AI 默认入口用 `--json`；也供人读和看板。 |
 | `latch log "<summary>"` | 小任务留痕 | 不创建任务，不进状态机。 |
 | `latch abandon [--reason "..."]` | 放弃当前任务 | 任意阶段可用，归档现场。 |
-| `latch done [--task <task-id>|--all --yes] [--force]` | 归档任务 | 单任务模式只允许在 `finish` 且最近 verify 为 `pass` 时执行；`--all --yes` 会批量归档所有已满足门禁的 `finish` 任务。 |
+| `latch done [--task <task-id>|--all --yes] [--force]` | 归档任务 | 单任务模式只允许在 `finish` 且满足验证门禁时执行；纯文档/commit 跳级任务可无 verify。`--all --yes` 会批量归档所有已满足门禁的 `finish` 任务。 |
 | `latch knowledge ...` | 生成和召回知识卡 | v1 只服务当前 repo 的 AI coding 续接。 |
 
 所有 `.latch/` 路径都基于运行 `latch` 时的当前目录。通常在仓库根执行；在子目录执行会在子目录创建独立 `.latch/`。
@@ -461,7 +461,7 @@ latch context --json
 执行前必须满足：
 
 - stage 是 `finish`。
-- 最近一次 verify 是 `pass`。
+- 代码任务最近一次 verify 是 `pass`；从规划阶段直接 `next --to finish` 的纯文档/commit 任务可无 verify，但 closure 必须写清未验证范围。
 - `notes.md` 的 finish closure 已写清改了什么、验证了什么、没验证什么、下次接什么；没有未覆盖范围时写「无」。
 - `task.json` 里已经记录知识记忆判断和理由；默认由 `latch finish` 写入 skip，需要沉淀时显式 generate。
 - 如果判断是 `generate`，对应 task 的知识卡必须已经生成。

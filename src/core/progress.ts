@@ -1,8 +1,9 @@
-import { appendNotes } from './notes-events.js'
+import { appendNotes, taskEvents } from './notes-events.js'
 import { knowledgeCardArtifact } from './task-store.js'
 import type { Stage, Task } from './types.js'
 
 export const TASK_FIELDS = ['goal', 'scope', 'acceptance', 'next'] as const
+const VERIFY_OPTIONAL_FINISH_FROM: Stage[] = ['triage', 'brainstorm', 'grill', 'plan']
 
 export function advanceBlockers(task: Task, to: Stage): string[] {
   if (to === 'brainstorm' || to === 'grill' || to === 'blocked') return []
@@ -59,9 +60,20 @@ export function defaultNext(stage: Stage): Stage {
   )
 }
 
+function finishedWithoutVerify(task: Task) {
+  return taskEvents(task).some(
+    (entry) =>
+      entry.type === 'stage_changed' &&
+      entry.to === 'finish' &&
+      VERIFY_OPTIONAL_FINISH_FROM.includes(entry.from as Stage),
+  )
+}
+
 export function ensureDoneReady(task: Task) {
   if (task.stage !== 'finish') throw new Error('Task must be in finish stage.')
-  if (task.latest_verify?.status !== 'pass')
+  if (task.latest_verify && task.latest_verify.status !== 'pass')
+    throw new Error('Latest verification must pass.')
+  if (!task.latest_verify && !finishedWithoutVerify(task))
     throw new Error('Latest verification must pass.')
   if (!task.knowledge_decision)
     throw new Error(
