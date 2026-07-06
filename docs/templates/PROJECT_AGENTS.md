@@ -10,6 +10,8 @@
 - 误判为小修后任务变长，立即执行 `latch checkpoint` 补记现场。
 - 新开 Latch 任务前先运行 `latch list --json --brief`，避免同题重复 task。
 - 续接任务先运行 `latch context --json --brief`；需要完整字段时再运行 `latch context --json`。
+- 规划、复盘、路线讨论和后续判断先完整探索问题面、选项、风险和长期影响，再给出最小可执行下一步；最小改动只约束实现 diff，不压缩规划思考。
+- 全面梳理先分层取证：先看提交统计、文件名、目录、标题和已有 brief；摘要不足时再读完整 patch、长文档或宽范围搜索输出。
 - 如果 AI 工具报 `command not found: latch`，先试 `zsh -ic 'latch --help'`，不要写入本机绝对路径。
 - 多 AI 并行时，每个 agent 必须使用稳定且不同的 `LATCH_ACTOR`；没有线程 ID 的环境不要共用默认 `default` actor。
 - 验证必须通过 `latch verify -- <command>` 记录；`verify` 不经过 shell，`&&`、管道、glob 和 `$VAR` 展开需要拆成多次验证。

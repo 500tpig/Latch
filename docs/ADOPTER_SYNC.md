@@ -39,6 +39,7 @@
 | 2026-07-03 | `latch finish` 可在 `check` 且 verify pass 时直接进入 `finish`；`--followup` 同步 `next`；knowledge 默认 skip | `appearance-sec`、`monitoring` | 同步收尾路径为 `verify -> latch finish closure -> 用户确认后 done`；需要知识沉淀时再显式 `--knowledge generate` |
 | 2026-07-04 | 新增 `latch list --json --brief` 和 `latch context --json --brief`；AI 默认入口改为 brief JSON；full JSON 保留完整字段 | `appearance-sec`、`monitoring` | 同步 AGENTS/CLAUDE/项目内 skill 里的默认入口；需要完整字段时再使用不带 `--brief` 的 JSON |
 | 2026-07-04 | 文档明确 `verify` 不经过 shell；多 agent 并行时必须设置稳定 `LATCH_ACTOR`；`done` 的 closure 质量属于使用约定，不由 CLI 解析 | `appearance-sec`、`monitoring` | 同步 AGENTS/CLAUDE/项目内 skill 里的 verify 限制、`LATCH_ACTOR` 要求和收尾口径 |
+| 2026-07-06 | 规划/复盘/路线讨论先完整探索问题面，再给最小下一步；全面梳理改为分层取证，避免默认读取完整 patch 或长文档；Claude Code 入口用 `CLAUDE.md` 导入 `AGENTS.md` | `appearance-sec`、`monitoring` | 同步 AGENTS/CLAUDE/项目内入口里的规划边界和分层取证规则；如目标项目使用 Claude Code，补 `CLAUDE.md` 薄入口 |
 
 ## 每次任务收尾怎么写
 
@@ -64,7 +65,9 @@
   - Latch 流程反馈先 `latch list --json --brief` 查重，再续接或 `checkpoint`
   - 多 AI 并行时设置稳定 `LATCH_ACTOR`
   - `latch verify -- <command>` 不经过 shell，复合命令拆成多次验证
+  - 规划/复盘/路线讨论先完整探索问题面，再给最小下一步；全面梳理先分层取证
   - `verify -> latch finish closure -> 用户确认后 done`
+- `CLAUDE.md` 已用 `@AGENTS.md` 导入项目规则
 - `.agents/skills/latch/SKILL.md` 已压成薄入口
 
 ### monitoring
@@ -75,5 +78,6 @@
   - Latch 流程反馈先 `latch list --json --brief` 查重，再续接或 `checkpoint`
   - 多 AI 并行时设置稳定 `LATCH_ACTOR`
   - `latch verify -- <command>` 不经过 shell，复合命令拆成多次验证
+  - 规划/复盘/路线讨论先完整探索问题面，再给最小下一步；全面梳理先分层取证
   - `verify -> latch finish closure -> 用户确认后 done`
-- `CLAUDE.md` 已改为通用 `latch ...`，不再写本机绝对路径
+- `CLAUDE.md` 已改为通用 `latch ...`，不再写本机绝对路径，并已用 `@AGENTS.md` 导入项目规则
