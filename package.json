@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "pnpm build && node --test tests/*.test.mjs",
     "check": "pnpm typecheck && pnpm test",
-    "latch": "pnpm build && node dist/cli.js"
+    "latch": "pnpm build && node dist/cli.js",
+    "sync:skill": "bash scripts/sync-latch-skill.sh"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

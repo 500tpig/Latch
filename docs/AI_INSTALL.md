@@ -71,6 +71,25 @@ pnpm add --global .
 
 只修改文档、模板或 skill 时，不需要更新全局命令。
 
+## 更新全局 skill
+
+Latch skill 的源内容在当前 repo 维护：`docs/templates/LATCH_SKILL.md` 是入口模板，`docs/` 是手册真源。同步到本机全局 skill 时运行：
+
+```bash
+pnpm run sync:skill
+```
+
+该命令会更新：
+
+```text
+~/.codex/skills/latch/SKILL.md
+~/.codex/skills/latch/docs/
+~/.agents/skills/latch/SKILL.md
+~/.agents/skills/latch/docs/
+```
+
+不要手动在全局 skill 目录里改流程规则；先改当前 repo 的模板或文档，再同步。
+
 ## 初始化 Latch
 
 目标项目没有 `.latch/` 时，运行：

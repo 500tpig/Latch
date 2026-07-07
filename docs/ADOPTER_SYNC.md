@@ -40,6 +40,7 @@
 | 2026-07-04 | 新增 `latch list --json --brief` 和 `latch context --json --brief`；AI 默认入口改为 brief JSON；full JSON 保留完整字段 | `appearance-sec`、`monitoring` | 同步 AGENTS/CLAUDE/项目内 skill 里的默认入口；需要完整字段时再使用不带 `--brief` 的 JSON |
 | 2026-07-04 | 文档明确 `verify` 不经过 shell；多 agent 并行时必须设置稳定 `LATCH_ACTOR`；`done` 的 closure 质量属于使用约定，不由 CLI 解析 | `appearance-sec`、`monitoring` | 同步 AGENTS/CLAUDE/项目内 skill 里的 verify 限制、`LATCH_ACTOR` 要求和收尾口径 |
 | 2026-07-06 | 规划/复盘/路线讨论先完整探索问题面，再给最小下一步；全面梳理改为分层取证，避免默认读取完整 patch 或长文档；Claude Code 入口用 `CLAUDE.md` 导入 `AGENTS.md` | `appearance-sec`、`monitoring` | 同步 AGENTS/CLAUDE/项目内入口里的规划边界和分层取证规则；如目标项目使用 Claude Code，补 `CLAUDE.md` 薄入口 |
+| 2026-07-07 | 全局 latch skill 补齐 docs 快照并移除不存在的 `docs/SPEC_V0.md` 引用；业务项目 Latch 段压成薄入口，完整流程回到全局 skill 和 Latch repo docs | `appearance-sec`、`monitoring` | 同步 AGENTS/CLAUDE 中的 Latch 入口；以后只有旧规则会导致用错命令、走错流程或写死路径时，才同步业务项目 |
 
 ## 每次任务收尾怎么写
 
