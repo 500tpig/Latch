@@ -42,6 +42,7 @@
 | 2026-07-06 | 规划/复盘/路线讨论先完整探索问题面，再给最小下一步；全面梳理改为分层取证，避免默认读取完整 patch 或长文档；Claude Code 入口用 `CLAUDE.md` 导入 `AGENTS.md` | `appearance-sec`、`monitoring` | 同步 AGENTS/CLAUDE/项目内入口里的规划边界和分层取证规则；如目标项目使用 Claude Code，补 `CLAUDE.md` 薄入口 |
 | 2026-07-07 | 全局 latch skill 补齐 docs 快照并移除不存在的 `docs/SPEC_V0.md` 引用；业务项目 Latch 段压成薄入口，完整流程回到全局 skill 和 Latch repo docs | `appearance-sec`、`monitoring` | 同步 AGENTS/CLAUDE 中的 Latch 入口；以后只有旧规则会导致用错命令、走错流程或写死路径时，才同步业务项目 |
 | 2026-07-08 | 规划问答、外部建议取舍、用户确认只要影响范围、不做项、验收或下一步，就要补「讨论摘记」；小任务写 notes，中等任务写 brief 并挂 artifact | `appearance-sec`、`monitoring` | 同步 AGENTS 里的 Latch 入口说明；CLAUDE 继续通过 `@AGENTS.md` 继承，不单独加重复规则 |
+| 2026-07-08 | 多 agent 的 `LATCH_ACTOR` 统一推荐格式为 `<tool>:<agent>:<session>`，至少写成 `<tool>:<session>`；避免裸线程 ID 无法区分 Codex / Claude / OpenCode | `appearance-sec`、`monitoring` | `appearance-sec` 同步 AGENTS 和项目内 `.agents/skills/latch/SKILL.md`；`monitoring` 同步 AGENTS；CLAUDE 继续通过 `@AGENTS.md` 继承 |
 
 ## 每次任务收尾怎么写
 
@@ -66,6 +67,7 @@
   - `command not found: latch` -> `zsh -ic 'latch --help'`
   - Latch 流程反馈先 `latch list --json --brief` 查重，再续接或 `checkpoint`
   - 多 AI 并行时设置稳定 `LATCH_ACTOR`
+  - `LATCH_ACTOR` 推荐格式为 `<tool>:<agent>:<session>`，至少写成 `<tool>:<session>`，避免看板只显示裸线程 ID
   - `latch verify -- <command>` 不经过 shell，复合命令拆成多次验证
   - 规划/复盘/路线讨论先完整探索问题面，再给最小下一步；全面梳理先分层取证
   - 关键规划问答和取舍要补「讨论摘记」；小任务写 notes，中等任务写 brief
@@ -80,6 +82,7 @@
   - `command not found: latch` -> `zsh -ic 'latch --help'`
   - Latch 流程反馈先 `latch list --json --brief` 查重，再续接或 `checkpoint`
   - 多 AI 并行时设置稳定 `LATCH_ACTOR`
+  - `LATCH_ACTOR` 推荐格式为 `<tool>:<agent>:<session>`，至少写成 `<tool>:<session>`，避免看板只显示裸线程 ID
   - `latch verify -- <command>` 不经过 shell，复合命令拆成多次验证
   - 规划/复盘/路线讨论先完整探索问题面，再给最小下一步；全面梳理先分层取证
   - 关键规划问答和取舍要补「讨论摘记」；小任务写 notes，中等任务写 brief

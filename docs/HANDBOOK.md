@@ -88,7 +88,7 @@ latch next --task 2026-07-01-0900-修复登录态过期跳转
 
 ### 多 agent 协作
 
-- 每个 agent 要有稳定的 actor 标识。CLI 默认读取 `LATCH_ACTOR`；在 Codex 里没有显式设置时，会退回 `CODEX_THREAD_ID`；两者都没有时会使用 `default`。Claude Code 等没有线程 ID 的环境应显式设置 `LATCH_ACTOR`，避免多个会话共用同一个 current task。
+- 每个 agent 要有稳定的 actor 标识。CLI 默认读取 `LATCH_ACTOR`；在 Codex 里没有显式设置时，会退回 `CODEX_THREAD_ID`；两者都没有时会使用 `default`。推荐把 `LATCH_ACTOR` 写成 `<tool>:<agent>:<session>`，至少包含 `<tool>:<session>`，例如 `codex:default:019f3bf3`、`claude:planner:local`、`opencode:default:run-12`。Claude Code、OpenCode 等没有稳定线程 ID 的环境应显式设置 `LATCH_ACTOR`，避免多个会话共用同一个 current task，也避免看板里只剩裸 ID。
 - task 会记录 `owner`。默认只能读写自己拥有的任务。
 - 需要接手别的 agent 任务时，显式执行：
 
