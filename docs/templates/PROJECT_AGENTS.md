@@ -7,6 +7,7 @@
 - Latch 流程反馈（硬触发，优先于「小请求不进入 Latch」）：AI 接入 Latch、记录规则漏触发，或用户指出「这应该被记录」。一旦命中，先用 `latch list --json --brief` 查 open task；有同题任务就续接，确实没有才 `latch checkpoint`。
 - 小请求不进入 Latch；需要留痕时使用 `latch log`。误判为小修后任务变长，立即 `latch checkpoint` 补记现场。
 - 风险域、复现 bug、跨会话续接、方案讨论后再实现、规划/复盘/路线讨论，进入或续接 Latch。
+- 规划问答、外部建议取舍、用户确认只要影响范围、不做项、验收或下一步，就补一段「讨论摘记」；小任务写当前 task `notes.md`，中等任务写 brief 并挂 artifact，不要求逐字记录完整对话。
 - 新开 Latch 任务前先运行 `latch list --json --brief`；续接任务先运行 `latch context --json --brief`，需要完整字段时再运行 `latch context --json`。
 - 如果 AI 工具报 `command not found: latch`，先试 `zsh -ic 'latch --help'`，不要写入本机绝对路径。
 - 验证通过 `latch verify -- <command>` 记录；`verify` 不经过 shell，`&&`、管道、glob 和 `$VAR` 展开需要拆成多次验证。

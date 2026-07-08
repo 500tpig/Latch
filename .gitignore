@@ -1,3 +1,4 @@
 node_modules/
 dist/
 .latch/
+.DS_Store
