@@ -62,6 +62,34 @@ test("knowledge generate --draft writes task card before finish", () => {
   assert.match(content, /currentTask/);
 });
 
+test("knowledge generate uses gate verify when latest diagnostic verify failed", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  const taskId = startTask(cwd, "Knowledge with diagnostic fail");
+  moveTaskToFinish(cwd, taskId, { knowledge: false });
+  assert.notEqual(
+    run(cwd, ["verify", "--task", taskId, "--diagnostic", "--", process.execPath, "-e", "process.exit(1)"]).status,
+    0,
+  );
+
+  const result = run(cwd, [
+    "knowledge",
+    "generate",
+    "--task",
+    taskId,
+    "--module",
+    "cli",
+    "--keyword",
+    "verify",
+    "--path",
+    "src/cli.ts",
+    "--symbol",
+    "verify",
+  ]);
+  assert.equal(result.status, 0);
+});
+
 test("knowledge recall follows path then keyword then module", () => {
   const cwd = mkdtempSync(join(tmpdir(), "latch-"));
 

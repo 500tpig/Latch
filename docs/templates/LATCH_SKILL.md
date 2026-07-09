@@ -38,7 +38,7 @@ blocked 可从任意阶段进入
 latch verify -- <command>
 ```
 
-`verify` 不经过 shell，`&&`、管道、glob 和 `$VAR` 展开需要拆成多次验证。
+`verify` 不经过 shell，`&&`、管道、glob 和 `$VAR` 展开需要拆成多次验证。默认 verify 是收尾门禁；只记录诊断性全量检查时用 `latch verify --diagnostic -- <command>`，不覆盖门禁验证。
 
 验证通过后优先补 closure：
 

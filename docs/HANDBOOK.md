@@ -30,7 +30,7 @@ Latch 是一个项目内任务状态锁存器，用在 AI coding 任务碰到风
 | `latch save ...` | 保存当前阶段字段 | 只记账，不推进阶段；也可写知识记忆判断和 artifacts 指针。 |
 | `latch finish ...` | 一次写完收尾信息 | 在 `finish` 阶段可用；如果当前在 `check` 且 verify 已通过，会自动进入 `finish`。可同时写 closure、知识记忆判断和 artifacts。 |
 | `latch next [--to <stage>]` | 推进阶段 | 会检查阶段门禁；进入 `brainstorm`、`grill`、`finish` 时写入模板。 |
-| `latch verify -- <command>` | 运行验证命令 | 真实执行命令，按退出码记录 `pass` 或 `fail`。 |
+| `latch verify -- <command>` | 运行门禁验证命令 | 真实执行命令，按退出码记录 `pass` 或 `fail`；诊断性验证用 `--diagnostic`。 |
 | `latch resume` | 续接当前任务 | 输出任务字段和 `notes.md` 全文。 |
 | `latch resume --brief` | 人读短摘要 | 输出任务字段、最近 5 条 events 和 notes 路径。人续接时优先用这个；AI 默认入口用 `context --json --brief`。 |
 | `latch list` | 查看未归档任务 | 列出 `.latch/tasks/` 下的任务，`*` 标出当前 actor 的 current，并显示 owner。 |
@@ -137,7 +137,7 @@ latch knowledge verify --all
 - 任务知识卡是真源，落在 `.latch/knowledge/tasks/`
 - 模块卡是派生视图，落在 `.latch/knowledge/modules/`
 - 知识卡格式固定为 `md + YAML frontmatter`
-- 正式知识卡只在 `finish` 阶段生成，且最近 verify 必须是 `pass`
+- 正式知识卡只在 `finish` 阶段生成，且门禁验证必须是 `pass`
 - `--draft` 允许提前生成草稿卡
 - 默认召回顺序是：文件路径 -> 关键词 -> 模块卡；没有命中时返回无匹配
 - v1 不建向量库，不接 MindOS，不做重 UI
@@ -194,7 +194,7 @@ flowchart LR
     plan --> dev["dev"]
     dev --> check["check"]
     check -->|verify fail| check
-    check -->|verify pass + latch next| finish["finish"]
+    check -->|gate verify pass + latch next| finish["finish"]
     finish -->|用户确认 + latch done| done["done"]
     triage --> abandoned["abandoned"]
     brainstorm --> abandoned
@@ -245,7 +245,7 @@ abandoned 可从任意 open task 进入
 | `grill -> plan` | 已有 `goal`、`scope` 和 `acceptance` | CLI 检查 |
 | `plan -> dev` | 已有 `next` | CLI 检查 |
 | `dev -> check` | AI 已完成实现，准备验证 | 使用约定 |
-| `check -> finish` | 最近一次 `latest_verify.status` 是 `pass` | CLI 检查；`latch finish ...` 会同时要求 closure，`latch next` 只推进阶段并铺模板 |
+| `check -> finish` | 最近一次门禁验证是 `pass` | CLI 检查；默认 `latch verify` 写门禁验证，`--diagnostic` 不覆盖门禁；`latch finish ...` 会同时要求 closure，`latch next` 只推进阶段并铺模板 |
 | `finish -> done` | 用户明确要求完成、收尾或归档 | 使用约定 |
 
 纯文档或 commit 任务可从规划阶段（`triage`/`brainstorm`/`grill`/`plan`）跳级到 `finish`。这条是 `latch next --to finish` 的特殊门禁，要求 `goal`/`scope`/`acceptance`/`next` 填齐，详见下方 `next` 一节。
@@ -366,7 +366,7 @@ latch next --to finish --reason "纯文档任务，无 verify 意义"
 
 ### `verify`
 
-`verify` 是唯一记录验证结果的命令。它真实执行后面的命令，并把退出码写入 `task.json` 和 `events.jsonl`。
+`verify` 是唯一记录验证结果的命令。它真实执行后面的命令，并把退出码写入 `task.json` 和 `events.jsonl`。默认 `latch verify -- <command>` 是门禁验证，决定 `check -> finish`、`done` 和正式知识卡生成能不能通过。
 
 `verify` 直接执行一个进程，不经过 shell。`&&`、管道、glob 和 `$VAR` 展开不会自动生效；需要验证多条命令时，分开执行多次 `latch verify -- <command>`。
 
@@ -377,7 +377,13 @@ latch verify -- pnpm exec eslint src/foo.ts
 latch verify -- pnpm test tests/foo.test.ts
 ```
 
-项目全量测试有大量既有失败时，不把全量失败当成小修任务的验收门槛。需要在 `notes.md` 的 finish closure 写清没验证什么。
+项目全量测试有大量既有失败时，不把全量失败当成本次任务的门禁。需要记录诊断结果时，用：
+
+```bash
+latch verify --diagnostic -- pnpm typecheck
+```
+
+诊断验证会更新 `latest_verify` 和 `latest_diagnostic_verify`，但不会覆盖 `latest_gate_verify`。finish closure 里「验证了什么」写门禁验证，「没验证什么」写诊断失败的命令和原因。
 
 ### `resume` 和 `resume --brief`
 
@@ -442,7 +448,7 @@ latch context --json --brief
 latch context --json
 ```
 
-不给任务 ID 时读取当前 actor 的 current task。`--json --brief` 输出低 token JSON，包含 task ID、title、owner、status、stage、current、next、latest_verify 摘要、progress、notes_path 和 recent_events。`--json` 保留完整字段，包含 goal、scope、acceptance、knowledge、artifacts 和完整 latest_verify。
+不给任务 ID 时读取当前 actor 的 current task。`--json --brief` 输出低 token JSON，包含 task ID、title、owner、status、stage、current、next、latest_verify、latest_gate_verify、latest_diagnostic_verify 摘要、progress、notes_path 和 recent_events。`--json` 保留完整字段，包含 goal、scope、acceptance、knowledge、artifacts 和完整验证字段。
 
 `list --json --brief` 会给每张 open task 带同样的 `progress` 结构，适合先列出候选任务，再决定是否 `use`、`context <id> --json --brief` 或读取 full JSON。`list --json` 保留完整输出，供已有消费方继续使用。
 
@@ -463,7 +469,7 @@ latch context --json
 CLI 会检查：
 
 - stage 是 `finish`。
-- 代码任务最近一次 verify 是 `pass`；从规划阶段直接 `next --to finish` 的纯文档/commit 任务可无 verify。
+- 代码任务最近一次门禁验证是 `pass`；从规划阶段直接 `next --to finish` 的纯文档/commit 任务可无 verify。
 - `task.json` 里已经记录知识记忆判断和理由；默认由 `latch finish` 写入 skip，需要沉淀时显式 generate。
 - 如果判断是 `generate`，对应 task 的知识卡必须已经生成。
 
@@ -507,7 +513,7 @@ open task 存在时，`log` 仍可记录无关小事。已经进入 Latch 的同
 ### 继续当前任务
 
 ```text
-先运行 latch context --json --brief，看当前 stage、next、最近 verify 和 recent_events。只处理 next 指向的范围，不扩大改动；完成后用 latch verify -- <最小相关命令> 记录结果。需要 goal、scope、acceptance、artifacts 等完整字段时再运行 latch context --json。
+先运行 latch context --json --brief，看当前 stage、next、最近验证、门禁验证和 recent_events。只处理 next 指向的范围，不扩大改动；完成后用 latch verify -- <最小相关命令> 记录门禁结果。需要 goal、scope、acceptance、artifacts 等完整字段时再运行 latch context --json。
 ```
 
 如果 latch 命令找不到，先用 zsh -ic 'latch --help' 复核交互 shell 是否可用；不要直接改用本机绝对路径。

@@ -77,7 +77,7 @@ latch next --to grill --reason "需要确认复现、范围和验收"
 
 - 记录复现步骤或说明为什么无法复现。
 - 找到根因位置，不只修报告里的单一路径。
-- 用 `latch verify -- <command>` 记录验证结果。
+- 用 `latch verify -- <command>` 记录门禁验证结果；诊断性全量检查用 `latch verify --diagnostic -- <command>`。
 - 如发现项目规则缺口，补到 `AGENTS.md`、项目文档或 skill。
 
 ## 3. 跨模块功能

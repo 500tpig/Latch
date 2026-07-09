@@ -5,6 +5,12 @@ import type { Stage, Task } from './types.js'
 export const TASK_FIELDS = ['goal', 'scope', 'acceptance', 'next'] as const
 const VERIFY_OPTIONAL_FINISH_FROM: Stage[] = ['triage', 'brainstorm', 'grill', 'plan']
 
+export function gateVerify(task: Task) {
+  if (task.latest_gate_verify) return task.latest_gate_verify
+  if (task.latest_verify?.kind === 'diagnostic') return undefined
+  return task.latest_verify
+}
+
 export function advanceBlockers(task: Task, to: Stage): string[] {
   if (to === 'brainstorm' || to === 'grill' || to === 'blocked') return []
   // 无 verify 意义的纯文档/commit 任务可从规划阶段跳级到 finish，跳过 dev/check；
@@ -32,9 +38,10 @@ export function advanceBlockers(task: Task, to: Stage): string[] {
   if (task.stage === 'plan' && to === 'dev') return task.next ? [] : ['missing next']
   if (task.stage === 'dev' && to === 'check') return []
   if (task.stage === 'check' && to === 'finish') {
-    if (!task.latest_verify) return ['missing latest verify']
-    if (task.latest_verify.status !== 'pass')
-      return [`latest verify is ${task.latest_verify.status}`]
+    const verify = gateVerify(task)
+    if (!verify) return ['missing gate verify']
+    if (verify.status !== 'pass')
+      return [`gate verify is ${verify.status}`]
     return []
   }
   return [`transition ${task.stage} -> ${to} is not allowed`]
@@ -71,10 +78,11 @@ function finishedWithoutVerify(task: Task) {
 
 export function ensureDoneReady(task: Task) {
   if (task.stage !== 'finish') throw new Error('Task must be in finish stage.')
-  if (task.latest_verify && task.latest_verify.status !== 'pass')
-    throw new Error('Latest verification must pass.')
-  if (!task.latest_verify && !finishedWithoutVerify(task))
-    throw new Error('Latest verification must pass.')
+  const verify = gateVerify(task)
+  if (verify && verify.status !== 'pass')
+    throw new Error('Gate verification must pass.')
+  if (!verify && !finishedWithoutVerify(task))
+    throw new Error('Gate verification must pass.')
   if (!task.knowledge_decision)
     throw new Error(
       'Knowledge decision is required. Run `latch finish ...` to record closure and default skip, or pass `--knowledge generate` when the task should become a knowledge card.',

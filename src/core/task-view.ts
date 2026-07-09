@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { taskPath } from './task-store.js'
-import { advanceBlockers, defaultNext, ensureDoneReady } from './progress.js'
+import { advanceBlockers, defaultNext, ensureDoneReady, gateVerify } from './progress.js'
 import { recentEvents, truncateEventValue } from './notes-events.js'
 import { actorId } from './ownership.js'
 import type { Task } from './types.js'
@@ -11,7 +11,7 @@ function finishNextAction(task: Task, reason: string) {
     return 'run `latch finish --changes "..." --verified "..." --unverified "..." --followup "..."`'
   if (reason.includes('no knowledge card exists'))
     return 'run `latch knowledge generate`'
-  if (reason.includes('Latest verification must pass'))
+  if (reason.includes('Gate verification must pass'))
     return 'run `latch verify -- <command>`'
   return task.next ?? 'fill the remaining finish fields first'
 }
@@ -94,6 +94,8 @@ export function taskContext(task: Task) {
     knowledge_decided_at: task.knowledge_decided_at ?? null,
     artifacts: task.artifacts ?? [],
     latest_verify: task.latest_verify ?? null,
+    latest_gate_verify: gateVerify(task) ?? null,
+    latest_diagnostic_verify: task.latest_diagnostic_verify ?? null,
     progress: progressSummary(task),
     notes_path: join(taskPath(task.id), 'notes.md'),
     recent_events: recentEvents(task, 5),
@@ -101,12 +103,17 @@ export function taskContext(task: Task) {
 }
 
 function latestVerifyBrief(task: Task) {
-  if (!task.latest_verify) return null
+  return verifyBrief(task.latest_verify)
+}
+
+function verifyBrief(verify: Task['latest_verify']) {
+  if (!verify) return null
   return {
-    status: task.latest_verify.status,
-    exit_code: task.latest_verify.exit_code,
-    created_at: task.latest_verify.created_at,
-    command: truncateEventValue(task.latest_verify.command),
+    kind: verify.kind ?? 'gate',
+    status: verify.status,
+    exit_code: verify.exit_code,
+    created_at: verify.created_at,
+    command: truncateEventValue(verify.command),
   }
 }
 
@@ -120,6 +127,8 @@ export function taskBriefContext(task: Task, opts: { current?: boolean } = {}) {
     current: opts.current ?? false,
     next: task.next ?? null,
     latest_verify: latestVerifyBrief(task),
+    latest_gate_verify: verifyBrief(gateVerify(task)),
+    latest_diagnostic_verify: verifyBrief(task.latest_diagnostic_verify),
     progress: progressSummary(task),
     notes_path: join(taskPath(task.id), 'notes.md'),
     recent_events: recentEvents(task, 5, { truncateValues: true }),
@@ -147,7 +156,7 @@ export function commandUsage(name: string) {
       finish:
         'Usage: latch finish [--changes "..."] [--verified "..."] [--unverified "..."] [--followup "..."] [--knowledge generate|skip] [--knowledge-reason "..."] [--artifact <kind>:<path> ...] [--task <task-id>] [--force]',
       next: 'Usage: latch next [--to <stage>] [--reason <reason>] [--task <task-id>]',
-      verify: 'Usage: latch verify -- <command>',
+      verify: 'Usage: latch verify [--diagnostic] -- <command>',
       resume: 'Usage: latch resume [--brief] [--json] [--task <task-id>]',
       list: 'Usage: latch list [--json] [--brief]',
       log: 'Usage: latch log <summary> [--files a,b,c]',
@@ -175,6 +184,9 @@ export function printResume(task: Task, opts: { brief: boolean; json: boolean })
   console.log(
     `Verify: ${task.latest_verify ? `${task.latest_verify.status} ${task.latest_verify.command}` : 'none'}`,
   )
+  const gate = gateVerify(task)
+  if (gate && gate !== task.latest_verify)
+    console.log(`Gate verify: ${gate.status} ${gate.command}`)
   const artifactsLine = formatArtifacts(task)
   if (artifactsLine) console.log(`Artifacts: ${artifactsLine}`)
   const progress = progressSummary(task)
@@ -184,10 +196,10 @@ export function printResume(task: Task, opts: { brief: boolean; json: boolean })
   console.log(`Next action: ${progress.next_action}`)
   if (progress.blocked_reasons.length > 0)
     console.log(`Blocked by: ${progress.blocked_reasons.join('; ')}`)
-  // verify 已 pass 但 stage 没走到 finish:通常 verify 提前跑了或 next 没推进,工作可能已实际完成却悬挂在中间阶段。提示先推进到 finish 再归档,免得下一轮 resume 看到一个 triage 任务却其实已经做完了。
-  if (task.latest_verify?.status === 'pass' && task.stage !== 'finish') {
+  // 门禁验证已 pass 但 stage 没走到 finish:通常 verify 提前跑了或 next 没推进,工作可能已实际完成却悬挂在中间阶段。提示先推进到 finish 再归档。
+  if (gate?.status === 'pass' && task.stage !== 'finish') {
     console.log(
-      `Note: verify passed but stage is ${task.stage}, not finish. Run \`latch next\` to advance, then \`latch done\` to archive.`,
+      `Note: gate verify passed but stage is ${task.stage}, not finish. Run \`latch next\` to advance, then \`latch done\` to archive.`,
     )
   }
   // 跨会话续接靠 notes.md：上次 grill 结论、plan 取舍、closure 都在里面，省得下一轮重新问一遍
@@ -230,6 +242,8 @@ export function printContext(task: Task, opts: { brief: boolean; json: boolean; 
   console.log(
     `Verify: ${context.latest_verify ? `${context.latest_verify.status} ${context.latest_verify.command}` : 'none'}`,
   )
+  if (context.latest_gate_verify && context.latest_gate_verify !== context.latest_verify)
+    console.log(`Gate verify: ${context.latest_gate_verify.status} ${context.latest_gate_verify.command}`)
   if (context.artifacts && context.artifacts.length > 0)
     console.log(`Artifacts: ${context.artifacts.map((a) => `${a.kind}:${a.path}`).join('  ')}`)
   if (context.progress.advance_to)

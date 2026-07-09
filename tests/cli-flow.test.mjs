@@ -98,7 +98,7 @@ test("done rejects jumped finish task when latest verify failed", () => {
 
   const result = run(cwd, ["done"]);
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /Latest verification must pass/);
+  assert.match(result.stderr, /Gate verification must pass/);
 });
 
 test("next --to finish rejected when required fields missing", () => {
@@ -143,7 +143,7 @@ test("next from check explains missing verify", () => {
   run(cwd, ["next"]); // dev -> check
   const result = run(cwd, ["next"]);
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /missing latest verify/);
+  assert.match(result.stderr, /missing gate verify/);
 });
 
 test("next --to rejects unknown stage", () => {
@@ -167,6 +167,76 @@ test("verify records failure and exits non-zero", () => {
   const task = JSON.parse(readFileSync(join(cwd, ".latch", "tasks", taskId, "task.json"), "utf8"));
   assert.equal(task.latest_verify.status, "fail");
   assert.equal(task.latest_verify.exit_code, 1);
+  assert.equal(task.latest_gate_verify.status, "fail");
+  assert.equal(task.latest_gate_verify.kind, "gate");
+});
+
+test("diagnostic verify failure does not overwrite passing gate verify", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Scoped pass full fail"]);
+  run(cwd, ["save", "--goal", "G", "--scope", "S", "--acceptance", "A", "--next", "N"]);
+  run(cwd, ["next"]);
+  run(cwd, ["next"]);
+  run(cwd, ["next"]);
+  assert.equal(run(cwd, ["verify", "--", process.execPath, "-e", "process.exit(0)"]).status, 0);
+  assert.notEqual(run(cwd, ["verify", "--diagnostic", "--", process.execPath, "-e", "process.exit(1)"]).status, 0);
+
+  const result = run(cwd, [
+    "finish",
+    "--changes",
+    "scoped 通过后记录全量既有失败",
+    "--verified",
+    "gate verify passed",
+    "--unverified",
+    "diagnostic verify failed",
+    "--followup",
+    "等用户确认后 done",
+  ]);
+  assert.equal(result.status, 0);
+
+  const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
+  const task = JSON.parse(readFileSync(join(cwd, ".latch", "tasks", taskId, "task.json"), "utf8"));
+  assert.equal(task.stage, "finish");
+  assert.equal(task.latest_verify.status, "fail");
+  assert.equal(task.latest_verify.kind, "diagnostic");
+  assert.equal(task.latest_gate_verify.status, "pass");
+  assert.equal(task.latest_diagnostic_verify.status, "fail");
+  assert.equal(run(cwd, ["done"]).status, 0);
+});
+
+test("diagnostic verify alone does not satisfy finish gate", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Only diagnostic"]);
+  run(cwd, ["save", "--goal", "G", "--scope", "S", "--acceptance", "A", "--next", "N"]);
+  run(cwd, ["next"]);
+  run(cwd, ["next"]);
+  run(cwd, ["next"]);
+  assert.equal(run(cwd, ["verify", "--diagnostic", "--", process.execPath, "-e", "process.exit(0)"]).status, 0);
+
+  const result = run(cwd, ["finish", "--changes", "只有诊断验证"]);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /missing gate verify/);
+});
+
+test("failing gate verify after a pass blocks finish", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Gate fail after pass"]);
+  run(cwd, ["save", "--goal", "G", "--scope", "S", "--acceptance", "A", "--next", "N"]);
+  run(cwd, ["next"]);
+  run(cwd, ["next"]);
+  run(cwd, ["next"]);
+  assert.equal(run(cwd, ["verify", "--", process.execPath, "-e", "process.exit(0)"]).status, 0);
+  assert.notEqual(run(cwd, ["verify", "--", process.execPath, "-e", "process.exit(1)"]).status, 0);
+
+  const result = run(cwd, ["finish", "--changes", "最新 gate 失败"]);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /gate verify is fail/);
 });
 
 test("verify passes through help after separator", () => {
@@ -233,7 +303,7 @@ test("finish from check still requires passing verification", () => {
 
   const result = run(cwd, ["finish", "--changes", "没有验证不能收尾"]);
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /Cannot advance check -> finish: missing latest verify/);
+  assert.match(result.stderr, /Cannot advance check -> finish: missing gate verify/);
 
   const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
   const task = JSON.parse(readFileSync(join(cwd, ".latch", "tasks", taskId, "task.json"), "utf8"));

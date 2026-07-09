@@ -13,6 +13,7 @@ latch use 202607010900-fix-auth-expiry
 latch save --next "Add regression test"
 latch next
 latch verify -- pnpm test
+latch verify --diagnostic -- pnpm typecheck
 latch finish --changes "..." --verified "pnpm test" --unverified "none" --followup "wait for user confirmation"
 latch done
 ```

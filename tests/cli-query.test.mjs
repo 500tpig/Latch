@@ -135,7 +135,7 @@ test("resume warns when verify passed outside finish", () => {
   // 在 triage 就跑 verify(verify 命令不挡阶段),模拟工作实际做完但 stage 悬挂在中间
   run(cwd, ["verify", "--", process.execPath, "-e", "process.exit(0)"]);
   const result = run(cwd, ["resume"]);
-  assert.match(result.stdout, /verify passed but stage is triage/);
+  assert.match(result.stdout, /gate verify passed but stage is triage/);
 });
 
 test("resume --brief lists recent events and notes path without full notes", () => {
@@ -257,7 +257,7 @@ test("resume explains verify gate when check cannot advance", () => {
   assert.match(result.stdout, /Advance target: finish/);
   assert.match(result.stdout, /Can advance: no/);
   assert.match(result.stdout, /Next action: run `latch verify -- <command>`/);
-  assert.match(result.stdout, /Blocked by: missing latest verify/);
+  assert.match(result.stdout, /Blocked by: missing gate verify/);
 });
 
 test("resume explains finish prerequisites before user confirmation", () => {
@@ -322,4 +322,21 @@ test("recent events truncate long verify commands but keep events jsonl complete
 
   const events = readFileSync(join(cwd, ".latch", "tasks", taskId, "events.jsonl"), "utf8");
   assert.equal(events.includes(longMarker), true);
+});
+
+test("brief context shows latest verify and gate verify separately", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["start", "Split verify"]);
+  assert.equal(run(cwd, ["verify", "--", process.execPath, "-e", "process.exit(0)"]).status, 0);
+  assert.notEqual(run(cwd, ["verify", "--diagnostic", "--", process.execPath, "-e", "process.exit(1)"]).status, 0);
+
+  const brief = JSON.parse(run(cwd, ["context", "--json", "--brief"]).stdout);
+  assert.equal(brief.latest_verify.kind, "diagnostic");
+  assert.equal(brief.latest_verify.status, "fail");
+  assert.equal(brief.latest_gate_verify.kind, "gate");
+  assert.equal(brief.latest_gate_verify.status, "pass");
+  assert.equal(brief.latest_diagnostic_verify.kind, "diagnostic");
+  assert.equal(brief.latest_diagnostic_verify.status, "fail");
 });

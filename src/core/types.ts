@@ -15,6 +15,7 @@ export type Verify = {
   status: 'pass' | 'fail'
   exit_code: number
   created_at: string
+  kind?: 'gate' | 'diagnostic'
 }
 
 export type Artifact = { kind: string; path: string }
@@ -36,6 +37,8 @@ export type Task = {
   // 改由 kind="knowledge_card" 的一项表达。kind 开放字符串，推荐值见 docs/ARTIFACTS.md。
   artifacts?: Artifact[]
   latest_verify?: Verify
+  latest_gate_verify?: Verify
+  latest_diagnostic_verify?: Verify
   created_at: string
   updated_at: string
 }

@@ -29,6 +29,7 @@ import {
   advanceBlockers,
   defaultNext,
   ensureDoneReady,
+  gateVerify,
   scaffoldForStage,
 } from './core/progress.js'
 import {
@@ -141,7 +142,7 @@ function optionAll(name: string) {
   return values
 }
 
-const booleanFlags = new Set(['--all', '--brief', '--draft', '--force', '--help', '--json', '--new', '--yes', '-h'])
+const booleanFlags = new Set(['--all', '--brief', '--diagnostic', '--draft', '--force', '--help', '--json', '--new', '--yes', '-h'])
 
 function firstPositionalArg(values: string[]) {
   let skipValue = false
@@ -381,7 +382,8 @@ switch (command) {
   case 'verify': {
     const separator = args.indexOf('--')
     const verifyArgs = separator >= 0 ? args.slice(separator + 1) : args
-    if (verifyArgs.length === 0) die('Usage: latch verify -- <command>')
+    if (verifyArgs.length === 0) die('Usage: latch verify [--diagnostic] -- <command>')
+    const kind = separator >= 0 && args.slice(0, separator).includes('--diagnostic') ? 'diagnostic' : 'gate'
     runLocked(() => {
       const task = targetTask({ write: true })
       saveTask(task)
@@ -394,12 +396,16 @@ switch (command) {
     })
     const result = runLocked(() => {
       const task = targetTask({ write: true })
-      task.latest_verify = {
+      const verify = {
         command: verifyArgs.join(' '),
         status: verifyResult.status === 0 ? 'pass' : 'fail',
         exit_code: verifyResult.status ?? 1,
         created_at: now(),
-      }
+        kind,
+      } as const
+      task.latest_verify = verify
+      if (kind === 'diagnostic') task.latest_diagnostic_verify = verify
+      else task.latest_gate_verify = verify
       saveTask(task)
       event(task, 'verified', task.latest_verify)
       return task.latest_verify.exit_code
@@ -439,8 +445,8 @@ switch (command) {
           saveTask(task)
           if (!args.includes('--draft')) {
             if (task.stage !== 'finish') throw new Error('Knowledge generate requires finish stage unless --draft is used.')
-            if (task.latest_verify?.status !== 'pass')
-              throw new Error('Knowledge generate requires latest verify pass unless --draft is used.')
+            if (gateVerify(task)?.status !== 'pass')
+              throw new Error('Knowledge generate requires gate verify pass unless --draft is used.')
           }
           ensureKnowledgeDirs()
           const meta = buildKnowledgeMeta(task, {

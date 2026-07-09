@@ -50,9 +50,9 @@ latch resume --brief --task <task-id>
 
 如果用户已经明确指定 task ID，先用 `latch context <task-id> --json --brief` 或 `latch resume --brief --task <task-id>` 读取现场；`<task-id>` 可以是完整 ID，也可以是唯一前缀。不要因为当前 actor 没有 current task，就先新开 `checkpoint`。
 
-验证通过后，推荐用一条命令补收尾：`latch finish --changes "..." --verified "..." --unverified "..." --followup "..."`。如果当前还在 `check` 且最近 verify 已通过，`finish` 会自动进入 `finish` 阶段；知识记忆默认 skip，需要沉淀规则时显式加 `--knowledge generate --knowledge-reason "..."`。用户要求收尾、提交、结束或归档时，先用 `latch list --json --brief` 看全局 open task；非当前 owner 的 `finish` task 不静默忽略，先提示是否 `--force`。只有用户确认后才执行 `latch done`。
+验证通过后，推荐用一条命令补收尾：`latch finish --changes "..." --verified "..." --unverified "..." --followup "..."`。如果当前还在 `check` 且门禁 verify 已通过，`finish` 会自动进入 `finish` 阶段；知识记忆默认 skip，需要沉淀规则时显式加 `--knowledge generate --knowledge-reason "..."`。用户要求收尾、提交、结束或归档时，先用 `latch list --json --brief` 看全局 open task；非当前 owner 的 `finish` task 不静默忽略，先提示是否 `--force`。只有用户确认后才执行 `latch done`。
 
-`latch verify -- <command>` 直接执行一个进程，不经过 shell。不要把 `pnpm a && pnpm b`、管道、glob 或 `$VAR` 展开写成一条 verify；需要多条验证时，分开执行多次 `latch verify -- <command>`。
+`latch verify -- <command>` 直接执行一个进程，不经过 shell。不要把 `pnpm a && pnpm b`、管道、glob 或 `$VAR` 展开写成一条 verify；需要多条验证时，分开执行多次。默认 verify 是收尾门禁；全量命令有既有失败、只想记录诊断结果时，用 `latch verify --diagnostic -- <command>`，它不会覆盖门禁验证。
 
 Latch 的写命令（`checkpoint`、`save`、`finish`、`next`、`verify`、`done`、`abandon`、`use --force`）按串行调用设计。不要并行执行多个写命令，否则会撞 `.latch/.lock`。
 
