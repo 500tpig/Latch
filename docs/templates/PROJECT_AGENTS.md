@@ -13,6 +13,7 @@
 - 多 agent 并行时，必须显式设置稳定的 `LATCH_ACTOR`。推荐格式：`<tool>:<agent>:<session>`，至少写成 `<tool>:<session>`；不要只依赖默认线程 ID，也不要让多个 AI 共用 `default`。
 - 验证通过 `latch verify -- <command>` 记录；默认 verify 是收尾门禁，诊断性全量检查用 `latch verify --diagnostic -- <command>`，不覆盖门禁验证；`verify` 不经过 shell，`&&`、管道、glob 和 `$VAR` 展开需要拆成多次验证。
 - verify 通过后用 `latch finish --changes "..." --verified "..." --unverified "..." --followup "..."` 补 closure；用户要求收尾、提交、结束或归档时，先运行 `latch list --json --brief` 看全局 open task，只有用户确认后才执行 `latch done`。
+- 任务到 `finish`/`done` 后又发现还有事：只是补 closure、验证说明或讨论摘记，继续当前 task（`latch save` 或重跑 `latch finish`，finish 阶段也能写）；属于新增实质范围（改代码、跨 repo 同步、重新验证、原验收有缺口），新开 follow-up task 并引用原 task ID，不重开已 finish/done 的任务。判断标准是 scope，不是 finish 状态。
 - `git commit`、`git push` 和 `latch done` 都需要用户明确确认；没有明确说「提交」「推送」或「归档」时，AI 不得自动执行。
 - 跨项目同步 Latch 规则时，每个被修改的目标项目都用 `latch log` 留痕。
 

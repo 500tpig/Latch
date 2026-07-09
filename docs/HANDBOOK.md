@@ -480,6 +480,16 @@ CLI 会检查：
 
 `latch done --help` 只输出帮助，不执行归档。
 
+### 完成后又发现还有事
+
+任务到 `finish` 或 `done` 后又发现要改或要加，按「新增范围是否在原任务 scope/acceptance 内」判断，不按 finish 状态判断：
+
+- 只是补 closure、验证说明、讨论摘记或同步台账：继续当前 task。`latch save` 可在任意阶段写字段；已 `finish` 的任务重跑 `latch finish --changes "..." ...` 不会推进阶段，只补 closure 和 notes。
+- 属于新增实质范围（改代码、跨 repo 同步、加新规则、重新验证、原验收有缺口）：新开 follow-up task，并在原 task 的 `next` 或 notes 里引用新 task ID。
+- 已 `done` 归档的任务只作历史记录，后续一律新开 task，引用原 task ID。
+
+判断标准是 scope，不是 finish：同步若本就在原任务 acceptance 里，应在 finish 前做完，而不是 finish 后再拆任务。Latch 没有「重开」已 finish/done 任务的命令，这是有意为之——重开会让 finish/done 的含义变软，历史记录也难追。
+
 ### `abandon`
 
 `abandon` 只负责放弃并归档当前任务，不负责删除文件、不负责 commit。
