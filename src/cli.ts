@@ -333,6 +333,15 @@ switch (command) {
         throw new Error('Finish closure is required when finishing from check.')
       applyFinishDefaults(task, changed, closure.followup)
       if (hasClosure) {
+        // closure 结构化进 task.json 作为真源，notes.md 的 scaffold 是人读副本
+        task.closure = {
+          changes: closure.changes ?? '',
+          verified: closure.verified ?? '',
+          unverified: closure.unverified ?? '',
+          followup: closure.followup ?? '',
+          updated_at: now(),
+        }
+        changed.push('closure')
         appendNotes(task, 'Finish closure', [
           `改了什么：${closure.changes ?? ''}`,
           `验证了什么：${closure.verified ?? ''}`,

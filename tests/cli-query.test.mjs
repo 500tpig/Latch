@@ -340,3 +340,76 @@ test("brief context shows latest verify and gate verify separately", () => {
   assert.equal(brief.latest_diagnostic_verify.kind, "diagnostic");
   assert.equal(brief.latest_diagnostic_verify.status, "fail");
 });
+
+test("finish writes structured closure to task.json and context --brief carries it", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["checkpoint", "Closure task", "--goal", "G", "--scope", "S", "--acceptance", "A", "--next", "N"]);
+  run(cwd, ["next", "--to", "finish", "--reason", "纯文档测试"]);
+  const finishResult = run(cwd, [
+    "finish",
+    "--changes", "改了X",
+    "--verified", "typecheck",
+    "--unverified", "lint 全量",
+    "--followup", "等用户确认 done",
+  ]);
+  assert.equal(finishResult.status, 0);
+
+  const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
+  const task = JSON.parse(readFileSync(join(cwd, ".latch", "tasks", taskId, "task.json"), "utf8"));
+  assert.deepEqual(task.closure, {
+    changes: "改了X",
+    verified: "typecheck",
+    unverified: "lint 全量",
+    followup: "等用户确认 done",
+    updated_at: task.closure.updated_at,
+  });
+  assert.ok(task.closure.updated_at);
+
+  // context --json --brief 带出 closure 四字段，AI 续接不用读 notes
+  const brief = JSON.parse(run(cwd, ["context", "--json", "--brief"]).stdout);
+  assert.deepEqual(brief.closure, task.closure);
+
+  // full context 也带
+  const full = JSON.parse(run(cwd, ["context", "--json"]).stdout);
+  assert.deepEqual(full.closure, task.closure);
+
+  // 人读 resume 也有 closure 摘要
+  const resume = run(cwd, ["resume", "--brief"]);
+  assert.match(resume.stdout, /Closure:/);
+  assert.match(resume.stdout, /改了什么：改了X/);
+});
+
+test("context --brief closure is null when task has no finish closure", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  run(cwd, ["checkpoint", "No closure", "--goal", "G", "--next", "N"]);
+  const brief = JSON.parse(run(cwd, ["context", "--json", "--brief"]).stdout);
+  assert.equal(brief.closure, null);
+
+  const full = JSON.parse(run(cwd, ["context", "--json"]).stdout);
+  assert.equal(full.closure, null);
+});
+
+test("list human output marks finish tasks as wait or blocked", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"]);
+  // 任务1：跳级 finish 但没跑 finish 命令 → blocked（knowledge/closure 缺）
+  run(cwd, ["checkpoint", "Blocked finish", "--goal", "G", "--scope", "S", "--acceptance", "A", "--next", "N"]);
+  run(cwd, ["next", "--to", "finish", "--reason", "纯文档"]);
+  // 任务2：完整走完 verify + finish → wait
+  run(cwd, ["start", "Waiting finish", "--use"]);
+  run(cwd, ["save", "--goal", "G", "--scope", "S", "--acceptance", "A", "--next", "N"]);
+  run(cwd, ["next"]);
+  run(cwd, ["next"]);
+  run(cwd, ["next"]);
+  run(cwd, ["verify", "--", process.execPath, "-e", "process.exit(0)"]);
+  run(cwd, ["finish", "--changes", "X", "--verified", "typecheck", "--unverified", "无", "--followup", "等确认"]);
+
+  const result = run(cwd, ["list"]);
+  assert.match(result.stdout, /finish\[wait\]/);
+  assert.match(result.stdout, /finish\[blocked\]/);
+});

@@ -5,6 +5,102 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { run } from "./helpers.mjs";
 
+function taskOwner(cwd) {
+  const taskId = readdirSync(join(cwd, ".latch", "tasks"))[0];
+  const task = JSON.parse(readFileSync(join(cwd, ".latch", "tasks", taskId, "task.json"), "utf8"));
+  return task.owner;
+}
+
+test("LATCH_ACTOR wins over automatic actor detection", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"], { cleanActorEnv: true });
+  assert.equal(
+    run(cwd, ["start", "Manual owner"], {
+      cleanActorEnv: true,
+      actor: "codex:manual:thread",
+      env: {
+        CODEX_THREAD_ID: "thread-123",
+        CLAUDE_CODE_CHILD_SESSION: "1",
+        OPENCODE_CLIENT: "cli",
+      },
+    }).status,
+    0,
+  );
+
+  assert.equal(taskOwner(cwd), "codex:manual:thread");
+});
+
+test("CODEX_THREAD_ID becomes a codex owner", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"], { cleanActorEnv: true });
+  assert.equal(
+    run(cwd, ["start", "Codex owner"], {
+      cleanActorEnv: true,
+      env: { CODEX_THREAD_ID: "thread-123" },
+    }).status,
+    0,
+  );
+
+  assert.equal(taskOwner(cwd), "codex:default:thread-123");
+});
+
+test("Claude Code env becomes a claude owner", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"], { cleanActorEnv: true });
+  assert.equal(
+    run(cwd, ["start", "Claude owner"], {
+      cleanActorEnv: true,
+      env: { CLAUDE_CODE_CHILD_SESSION: "1" },
+    }).status,
+    0,
+  );
+
+  assert.equal(taskOwner(cwd), "claude:default");
+});
+
+test("OpenCode nested under Claude Code falls back to claude owner without LATCH_ACTOR", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"], { cleanActorEnv: true });
+  assert.equal(
+    run(cwd, ["start", "Nested OpenCode"], {
+      cleanActorEnv: true,
+      env: { CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1" },
+    }).status,
+    0,
+  );
+
+  assert.equal(taskOwner(cwd), "claude:default");
+});
+
+test("LATCH_ACTOR overrides nested Claude Code env for OpenCode", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"], { cleanActorEnv: true });
+  assert.equal(
+    run(cwd, ["start", "OpenCode with LATCH_ACTOR"], {
+      cleanActorEnv: true,
+      actor: "opencode:default:run-1",
+      env: { CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1" },
+    }).status,
+    0,
+  );
+
+  assert.equal(taskOwner(cwd), "opencode:default:run-1");
+});
+
+test("unknown env no longer uses naked default owner", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "latch-"));
+
+  run(cwd, ["init"], { cleanActorEnv: true });
+  assert.equal(run(cwd, ["start", "Unknown owner"], { cleanActorEnv: true }).status, 0);
+
+  assert.equal(taskOwner(cwd), "unknown:default");
+});
+
 test("start allows multiple open tasks and keeps current task", () => {
   const cwd = mkdtempSync(join(tmpdir(), "latch-"));
 

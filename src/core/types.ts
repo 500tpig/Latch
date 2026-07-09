@@ -36,6 +36,15 @@ export type Task = {
   // task 指向 .latch/ 外部产物的统一指针；吃掉了旧的 knowledge_card_path，
   // 改由 kind="knowledge_card" 的一项表达。kind 开放字符串，推荐值见 docs/ARTIFACTS.md。
   artifacts?: Artifact[]
+  // finish closure 的结构化真源：最后一次 latch finish 覆盖整个对象。
+  // notes.md 的 Finish closure scaffold 是人读副本，AI 默认只读这里。
+  closure?: {
+    changes: string
+    verified: string
+    unverified: string
+    followup: string
+    updated_at: string
+  }
   latest_verify?: Verify
   latest_gate_verify?: Verify
   latest_diagnostic_verify?: Verify

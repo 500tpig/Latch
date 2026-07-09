@@ -56,7 +56,7 @@ latch resume --brief --task <task-id>
 
 Latch 的写命令（`checkpoint`、`save`、`finish`、`next`、`verify`、`done`、`abandon`、`use --force`）按串行调用设计。不要并行执行多个写命令，否则会撞 `.latch/.lock`。
 
-多 agent 场景下，接入方应给每个 agent 提供稳定的 `LATCH_ACTOR`，不要直接暴露裸线程 ID。推荐格式是 `<tool>:<agent>:<session>`，至少包含 `<tool>:<session>`，例如 `codex:default:019f3bf3`、`claude:planner:local`、`opencode:default:run-12`。如果没显式设置，Latch 会退回到当前线程 ID（例如 Codex 的 `CODEX_THREAD_ID`）；两者都没有时会使用 `default`。Claude Code、OpenCode 等没有稳定线程 ID 的环境必须显式设置 `LATCH_ACTOR`，不要让多个并发 agent 共用同一个 actor。
+多 agent 场景下，接入方应给每个 agent 提供稳定的 `LATCH_ACTOR`，不要直接暴露裸线程 ID。`LATCH_ACTOR` 是唯一可靠身份来源，推荐格式是 `<tool>:<agent>:<session>`，至少包含 `<tool>:<session>`，例如 `codex:default:<thread-id>`、`claude:planner:<session>`、`opencode:default:<run-id>`。如果没显式设置，Latch 只会尽力自动识别工具来源：Codex 的 `CODEX_THREAD_ID` 会写成 `codex:default:<thread-id>`，Claude Code 写成 `claude:default`，OpenCode 写成 `opencode:default`，都没有时写成 `unknown:default`。自动识别不能稳定区分具体 agent 或 session。
 
 安装阶段不要自动执行目标项目的 `typecheck`、`test` 或 `build`。这些命令可能很慢、已有失败，或产生副作用。
 

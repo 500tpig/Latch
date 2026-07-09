@@ -6,8 +6,8 @@
 
 | 层级 | 位置 | 用途 | 谁来读 |
 | --- | --- | --- | --- |
-| 任务状态 | `.latch/tasks/<id>/task.json` | 当前阶段、目标、验收、知识记忆状态、artifacts 指针 | CLI、AI |
-| 过程记录 | `.latch/tasks/<id>/notes.md` | 取舍、验证、closure、讨论摘记、临时上下文 | 人主读；AI 写 closure/events，需追溯细节时兜底读 |
+| 任务状态 | `.latch/tasks/<id>/task.json` | 当前阶段、目标、验收、closure、知识记忆状态、artifacts 指针 | CLI、AI |
+| 过程记录 | `.latch/tasks/<id>/notes.md` | 取舍、验证、closure 副本、讨论摘记、临时上下文 | 人主读；AI 写 closure/events，需追溯细节时兜底读。closure 真源在 `task.json` |
 | 知识沉淀 | `.latch/knowledge/tasks/*.md` | 可复用做法、规则、引用 | AI、人 |
 | 正式方案 | `docs/briefs/` 或 `docs/prd/` | 面向人阅读的需求、方案、边界 | 人 |
 

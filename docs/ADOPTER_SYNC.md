@@ -44,6 +44,11 @@
 | 2026-07-08 | 规划问答、外部建议取舍、用户确认只要影响范围、不做项、验收或下一步，就要补「讨论摘记」；小任务写 notes，中等任务写 brief 并挂 artifact | `appearance-sec`、`monitoring` | 同步 AGENTS 里的 Latch 入口说明；CLAUDE 继续通过 `@AGENTS.md` 继承，不单独加重复规则 |
 | 2026-07-08 | 新增验证分层：默认 `latch verify` 是收尾门禁；`latch verify --diagnostic -- <command>` 只记录诊断性全量检查，不覆盖门禁验证 | `appearance-sec`、`monitoring` | `appearance-sec` 同步 AGENTS 和项目内 `.agents/skills/latch/SKILL.md`；`monitoring` 同步 AGENTS；CLAUDE 继续通过 `@AGENTS.md` 继承 |
 | 2026-07-08 | 多 agent 的 `LATCH_ACTOR` 统一推荐格式为 `<tool>:<agent>:<session>`，至少写成 `<tool>:<session>`；避免裸线程 ID 无法区分 Codex / Claude / OpenCode | `appearance-sec`、`monitoring` | `appearance-sec` 同步 AGENTS 和项目内 `.agents/skills/latch/SKILL.md`；`monitoring` 同步 AGENTS；CLAUDE 继续通过 `@AGENTS.md` 继承 |
+| 2026-07-09 | 默认 owner 不再写裸 `default`；Codex 写 `codex:default:<thread-id>`，Claude Code / OpenCode 只能自动识别到工具级别；稳定区分 agent 或 session 仍必须设置 `LATCH_ACTOR` | `appearance-sec`、`monitoring` | 同步 AGENTS 和项目内 Latch skill 的多 agent 说明 |
+| 2026-07-09 | Latch 记录写法改为「能接手、能核对、能看出为什么这么做」，并要求不用互联网黑话 | `appearance-sec`、`monitoring` | 同步 AGENTS 中的 Latch 记录写法；有项目内 Latch skill 副本的项目同步 skill 入口 |
+| 2026-07-09 | closure 结构化进 `task.json` 作为真源，`context --json --brief` 带出四字段，`notes.md` scaffold 降为人读副本；接入方 AGENTS 的 Latch 段瘦身，通用规则（verify 限制、closure 写法、讨论摘记、记录写法）回到 skill 和上游 `docs/HANDBOOK.md`；触发边界收紧「分析/方案评估/只读讨论不进 Latch」 | `appearance-sec`、`monitoring` | `appearance-sec/AGENTS.md` Latch 段瘦到只剩项目边界和入口，补触发边界；`monitoring/AGENTS.md` 同步触发边界和瘦身；`docs/templates/PROJECT_AGENTS.md` 模板同步瘦身；通用规则不再抄进接入方 AGENTS |
+| 2026-07-09 | 补做 monitoring AGENTS Latch 段瘦身（上一任务遗漏）；通用规则回到 skill/HANDBOOK，补触发边界 | `monitoring` | `monitoring/AGENTS.md` Latch 段瘦到只剩项目边界和入口 |
+| 2026-07-09 | HANDBOOK 多 agent 段补「OpenCode 嵌套在 Claude Code 下会继承 `CLAUDE_CODE_*` 被误判为 `claude:default`」，明确 OpenCode 不暴露可识别环境变量，必须显式设 `LATCH_ACTOR`；cli-actors 测试用例改成揭示嵌套误判场景，删除依赖假假设 `OPENCODE_CLIENT` 的用例 | `appearance-sec`、`monitoring` | `appearance-sec/AGENTS.md` 和 `monitoring/AGENTS.md` 的多 agent 段如果有「OpenCode 自动识别为 `opencode:default`」措辞，改为指向 HANDBOOK；CLAUDE 继续通过 `@AGENTS.md` 继承 |
 
 ## 每次任务收尾怎么写
 
@@ -63,29 +68,23 @@
 
 ### appearance-sec
 
-- `AGENTS.md` 已包含：
+- `AGENTS.md` 已包含（只留项目入口和边界，通用规则回到 skill/HANDBOOK）：
   - AI 续接入口 -> `latch context --json --brief`
   - `command not found: latch` -> `zsh -ic 'latch --help'`
   - Latch 流程反馈先 `latch list --json --brief` 查重，再续接或 `checkpoint`
-  - 多 AI 并行时设置稳定 `LATCH_ACTOR`
-  - `LATCH_ACTOR` 推荐格式为 `<tool>:<agent>:<session>`，至少写成 `<tool>:<session>`，避免看板只显示裸线程 ID
-  - `latch verify -- <command>` 不经过 shell，复合命令拆成多次验证；诊断性全量检查用 `latch verify --diagnostic -- <command>`
-  - 规划/复盘/路线讨论先完整探索问题面，再给最小下一步；全面梳理先分层取证
-  - 关键规划问答和取舍要补「讨论摘记」；小任务写 notes，中等任务写 brief
-  - `verify -> latch finish closure -> 用户确认后 done`
+  - 多 AI 并行时设置稳定 `LATCH_ACTOR`，推荐 `<tool>:<agent>:<session>`
+  - 小请求不走 Latch；分析/方案评估/只读讨论也不进 Latch
+  - 通用规则（verify 限制、closure 写法、讨论摘记、记录写法、收尾流程）以全局 latch skill 和上游 `docs/HANDBOOK.md` 为准
 - `CLAUDE.md` 已用 `@AGENTS.md` 导入项目规则
 - `.agents/skills/latch/SKILL.md` 已压成薄入口
 
 ### monitoring
 
-- `AGENTS.md` 已包含：
+- `AGENTS.md` 已包含（只留项目入口和边界，通用规则回到 skill/HANDBOOK）：
   - AI 续接入口 -> `latch context --json --brief`
   - `command not found: latch` -> `zsh -ic 'latch --help'`
   - Latch 流程反馈先 `latch list --json --brief` 查重，再续接或 `checkpoint`
-  - 多 AI 并行时设置稳定 `LATCH_ACTOR`
-  - `LATCH_ACTOR` 推荐格式为 `<tool>:<agent>:<session>`，至少写成 `<tool>:<session>`，避免看板只显示裸线程 ID
-  - `latch verify -- <command>` 不经过 shell，复合命令拆成多次验证；诊断性全量检查用 `latch verify --diagnostic -- <command>`
-  - 规划/复盘/路线讨论先完整探索问题面，再给最小下一步；全面梳理先分层取证
-  - 关键规划问答和取舍要补「讨论摘记」；小任务写 notes，中等任务写 brief
-  - `verify -> latch finish closure -> 用户确认后 done`
+  - 多 AI 并行时设置稳定 `LATCH_ACTOR`，推荐 `<tool>:<agent>:<session>`
+  - 小请求不走 Latch；分析/方案评估/只读讨论也不进 Latch
+  - 通用规则（verify 限制、closure 写法、讨论摘记、记录写法、收尾流程）以全局 latch skill 和上游 `docs/HANDBOOK.md` 为准
 - `CLAUDE.md` 已改为通用 `latch ...`，不再写本机绝对路径，并已用 `@AGENTS.md` 导入项目规则

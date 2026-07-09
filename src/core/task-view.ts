@@ -93,6 +93,7 @@ export function taskContext(task: Task) {
     knowledge_reason: task.knowledge_reason ?? null,
     knowledge_decided_at: task.knowledge_decided_at ?? null,
     artifacts: task.artifacts ?? [],
+    closure: task.closure ?? null,
     latest_verify: task.latest_verify ?? null,
     latest_gate_verify: gateVerify(task) ?? null,
     latest_diagnostic_verify: task.latest_diagnostic_verify ?? null,
@@ -126,6 +127,7 @@ export function taskBriefContext(task: Task, opts: { current?: boolean } = {}) {
     owner: task.owner ?? null,
     current: opts.current ?? false,
     next: task.next ?? null,
+    closure: task.closure ?? null,
     latest_verify: latestVerifyBrief(task),
     latest_gate_verify: verifyBrief(gateVerify(task)),
     latest_diagnostic_verify: verifyBrief(task.latest_diagnostic_verify),
@@ -189,6 +191,13 @@ export function printResume(task: Task, opts: { brief: boolean; json: boolean })
     console.log(`Gate verify: ${gate.status} ${gate.command}`)
   const artifactsLine = formatArtifacts(task)
   if (artifactsLine) console.log(`Artifacts: ${artifactsLine}`)
+  if (task.closure) {
+    console.log('Closure:')
+    console.log(`  改了什么：${task.closure.changes}`)
+    console.log(`  验证了什么：${task.closure.verified}`)
+    console.log(`  没验证什么：${task.closure.unverified}`)
+    console.log(`  下次接什么：${task.closure.followup}`)
+  }
   const progress = progressSummary(task)
   if (progress.advance_to)
     console.log(`Advance target: ${progress.advance_to}`)
@@ -246,6 +255,13 @@ export function printContext(task: Task, opts: { brief: boolean; json: boolean; 
     console.log(`Gate verify: ${context.latest_gate_verify.status} ${context.latest_gate_verify.command}`)
   if (context.artifacts && context.artifacts.length > 0)
     console.log(`Artifacts: ${context.artifacts.map((a) => `${a.kind}:${a.path}`).join('  ')}`)
+  if (context.closure) {
+    console.log('Closure:')
+    console.log(`  改了什么：${context.closure.changes}`)
+    console.log(`  验证了什么：${context.closure.verified}`)
+    console.log(`  没验证什么：${context.closure.unverified}`)
+    console.log(`  下次接什么：${context.closure.followup}`)
+  }
   if (context.progress.advance_to)
     console.log(`Advance target: ${context.progress.advance_to}`)
   console.log(`Can advance: ${context.progress.can_advance ? 'yes' : 'no'}`)
@@ -278,8 +294,15 @@ export function printList(tasks: Task[], current: string | undefined, opts: { js
   } else {
     for (const task of tasks) {
       const marker = task.id === current ? '* ' : '  '
+      let stageCol: string = task.stage
+      // finish 阶段区分等用户确认和卡门禁，让人一眼看出哪些能直接 done
+      if (task.stage === 'finish') {
+        const progress = progressSummary(task)
+        const waiting = progress.blocked_reasons.some((r) => r.includes('wait for user confirmation'))
+        stageCol = waiting ? 'finish[wait]' : 'finish[blocked]'
+      }
       console.log(
-        `${marker}${task.status}\t${task.stage}\t${task.owner ?? '-'}\t${task.id}\t${task.title}`,
+        `${marker}${task.status}\t${stageCol}\t${task.owner ?? '-'}\t${task.id}\t${task.title}`,
       )
     }
   }
