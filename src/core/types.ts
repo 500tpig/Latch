@@ -1,92 +1,142 @@
-export type Stage =
-  | 'triage'
-  | 'brainstorm'
-  | 'grill'
-  | 'plan'
-  | 'dev'
-  | 'check'
-  | 'finish'
-  | 'done'
-  | 'blocked'
-  | 'abandoned'
+export type TaskPhase = 'plan' | 'dev' | 'check' | 'review'
 
-export type Verify = {
-  command: string
-  status: 'pass' | 'fail'
-  exit_code: number
-  created_at: string
-  kind?: 'gate' | 'diagnostic'
+export type TaskOutcome = 'done' | 'abandoned'
+
+export type TaskPlan = {
+  goal: string
+  scope: string[]
+  acceptance: string[]
+  approach: string[]
+  api_assumptions: string[]
+  permission_assumptions: string[]
+  data_assumptions: string[]
+  user_flow: string[]
+  out_of_scope: string[]
+  verification_plan: Array<{
+    name: string
+    command: string[]
+    kind: 'gate' | 'diagnostic'
+  }>
+  open_questions: string[]
 }
 
-export type Artifact = { kind: string; path: string }
+export type BlockedState = {
+  reason: string
+  waiting_for: string
+  blocked_at: string
+}
 
-export type Task = {
+export type VerifyResult = {
+  name: string
+  kind: 'gate' | 'diagnostic'
+  command: string[]
+  status: 'pass' | 'fail'
+  exit_code: number
+  work_revision: number
+  created_at: string
+}
+
+export type TaskArtifact = {
+  kind: string
+  path: string
+}
+
+export type TaskV2 = {
+  schema_version: 2
   id: string
   title: string
-  status: 'active' | 'done' | 'blocked' | 'abandoned'
-  stage: Stage
-  owner?: string
-  goal?: string
-  scope?: string
-  acceptance?: string
-  next?: string
-  knowledge_decision?: 'generate' | 'skip'
-  knowledge_reason?: string
-  knowledge_decided_at?: string
-  // task 指向 .latch/ 外部产物的统一指针；吃掉了旧的 knowledge_card_path，
-  // 改由 kind="knowledge_card" 的一项表达。kind 开放字符串，推荐值见 docs/ARTIFACTS.md。
-  artifacts?: Artifact[]
-  // finish closure 的结构化真源：最后一次 latch finish 覆盖整个对象。
-  // notes.md 的 Finish closure scaffold 是人读副本，AI 默认只读这里。
+  phase: TaskPhase
+  outcome?: TaskOutcome
+  revision: number
+  plan_revision: number
+  work_revision: number
+  workspace_root: string
+  plan: TaskPlan
+  implementation_approval?: {
+    approved_plan_revision: number
+    approved_at: string
+    source: 'user'
+    reason: string
+  }
+  blocked?: BlockedState
+  verification: {
+    gate: Record<string, VerifyResult>
+    diagnostic: Record<string, VerifyResult>
+  }
+  submission?: {
+    work_revision: number
+    changes: string
+    verified: string
+    unverified: string
+    no_verify?: {
+      reason: string
+    }
+    submitted_at: string
+  }
   closure?: {
     changes: string
     verified: string
     unverified: string
     followup: string
-    updated_at: string
+    accepted_at: string
   }
-  latest_verify?: Verify
-  latest_gate_verify?: Verify
-  latest_diagnostic_verify?: Verify
+  artifacts: TaskArtifact[]
   created_at: string
   updated_at: string
 }
 
-export type State = {
-  current_task_id?: string
-  active_task_id?: string
-  actors?: Record<string, { current_task_id?: string }>
+export type LatchStateV2 = {
+  schema_version: 2
+  actors: Record<string, { current_task_id?: string }>
 }
 
-export type Citation = {
-  path: string
-  symbol: string
-  line?: number
-  source_task: string
-  unverified?: boolean
-}
+export const TASK_EVENT_TYPES = [
+  'task_created',
+  'plan_updated',
+  'artifact_updated',
+  'decision_recorded',
+  'implementation_approved',
+  'work_started',
+  'review_feedback',
+  'blocked',
+  'unblocked',
+  'verification_run',
+  'submitted',
+  'done',
+  'abandoned',
+] as const
 
-export type KnowledgeCardMeta = {
-  title: string
-  source_task: string
-  source_task_path: string
-  source_notes_path: string
-  modules: string[]
-  keywords: string[]
-  citations: Citation[]
+export type TaskEventType = (typeof TASK_EVENT_TYPES)[number]
+
+export type BaseTaskEvent = {
+  type: TaskEventType
+  task_id: string
+  actor: string
+  revision: number
   created_at: string
-  draft: boolean
 }
 
-export type KnowledgeCard = {
-  meta: KnowledgeCardMeta
-  body: string
-  path: string
+export type DecisionEvent = BaseTaskEvent & {
+  type: 'decision_recorded'
+  plan_revision: number
+  question?: string
+  answer?: string
+  conclusion: string
 }
 
-export type ModuleCardMeta = {
-  module: string
-  task_cards: string[]
-  source_tasks: string[]
-  updated_at: string
+export type ReviewFeedbackEvent = BaseTaskEvent & {
+  type: 'review_feedback'
+  plan_revision: number
+  work_revision: number
+  classification: 'implementation_correction' | 'evaluative' | 'plan_change'
+  summary: string
 }
+
+type StandardTaskEvent = Omit<BaseTaskEvent, 'type'> & {
+  type: Exclude<TaskEventType, 'decision_recorded' | 'review_feedback'>
+} & Record<string, unknown>
+
+export type TaskEvent =
+  | DecisionEvent
+  | ReviewFeedbackEvent
+  | StandardTaskEvent

@@ -1,0 +1,36 @@
+{
+  "schema_version": 2,
+  "generated_at": "2026-07-12T00:00:00.000Z",
+  "current": true,
+  "task": {
+    "id": "20260712000000000-board-fixture-abcdef",
+    "title": "Board fixture",
+    "phase": "review",
+    "revision": 5,
+    "plan_revision": 1,
+    "work_revision": 1,
+    "goal": "Validate Board JSON",
+    "scope": ["tests/fixtures/context-v2.json"],
+    "acceptance": ["fixture parses"],
+    "open_questions": [],
+    "implementation_approval": {
+      "approved_plan_revision": 1,
+      "approved_at": "2026-07-12T00:00:01.000Z",
+      "source": "user",
+      "reason": "approved"
+    },
+    "verification": { "gate": {}, "diagnostic": {} },
+    "submission": {
+      "work_revision": 1,
+      "changes": "fixture",
+      "verified": "",
+      "unverified": "fixture only",
+      "no_verify": { "reason": "fixture" },
+      "submitted_at": "2026-07-12T00:00:02.000Z"
+    },
+    "artifacts": [],
+    "updated_at": "2026-07-12T00:00:02.000Z"
+  },
+  "recent_events": [],
+  "history_incomplete": false
+}

@@ -1,80 +1,88 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import {
+  closeSync,
+  existsSync,
+  fsyncSync,
+  openSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
-import { taskPath } from './task-store.js'
-import { now } from './utils.js'
-import type { Task } from './types.js'
+import { TASK_EVENT_TYPES } from './types.js'
+import type { TaskEvent } from './types.js'
 
-const MAX_EVENT_VALUE_LENGTH = 160
+const taskEventTypes = new Set<string>(TASK_EVENT_TYPES)
 
-export function event(task: Task, type: string, fields: Record<string, unknown> = {}) {
-  writeFileSync(
-    join(taskPath(task.id), 'events.jsonl'),
-    `${JSON.stringify({ type, ...fields, created_at: now() })}\n`,
-    { flag: 'a' },
-  )
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-export function truncateEventValue(value: unknown, maxLength = MAX_EVENT_VALUE_LENGTH): string {
-  const text = String(value ?? '').replace(/\s+/g, ' ').trim()
-  if (text.length <= maxLength) return text
-  return `${text.slice(0, Math.max(0, maxLength - 3))}...`
-}
+export function validateTaskEventV2(
+  value: unknown,
+  path: string,
+): asserts value is TaskEvent {
+  if (!isRecord(value) || !taskEventTypes.has(value.type as string))
+    throw new Error(`Invalid event type in ${path}.`)
+  if (typeof value.actor !== 'string' || !value.actor.trim())
+    throw new Error(`Invalid event actor in ${path}.`)
+  if (typeof value.task_id !== 'string' || !value.task_id.trim())
+    throw new Error(`Invalid event task_id in ${path}.`)
+  if (!Number.isInteger(value.revision) || (value.revision as number) < 1)
+    throw new Error(`Invalid event revision in ${path}.`)
+  if (typeof value.created_at !== 'string' || !value.created_at.trim())
+    throw new Error(`Invalid event created_at in ${path}.`)
 
-// 把一条 event 压成一行:type + 关键字段 + 时间。brief 模式替代 notes 全文,让 AI 看到最近动作而不被 markdown 噪音淹没。
-type FormatEventOptions = {
-  truncateValues?: boolean
-}
-
-export function formatEvent(entry: Record<string, unknown>, options: FormatEventOptions = {}): string {
-  const type = entry.type as string
-  const time = entry.created_at as string
-  let detail = ''
-  switch (type) {
-    case 'checkpoint':
-      detail = `created=${entry.created} fields=${Array.isArray(entry.fields) ? (entry.fields as string[]).join(',') : ''}`
-      break
-    case 'saved':
-      detail = `fields=${Array.isArray(entry.fields) ? (entry.fields as string[]).join(',') : ''}`
-      break
-    case 'stage_changed':
-      detail = `${entry.from}->${entry.to}`
-      break
-    case 'verified':
-      detail = `${entry.status} ${options.truncateValues ? truncateEventValue(entry.command) : entry.command}`
-      break
-    default:
-      detail = ''
+  if (value.type === 'decision_recorded') {
+    if (!Number.isInteger(value.plan_revision) || (value.plan_revision as number) < 1)
+      throw new Error(`Invalid decision plan_revision in ${path}.`)
+    if (typeof value.conclusion !== 'string' || !value.conclusion.trim())
+      throw new Error(`Invalid decision conclusion in ${path}.`)
+    if (value.question !== undefined && typeof value.question !== 'string')
+      throw new Error(`Invalid decision question in ${path}.`)
+    if (value.answer !== undefined && typeof value.answer !== 'string')
+      throw new Error(`Invalid decision answer in ${path}.`)
   }
-  return `${type}  ${detail}  @ ${time}`.replace(/\s+/g, ' ').trim()
+  if (value.type === 'review_feedback') {
+    if (!Number.isInteger(value.plan_revision) || (value.plan_revision as number) < 1)
+      throw new Error(`Invalid feedback plan_revision in ${path}.`)
+    if (!Number.isInteger(value.work_revision) || (value.work_revision as number) < 0)
+      throw new Error(`Invalid feedback work_revision in ${path}.`)
+    if (
+      value.classification !== 'implementation_correction' &&
+      value.classification !== 'evaluative' &&
+      value.classification !== 'plan_change'
+    )
+      throw new Error(`Invalid feedback classification in ${path}.`)
+    if (typeof value.summary !== 'string' || !value.summary.trim())
+      throw new Error(`Invalid feedback summary in ${path}.`)
+  }
 }
 
-// 取 events.jsonl 最后 N 条并格式化成一行。events.jsonl 是追加的 jsonl,tail 即最近。
-export function recentEvents(task: Task, count: number, options: FormatEventOptions = {}): string[] {
-  const eventsPath = join(taskPath(task.id), 'events.jsonl')
+export function appendTaskEventV2(taskDirectory: string, eventEntry: TaskEvent) {
+  const eventsPath = join(taskDirectory, 'events.jsonl')
+  validateTaskEventV2(eventEntry, eventsPath)
+  const fileDescriptor = openSync(eventsPath, 'a', 0o600)
+  try {
+    writeFileSync(fileDescriptor, `${JSON.stringify(eventEntry)}\n`)
+    fsyncSync(fileDescriptor)
+  } finally {
+    closeSync(fileDescriptor)
+  }
+}
+
+// v2 不再生成 notes.md；当前状态读 task.json，历史只从 events.jsonl 读取。
+export function readTaskEventsV2(taskDirectory: string): TaskEvent[] {
+  const eventsPath = join(taskDirectory, 'events.jsonl')
   if (!existsSync(eventsPath)) return []
-  const lines = readFileSync(eventsPath, 'utf8')
-    .trim()
-    .split('\n')
-    .filter(Boolean)
-  return lines
-    .slice(-count)
-    .map((line) => formatEvent(JSON.parse(line) as Record<string, unknown>, options))
-}
-
-export function taskEvents(task: Task): Record<string, unknown>[] {
-  const eventsPath = join(taskPath(task.id), 'events.jsonl')
-  if (!existsSync(eventsPath)) return []
-  return readFileSync(eventsPath, 'utf8')
-    .trim()
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as Record<string, unknown>)
-}
-
-export function appendNotes(task: Task, heading: string, lines: string[]) {
-  writeFileSync(
-    join(taskPath(task.id), 'notes.md'),
-    `\n## ${heading}\n\n${lines.filter(Boolean).join('\n')}\n`,
-    { flag: 'a' },
-  )
+  const lines = readFileSync(eventsPath, 'utf8').trim().split('\n').filter(Boolean)
+  return lines.map((line, index) => {
+    const entryPath = `${eventsPath}:${index + 1}`
+    try {
+      const entry: unknown = JSON.parse(line)
+      validateTaskEventV2(entry, entryPath)
+      return entry
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      throw new Error(`Cannot read JSON ${entryPath}: ${message}`)
+    }
+  })
 }

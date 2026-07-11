@@ -1,34 +1,56 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import {
+  closeSync,
+  fsyncSync,
+  openSync,
+  renameSync,
+  rmSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { basename, dirname, join } from 'node:path'
 
 export function now() {
   return new Date().toISOString()
 }
 
-export function readJson<T>(path: string, fallback: T): T {
-  return existsSync(path)
-    ? (JSON.parse(readFileSync(path, 'utf8')) as T)
-    : fallback
+export function readJsonFile<T>(path: string): T {
+  try {
+    return JSON.parse(requireRead(path)) as T
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`Cannot read JSON ${path}: ${message}`)
+  }
 }
 
-export function writeJson(path: string, value: unknown) {
-  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`)
+function requireRead(path: string) {
+  return readFileSync(path, 'utf8')
 }
 
-export function die(message: string): never {
-  console.error(message)
-  process.exit(1)
+// 同目录临时文件写完并 fsync 后再 rename，保证读者只会看到旧文件或完整新文件。
+export function writeJsonAtomic(path: string, value: unknown) {
+  const temporaryPath = join(
+    dirname(path),
+    `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`,
+  )
+  let fileDescriptor: number | undefined
+  try {
+    fileDescriptor = openSync(temporaryPath, 'wx', 0o600)
+    writeFileSync(fileDescriptor, `${JSON.stringify(value, null, 2)}\n`)
+    fsyncSync(fileDescriptor)
+    const descriptor = fileDescriptor
+    fileDescriptor = undefined
+    closeSync(descriptor)
+    renameSync(temporaryPath, path)
+    const directoryDescriptor = openSync(dirname(path), 'r')
+    try { fsyncSync(directoryDescriptor) } finally { closeSync(directoryDescriptor) }
+  } catch (error) {
+    if (fileDescriptor !== undefined) closeSync(fileDescriptor)
+    rmSync(temporaryPath, { force: true })
+    throw error
+  }
 }
 
 export function slug(title: string) {
-  return (
-    title
-      .toLowerCase()
-      .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-')
-      .replace(/^-|-$/g, '')
-      .slice(0, 40) || 'task'
-  )
-}
-
-export function commandEnv(cwd: string) {
-  return { ...process.env, PWD: cwd }
+  return title.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'task'
 }

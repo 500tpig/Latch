@@ -1,309 +1,135 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { taskPath } from './task-store.js'
-import { advanceBlockers, defaultNext, ensureDoneReady, gateVerify } from './progress.js'
-import { recentEvents, truncateEventValue } from './notes-events.js'
-import { actorId } from './ownership.js'
-import type { Task } from './types.js'
+import type { TaskStoreV2 } from './task-store.js'
+import {
+  currentTaskIdV2,
+  listTasksV2,
+  taskEventsV2,
+  taskHistoryIncompleteV2,
+} from './task-store.js'
+import type { TaskV2 } from './types.js'
+import { now } from './utils.js'
 
-function finishNextAction(task: Task, reason: string) {
-  if (reason.includes('Knowledge decision is required'))
-    return 'run `latch finish --changes "..." --verified "..." --unverified "..." --followup "..."`'
-  if (reason.includes('no knowledge card exists'))
-    return 'run `latch knowledge generate`'
-  if (reason.includes('Gate verification must pass'))
-    return 'run `latch verify -- <command>`'
-  return task.next ?? 'fill the remaining finish fields first'
+export type JsonEnvelopeV2 = {
+  schema_version: 2
+  generated_at: string
 }
 
-// 把阶段规则压成给人和 AI 读的摘要结构：能不能推进、卡在哪、下一步干什么。
-// 读状态靠 progress 模块的纯规则函数，这里只负责拼输出形状。
-export function progressSummary(task: Task) {
-  if (task.stage === 'finish') {
-    try {
-      ensureDoneReady(task)
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error)
-      return {
-        advance_to: 'done',
-        can_advance: false,
-        blocked_reasons: [reason],
-        next_action: finishNextAction(task, reason),
-      }
-    }
-    return {
-      advance_to: 'done',
-      can_advance: false,
-      blocked_reasons: ['wait for user confirmation'],
-      next_action: 'wait for user confirmation, then run `latch done`',
-    }
-  }
-
-  if (task.stage === 'done' || task.stage === 'abandoned') {
-    return {
-      advance_to: null,
-      can_advance: false,
-      blocked_reasons: [`task is already ${task.stage}`],
-      next_action: 'none',
-    }
-  }
-
-  if (task.stage === 'blocked') {
-    return {
-      advance_to: null,
-      can_advance: false,
-      blocked_reasons: ['task is blocked'],
-      next_action: task.next ?? 'resolve the blocking issue first',
-    }
-  }
-
-  const to = defaultNext(task.stage)
-  const blockedReasons = advanceBlockers(task, to)
+export function jsonEnvelopeV2(): JsonEnvelopeV2 {
   return {
-    advance_to: to,
-    can_advance: blockedReasons.length === 0,
-    blocked_reasons: blockedReasons,
-    next_action:
-      blockedReasons.length === 0
-        ? 'run `latch next`'
-        : task.stage === 'check'
-          ? 'run `latch verify -- <command>`'
-          : task.next ?? 'fill the missing task fields first',
+    schema_version: 2,
+    generated_at: now(),
   }
 }
 
-// 把 artifacts 数组压成一行，方便 resume/context 人读输出展示给 AI 看
-export function formatArtifacts(task: Task): string | null {
-  if (!task.artifacts || task.artifacts.length === 0) return null
-  return task.artifacts.map((a) => `${a.kind}:${a.path}`).join('  ')
-}
+function taskSummary(task: TaskV2, brief: boolean) {
+  if (brief)
+    return {
+      id: task.id,
+      title: task.title,
+      phase: task.phase,
+      revision: task.revision,
+      ...(task.blocked ? { blocked: task.blocked } : {}),
+      updated_at: task.updated_at,
+    }
 
-export function taskContext(task: Task) {
   return {
-    task_id: task.id,
+    id: task.id,
     title: task.title,
-    owner: task.owner ?? null,
-    status: task.status,
-    stage: task.stage,
-    goal: task.goal ?? null,
-    scope: task.scope ?? null,
-    acceptance: task.acceptance ?? null,
-    next: task.next ?? null,
-    knowledge_decision: task.knowledge_decision ?? null,
-    knowledge_reason: task.knowledge_reason ?? null,
-    knowledge_decided_at: task.knowledge_decided_at ?? null,
-    artifacts: task.artifacts ?? [],
-    closure: task.closure ?? null,
-    latest_verify: task.latest_verify ?? null,
-    latest_gate_verify: gateVerify(task) ?? null,
-    latest_diagnostic_verify: task.latest_diagnostic_verify ?? null,
-    progress: progressSummary(task),
-    notes_path: join(taskPath(task.id), 'notes.md'),
-    recent_events: recentEvents(task, 5),
+    phase: task.phase,
+    revision: task.revision,
+    plan_revision: task.plan_revision,
+    work_revision: task.work_revision,
+    ...(task.blocked ? { blocked: task.blocked } : {}),
+    created_at: task.created_at,
+    updated_at: task.updated_at,
   }
 }
 
-function latestVerifyBrief(task: Task) {
-  return verifyBrief(task.latest_verify)
-}
-
-function verifyBrief(verify: Task['latest_verify']) {
-  if (!verify) return null
+export function listJsonV2(store: TaskStoreV2, actor: string, brief: boolean) {
+  const currentTaskId = currentTaskIdV2(store, actor)
   return {
-    kind: verify.kind ?? 'gate',
-    status: verify.status,
-    exit_code: verify.exit_code,
-    created_at: verify.created_at,
-    command: truncateEventValue(verify.command),
+    ...jsonEnvelopeV2(),
+    ...(currentTaskId ? { current_task_id: currentTaskId } : {}),
+    tasks: listTasksV2(store).map((task) => taskSummary(task, brief)),
   }
 }
 
-export function taskBriefContext(task: Task, opts: { current?: boolean } = {}) {
+function briefTask(task: TaskV2) {
   return {
-    task_id: task.id,
+    id: task.id,
     title: task.title,
-    status: task.status,
-    stage: task.stage,
-    owner: task.owner ?? null,
-    current: opts.current ?? false,
-    next: task.next ?? null,
-    closure: task.closure ?? null,
-    latest_verify: latestVerifyBrief(task),
-    latest_gate_verify: verifyBrief(gateVerify(task)),
-    latest_diagnostic_verify: verifyBrief(task.latest_diagnostic_verify),
-    progress: progressSummary(task),
-    notes_path: join(taskPath(task.id), 'notes.md'),
-    recent_events: recentEvents(task, 5, { truncateValues: true }),
+    phase: task.phase,
+    revision: task.revision,
+    plan_revision: task.plan_revision,
+    work_revision: task.work_revision,
+    goal: task.plan.goal,
+    scope: task.plan.scope,
+    acceptance: task.plan.acceptance,
+    open_questions: task.plan.open_questions,
+    ...(task.implementation_approval
+      ? { implementation_approval: task.implementation_approval }
+      : {}),
+    ...(task.blocked ? { blocked: task.blocked } : {}),
+    verification: task.verification,
+    ...(task.submission ? { submission: task.submission } : {}),
+    artifacts: task.artifacts,
+    updated_at: task.updated_at,
   }
 }
 
-export function knowledgeUsage() {
-  return [
-    'Usage: latch knowledge <generate|recall|refresh-modules|verify> [options]',
-    '  latch knowledge generate [--task <task-id>] [--draft] [--module a,b] [--keyword a,b] [--path <file>] [--symbol <name>] [--line <n>]',
-    '  latch knowledge recall [--file <path>] [--keyword <term>] [--module <name>]',
-    '  latch knowledge refresh-modules',
-    '  latch knowledge verify [--task <task-id>|--all]',
-  ].join('\n')
-}
-
-export function commandUsage(name: string) {
-  return (
-    {
-      init: 'Usage: latch init',
-      start: 'Usage: latch start <title> [--use]',
-      checkpoint:
-        'Usage: latch checkpoint <title> [--goal ...] [--scope ...] [--acceptance ...] [--next ...] [--task <task-id>] [--new] [--force]',
-      save: 'Usage: latch save [--goal ...] [--scope ...] [--acceptance ...] [--next ...] [--knowledge generate|skip] [--knowledge-reason "..."] [--artifact <kind>:<path> ...] [--task <task-id>]',
-      finish:
-        'Usage: latch finish [--changes "..."] [--verified "..."] [--unverified "..."] [--followup "..."] [--knowledge generate|skip] [--knowledge-reason "..."] [--artifact <kind>:<path> ...] [--task <task-id>] [--force]',
-      next: 'Usage: latch next [--to <stage>] [--reason <reason>] [--task <task-id>]',
-      verify: 'Usage: latch verify [--diagnostic] -- <command>',
-      resume: 'Usage: latch resume [--brief] [--json] [--task <task-id>]',
-      list: 'Usage: latch list [--json] [--brief]',
-      log: 'Usage: latch log <summary> [--files a,b,c]',
-      done: 'Usage: latch done [--task <task-id>|--all --yes] [--force]',
-      abandon: 'Usage: latch abandon [--reason <reason>] [--task <task-id>]',
-      use: 'Usage: latch use <task-id> [--force]',
-      context: 'Usage: latch context [<task-id>] [--brief] [--json]',
-      knowledge: knowledgeUsage(),
-    } as Record<string, string>
-  )[name]
-}
-
-export function printResume(task: Task, opts: { brief: boolean; json: boolean }) {
-  if (opts.json) {
-    console.log(JSON.stringify(taskContext(task), null, 2))
-    return
-  }
-  console.log(`Task: ${task.title}`)
-  if (task.owner) console.log(`Owner: ${task.owner}`)
-  console.log(`Stage: ${task.stage}`)
-  if (task.goal) console.log(`Goal: ${task.goal}`)
-  if (task.scope) console.log(`Scope: ${task.scope}`)
-  if (task.acceptance) console.log(`Acceptance: ${task.acceptance}`)
-  if (task.next) console.log(`Next: ${task.next}`)
-  console.log(
-    `Verify: ${task.latest_verify ? `${task.latest_verify.status} ${task.latest_verify.command}` : 'none'}`,
-  )
-  const gate = gateVerify(task)
-  if (gate && gate !== task.latest_verify)
-    console.log(`Gate verify: ${gate.status} ${gate.command}`)
-  const artifactsLine = formatArtifacts(task)
-  if (artifactsLine) console.log(`Artifacts: ${artifactsLine}`)
-  if (task.closure) {
-    console.log('Closure:')
-    console.log(`  改了什么：${task.closure.changes}`)
-    console.log(`  验证了什么：${task.closure.verified}`)
-    console.log(`  没验证什么：${task.closure.unverified}`)
-    console.log(`  下次接什么：${task.closure.followup}`)
-  }
-  const progress = progressSummary(task)
-  if (progress.advance_to)
-    console.log(`Advance target: ${progress.advance_to}`)
-  console.log(`Can advance: ${progress.can_advance ? 'yes' : 'no'}`)
-  console.log(`Next action: ${progress.next_action}`)
-  if (progress.blocked_reasons.length > 0)
-    console.log(`Blocked by: ${progress.blocked_reasons.join('; ')}`)
-  // 门禁验证已 pass 但 stage 没走到 finish:通常 verify 提前跑了或 next 没推进,工作可能已实际完成却悬挂在中间阶段。提示先推进到 finish 再归档。
-  if (gate?.status === 'pass' && task.stage !== 'finish') {
-    console.log(
-      `Note: gate verify passed but stage is ${task.stage}, not finish. Run \`latch next\` to advance, then \`latch done\` to archive.`,
-    )
-  }
-  // 跨会话续接靠 notes.md：上次 grill 结论、plan 取舍、closure 都在里面，省得下一轮重新问一遍
-  // brief 模式:砍 notes 全文(任务长时堆积成噪音),改输出最近 5 条 events + notes 路径,AI 想看细节自己读文件。
-  if (opts.brief) {
-    const events = recentEvents(task, 5, { truncateValues: true })
-    if (events.length) {
-      console.log('Recent events:')
-      for (const line of events) console.log(`  ${line}`)
-    }
-    console.log(`Notes: ${join(taskPath(task.id), 'notes.md')}`)
-  } else {
-    const notesPath = join(taskPath(task.id), 'notes.md')
-    if (existsSync(notesPath)) {
-      const notes = readFileSync(notesPath, 'utf8').trim()
-      if (notes) {
-        console.log('---')
-        console.log(notes)
-      }
-    }
+export function contextJsonV2(
+  store: TaskStoreV2,
+  task: TaskV2,
+  actor: string,
+  brief: boolean,
+) {
+  const events = taskEventsV2(store, task.id)
+  return {
+    ...jsonEnvelopeV2(),
+    current: currentTaskIdV2(store, actor) === task.id,
+    task: brief ? briefTask(task) : task,
+    recent_events: brief ? events.slice(-5) : events,
+    history_incomplete: taskHistoryIncompleteV2(store, task.id),
   }
 }
 
-export function printContext(task: Task, opts: { brief: boolean; json: boolean; current?: boolean }) {
-  if (opts.json) {
-    const context = opts.brief ? taskBriefContext(task, { current: opts.current }) : taskContext(task)
-    console.log(JSON.stringify(context, null, 2))
-    return
-  }
-  const context = taskContext(task)
-  console.log(`Task: ${context.title}`)
-  if (context.owner) console.log(`Owner: ${context.owner}`)
-  console.log(`Stage: ${context.stage}`)
-  if (!opts.brief) {
-    if (context.goal) console.log(`Goal: ${context.goal}`)
-    if (context.scope) console.log(`Scope: ${context.scope}`)
-    if (context.acceptance) console.log(`Acceptance: ${context.acceptance}`)
-  }
-  if (context.next) console.log(`Next: ${context.next}`)
-  console.log(
-    `Verify: ${context.latest_verify ? `${context.latest_verify.status} ${context.latest_verify.command}` : 'none'}`,
-  )
-  if (context.latest_gate_verify && context.latest_gate_verify !== context.latest_verify)
-    console.log(`Gate verify: ${context.latest_gate_verify.status} ${context.latest_gate_verify.command}`)
-  if (context.artifacts && context.artifacts.length > 0)
-    console.log(`Artifacts: ${context.artifacts.map((a) => `${a.kind}:${a.path}`).join('  ')}`)
-  if (context.closure) {
-    console.log('Closure:')
-    console.log(`  改了什么：${context.closure.changes}`)
-    console.log(`  验证了什么：${context.closure.verified}`)
-    console.log(`  没验证什么：${context.closure.unverified}`)
-    console.log(`  下次接什么：${context.closure.followup}`)
-  }
-  if (context.progress.advance_to)
-    console.log(`Advance target: ${context.progress.advance_to}`)
-  console.log(`Can advance: ${context.progress.can_advance ? 'yes' : 'no'}`)
-  console.log(`Next action: ${context.progress.next_action}`)
-  if (context.progress.blocked_reasons.length > 0)
-    console.log(`Blocked by: ${context.progress.blocked_reasons.join('; ')}`)
-  console.log(`Notes: ${context.notes_path}`)
+export function listHumanV2(store: TaskStoreV2, actor: string) {
+  const tasks = listTasksV2(store)
+  if (tasks.length === 0) return 'No open Latch v2 tasks.'
+  const currentTaskId = currentTaskIdV2(store, actor)
+  return tasks
+    .map((task) => {
+      const marker = task.id === currentTaskId ? '*' : ' '
+      const blocked = task.blocked ? ` blocked: ${task.blocked.reason}` : ''
+      return `${marker} ${task.id}  ${task.phase}  r${task.revision}  ${task.title}${blocked}`
+    })
+    .join('\n')
 }
 
-export function printList(tasks: Task[], current: string | undefined, opts: { json: boolean; brief: boolean }) {
-  if (opts.json) {
-    console.log(
-      JSON.stringify(
-        {
-          actor: actorId(),
-          current_task_id: current,
-          tasks: tasks.map((task) =>
-            opts.brief
-              ? taskBriefContext(task, { current: task.id === current })
-              : {
-                  ...taskContext(task),
-                  current: task.id === current,
-                },
-          ),
-        },
-        null,
-        2,
-      ),
-    )
-  } else {
-    for (const task of tasks) {
-      const marker = task.id === current ? '* ' : '  '
-      let stageCol: string = task.stage
-      // finish 阶段区分等用户确认和卡门禁，让人一眼看出哪些能直接 done
-      if (task.stage === 'finish') {
-        const progress = progressSummary(task)
-        const waiting = progress.blocked_reasons.some((r) => r.includes('wait for user confirmation'))
-        stageCol = waiting ? 'finish[wait]' : 'finish[blocked]'
-      }
-      console.log(
-        `${marker}${task.status}\t${stageCol}\t${task.owner ?? '-'}\t${task.id}\t${task.title}`,
-      )
-    }
+export function contextHumanV2(
+  store: TaskStoreV2,
+  task: TaskV2,
+  actor: string,
+) {
+  const current = currentTaskIdV2(store, actor) === task.id
+  const historyIncomplete = taskHistoryIncompleteV2(store, task.id)
+  const lines = [
+    `Task: ${task.id}`,
+    `Title: ${task.title}`,
+    `Phase: ${task.phase}`,
+    `Revision: ${task.revision}`,
+    `Plan revision: ${task.plan_revision}`,
+    `Work revision: ${task.work_revision}`,
+    `Current: ${current ? 'yes' : 'no'}`,
+    `Goal: ${task.plan.goal}`,
+    `Scope: ${task.plan.scope.join(' | ') || '-'}`,
+    `Acceptance: ${task.plan.acceptance.join(' | ') || '-'}`,
+    `Open questions: ${task.plan.open_questions.join(' | ') || '-'}`,
+    `Artifacts: ${task.artifacts.map((item) => `${item.kind}:${item.path}`).join(' | ') || '-'}`,
+    `History incomplete: ${historyIncomplete ? 'yes' : 'no'}`,
+  ]
+  if (task.blocked) {
+    lines.push(`Blocked: ${task.blocked.reason}`)
+    lines.push(`Waiting for: ${task.blocked.waiting_for}`)
   }
+  return lines.join('\n')
 }
