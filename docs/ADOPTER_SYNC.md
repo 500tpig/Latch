@@ -1,90 +1,22 @@
-# Latch 接入项目同步记录
+# Latch v2 接入状态
 
-本文件只记录“会影响已接入项目如何使用 Latch”的变更，不记录 Latch 内部重构。
+## 当前兼容矩阵
 
-当前只跟踪这 2 个项目：
+| 项目 | 当前状态 | 第一阶段动作 |
+|---|---|---|
+| Latch | v2 源码完成，等待集成验收 | 只修改本 repo |
+| Latch-Board | v1 数据模型 | 不修改 |
+| appearance-sec | v1 `.latch` 和项目规则 | 不修改 |
+| monitoring | v1 `.latch` 和项目规则 | 不修改 |
 
-- `appearance-sec`
-- `monitoring`
+## 第二阶段
 
-## 什么时候要记一笔
+第一阶段通过用户 review 后，按以下顺序单独授权：
 
-只有命中下面任一项才记录：
+1. 备份三个 repo 的 v1 `.latch`，记录全局 CLI、skill 和 Board 来源；
+2. 切换全局 CLI 与 canonical skill 链接；
+3. 更新 Latch-Board；
+4. 分别更新 appearance-sec 和 monitoring；
+5. 累计完成 10 张真实 v2 task 后再决定是否删除 v1 备份。
 
-1. 命令用法变了。
-2. AI 接入规则变了。
-3. 项目模板变了，例如 `AGENTS.md`、项目内 `latch` skill、安装入口。
-4. 本地产物目录或忽略规则变了，例如 `.latch/`。
-
-没命中就不记，也不需要同步这 2 个项目。
-
-## 判断句
-
-每次改完先问一句：
-
-```text
-这次改动会不会让接入项目继续按旧规则使用时，出现用错命令、走错流程或写死本机路径？
-```
-
-- 不会：记 `接入同步：无`
-- 会：记 `接入同步：需要`，并补下面的同步表
-
-## 同步表
-
-| 日期 | 变更 | 需要同步的项目 | 要改什么 |
-| --- | --- | --- | --- |
-| 2026-07-01 | 初次统一接入全局 `latch` 命令、新增“Latch 自身接入反馈”触发、明确 `verify -> finish -> 用户确认后 done` 收尾流程；`Locus` 补 `.latch/` 忽略规则 | `appearance-sec`、`monitoring`、`Locus` | 三个项目补 Latch 触发和收尾口径；`monitoring/CLAUDE.md` 去掉本机绝对路径，改用通用 `latch ...`；`Locus/.gitignore` 加 `.latch/` |
-| 2026-07-02 | AI 默认续接入口改为 `latch context --json`；`command not found: latch` fallback 改为 `zsh -ic 'latch context --json'`；项目内 Latch skill 副本压成薄入口 | `appearance-sec`、`monitoring`、`Locus` | `appearance-sec/AGENTS.md` 和 `.agents/skills/latch/SKILL.md` 同步入口；`monitoring/AGENTS.md`、`CLAUDE.md` 和 `.agents/skills/latch/SKILL.md` 同步入口；`Locus/AGENTS.md` 同步入口 |
-| 2026-07-03 | `command not found: latch` fallback 改为 `zsh -ic 'latch --help'`，避免用 `context --json` 在未初始化目录创建 `.latch/`；Latch 流程反馈和收尾前先用 `latch list --json` 查 open task | `appearance-sec`、`monitoring` | 同步 AGENTS/CLAUDE/项目内 skill 里的 fallback、查重和收尾前全局查看 open task 规则；AI 默认续接入口仍是 `latch context --json` |
-| 2026-07-03 | `latch finish` 可在 `check` 且 verify pass 时直接进入 `finish`；`--followup` 同步 `next`；knowledge 默认 skip | `appearance-sec`、`monitoring` | 同步收尾路径为 `verify -> latch finish closure -> 用户确认后 done`；需要知识沉淀时再显式 `--knowledge generate` |
-| 2026-07-04 | 新增 `latch list --json --brief` 和 `latch context --json --brief`；AI 默认入口改为 brief JSON；full JSON 保留完整字段 | `appearance-sec`、`monitoring` | 同步 AGENTS/CLAUDE/项目内 skill 里的默认入口；需要完整字段时再使用不带 `--brief` 的 JSON |
-| 2026-07-04 | 文档明确 `verify` 不经过 shell；多 agent 并行时必须设置稳定 `LATCH_ACTOR`；`done` 的 closure 质量属于使用约定，不由 CLI 解析 | `appearance-sec`、`monitoring` | 同步 AGENTS/CLAUDE/项目内 skill 里的 verify 限制、`LATCH_ACTOR` 要求和收尾口径 |
-| 2026-07-06 | 规划/复盘/路线讨论先完整探索问题面，再给最小下一步；全面梳理改为分层取证，避免默认读取完整 patch 或长文档；Claude Code 入口用 `CLAUDE.md` 导入 `AGENTS.md` | `appearance-sec`、`monitoring` | 同步 AGENTS/CLAUDE/项目内入口里的规划边界和分层取证规则；如目标项目使用 Claude Code，补 `CLAUDE.md` 薄入口 |
-| 2026-07-07 | 全局 latch skill 补齐 docs 快照并移除不存在的 `docs/SPEC_V0.md` 引用；业务项目 Latch 段压成薄入口，完整流程回到全局 skill 和 Latch repo docs | `appearance-sec`、`monitoring` | 同步 AGENTS/CLAUDE 中的 Latch 入口；以后只有旧规则会导致用错命令、走错流程或写死路径时，才同步业务项目 |
-| 2026-07-08 | 规划问答、外部建议取舍、用户确认只要影响范围、不做项、验收或下一步，就要补「讨论摘记」；小任务写 notes，中等任务写 brief 并挂 artifact | `appearance-sec`、`monitoring` | 同步 AGENTS 里的 Latch 入口说明；CLAUDE 继续通过 `@AGENTS.md` 继承，不单独加重复规则 |
-| 2026-07-08 | 新增验证分层：默认 `latch verify` 是收尾门禁；`latch verify --diagnostic -- <command>` 只记录诊断性全量检查，不覆盖门禁验证 | `appearance-sec`、`monitoring` | `appearance-sec` 同步 AGENTS 和项目内 `.agents/skills/latch/SKILL.md`；`monitoring` 同步 AGENTS；CLAUDE 继续通过 `@AGENTS.md` 继承 |
-| 2026-07-08 | 多 agent 的 `LATCH_ACTOR` 统一推荐格式为 `<tool>:<agent>:<session>`，至少写成 `<tool>:<session>`；避免裸线程 ID 无法区分 Codex / Claude / OpenCode | `appearance-sec`、`monitoring` | `appearance-sec` 同步 AGENTS 和项目内 `.agents/skills/latch/SKILL.md`；`monitoring` 同步 AGENTS；CLAUDE 继续通过 `@AGENTS.md` 继承 |
-| 2026-07-09 | 默认 owner 不再写裸 `default`；Codex 写 `codex:default:<thread-id>`，Claude Code / OpenCode 只能自动识别到工具级别；稳定区分 agent 或 session 仍必须设置 `LATCH_ACTOR` | `appearance-sec`、`monitoring` | 同步 AGENTS 和项目内 Latch skill 的多 agent 说明 |
-| 2026-07-09 | Latch 记录写法改为「能接手、能核对、能看出为什么这么做」，并要求不用互联网黑话 | `appearance-sec`、`monitoring` | 同步 AGENTS 中的 Latch 记录写法；有项目内 Latch skill 副本的项目同步 skill 入口 |
-| 2026-07-09 | closure 结构化进 `task.json` 作为真源，`context --json --brief` 带出四字段，`notes.md` scaffold 降为人读副本；接入方 AGENTS 的 Latch 段瘦身，通用规则（verify 限制、closure 写法、讨论摘记、记录写法）回到 skill 和上游 `docs/HANDBOOK.md`；触发边界收紧「分析/方案评估/只读讨论不进 Latch」 | `appearance-sec`、`monitoring` | `appearance-sec/AGENTS.md` Latch 段瘦到只剩项目边界和入口，补触发边界；`monitoring/AGENTS.md` 同步触发边界和瘦身；`docs/templates/PROJECT_AGENTS.md` 模板同步瘦身；通用规则不再抄进接入方 AGENTS |
-| 2026-07-09 | 补做 monitoring AGENTS Latch 段瘦身（上一任务遗漏）；通用规则回到 skill/HANDBOOK，补触发边界 | `monitoring` | `monitoring/AGENTS.md` Latch 段瘦到只剩项目边界和入口 |
-| 2026-07-09 | HANDBOOK 多 agent 段补「OpenCode 嵌套在 Claude Code 下会继承 `CLAUDE_CODE_*` 被误判为 `claude:default`」，明确 OpenCode 不暴露可识别环境变量，必须显式设 `LATCH_ACTOR`；cli-actors 测试用例改成揭示嵌套误判场景，删除依赖假假设 `OPENCODE_CLIENT` 的用例 | `appearance-sec`、`monitoring` | `appearance-sec/AGENTS.md` 和 `monitoring/AGENTS.md` 的多 agent 段如果有「OpenCode 自动识别为 `opencode:default`」措辞，改为指向 HANDBOOK；CLAUDE 继续通过 `@AGENTS.md` 继承 |
-
-## 每次任务收尾怎么写
-
-任务 closure 里只补一行，不展开：
-
-```text
-接入同步：无
-```
-
-或：
-
-```text
-接入同步：需要，见 docs/ADOPTER_SYNC.md
-```
-
-## 这 2 个项目当前对齐点
-
-### appearance-sec
-
-- `AGENTS.md` 已包含（只留项目入口和边界，通用规则回到 skill/HANDBOOK）：
-  - AI 续接入口 -> `latch context --json --brief`
-  - `command not found: latch` -> `zsh -ic 'latch --help'`
-  - Latch 流程反馈先 `latch list --json --brief` 查重，再续接或 `checkpoint`
-  - 多 AI 并行时设置稳定 `LATCH_ACTOR`，推荐 `<tool>:<agent>:<session>`
-  - 小请求不走 Latch；分析/方案评估/只读讨论也不进 Latch
-  - 通用规则（verify 限制、closure 写法、讨论摘记、记录写法、收尾流程）以全局 latch skill 和上游 `docs/HANDBOOK.md` 为准
-- `CLAUDE.md` 已用 `@AGENTS.md` 导入项目规则
-- `.agents/skills/latch/SKILL.md` 已压成薄入口
-
-### monitoring
-
-- `AGENTS.md` 已包含（只留项目入口和边界，通用规则回到 skill/HANDBOOK）：
-  - AI 续接入口 -> `latch context --json --brief`
-  - `command not found: latch` -> `zsh -ic 'latch --help'`
-  - Latch 流程反馈先 `latch list --json --brief` 查重，再续接或 `checkpoint`
-  - 多 AI 并行时设置稳定 `LATCH_ACTOR`，推荐 `<tool>:<agent>:<session>`
-  - 小请求不走 Latch；分析/方案评估/只读讨论也不进 Latch
-  - 通用规则（verify 限制、closure 写法、讨论摘记、记录写法、收尾流程）以全局 latch skill 和上游 `docs/HANDBOOK.md` 为准
-- `CLAUDE.md` 已改为通用 `latch ...`，不再写本机绝对路径，并已用 `@AGENTS.md` 导入项目规则
+任何外部 repo 修改都需要单独 task 和用户授权。

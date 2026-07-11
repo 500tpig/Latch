@@ -1,34 +1,28 @@
 # Latch
 
-Latch is a small AI coding harness for formal coding tasks.
+Latch 是面向个人 macOS 开发环境的本地任务记录 CLI。它保存明确创建的 coding task、实施计划、批准、验证结果和 review 状态，便于 AI 在不同会话之间继续工作。
 
-Small requests stay out of Latch. Formal tasks are kept as open tasks in the current project. Each actor has its own current task, and stage commands operate on that task unless `--task <id>` is provided; `<id>` can be a full task ID or a unique prefix.
+Latch 不自动判断或创建任务。只有请求明确提到 Latch 时，AI 才能创建或继续 task。
 
-```bash
-latch init
-latch start "Fix auth expiry redirect"
-latch start "Add dashboard context"
-latch list
-latch use 202607010900-fix-auth-expiry
-latch save --next "Add regression test"
-latch next
-latch verify -- pnpm test
-latch verify --diagnostic -- pnpm typecheck
-latch finish --changes "..." --verified "pnpm test" --unverified "none" --followup "wait for user confirmation"
-latch done
-```
+## 当前状态
 
-Use `latch context [task-id] --json --brief` for a compact agent handoff, and `latch context [task-id] --json` when dashboards or tools need the full task fields. Use `latch abandon [--reason "..."]` to archive a task that should not continue.
+仓库源码已切换到 Latch v2。第一阶段只修改本仓库；全局 CLI、全局 skill、Latch-Board 和业务项目将在后续获得单独授权后切换。
 
-See [docs/HANDBOOK.md](docs/HANDBOOK.md) for daily usage, [docs/SCENARIOS.md](docs/SCENARIOS.md) for trigger examples, [docs/DESIGN.md](docs/DESIGN.md) for design boundaries and non-goals, and [docs/ARTIFACTS.md](docs/ARTIFACTS.md) for when to write briefs or PRDs outside `.latch/`.
+文档入口见 [`docs/INDEX.md`](docs/INDEX.md)，产品契约见 [`docs/prd/2026-07-10-latch-v2.md`](docs/prd/2026-07-10-latch-v2.md)。
 
-## Small fixes: `latch log`
-
-For tiny changes that don't need cross-session handoff, log a single line instead of entering the full stage flow:
+## 开发命令
 
 ```bash
-latch log "Switch alarm_record GraphQL time param from string to seconds Int" \
-  --files src/api/network-link.ts
+pnpm build
+pnpm typecheck
+pnpm test
+pnpm check
 ```
 
-`log` only appends to `.latch/log.jsonl`. It does not create a task or touch the state machine. Open tasks may exist while `log` records an unrelated small fix.
+本地构建后的 CLI：
+
+```bash
+node dist/cli.js --help
+```
+
+不要在第一阶段执行全局链接脚本。

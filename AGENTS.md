@@ -1,71 +1,50 @@
 # Latch 项目规则
 
-Latch 是任务状态锁存器。小请求不走 Latch；任务变长或碰风险域时进入，跨会话能续上。
+## Latch 入口
 
-## 何时进入 Latch
+只有请求明确提到 Latch 时，才创建或继续 task。分析建议、普通问答和小修不自动进入 Latch。
 
-先查这条硬触发，优先于下面的「小请求不走 Latch」：当前项目接了 Latch，且请求涉及 AI 接入 Latch、记录缺失或 Latch 流程没走起来——属于 Latch 流程反馈。一旦命中，先用 `latch list --json --brief` 查 open task；有同题任务就续接，确实没有才 `latch checkpoint`，不得当成小修直接动手。
+开始前按顺序执行：
 
-小请求不走 Latch：单点文案、简单样式、只读解释、低风险单点修复。分析建议、方案评估、只读讨论也不进 Latch，即使讨论对象是 Latch 本身；只有结论会改规则、CLI、模板、验收，或用户要求留痕，才进 Latch。
+1. `git status --short`；
+2. `latch list --json --brief`；
+3. 用户点名 task 时执行 `latch context <task-id> --json --brief`，否则读取当前 task；
+4. 从 `docs/INDEX.md` 选择与当前任务直接相关的 1–3 份文档。
 
-出现以下任一情况，先调用 Latch skill，并进入或续接 Latch 任务：
+不得读取其他 Codex 会话或跨会话材料。需要扩大范围时，先说明当前 repo 内证据为何不足。
 
-1. 风险域：登录、权限、路由、认证、状态流、持久化存储、接口契约、跨模块职责、数据迁移、难回退 UI 或交互流程。
-2. 任务形态（可自查）：需要复现 bug、需要跨会话续接、方案讨论后再实现。
-3. 规划类请求：规划项目后续、完善项目、讨论路线图、先讨论怎么推进。
-4. 用户显式要求：走 Latch、记录任务、可追溯、收尾归档。
-5. Latch 流程反馈：AI 接入 Latch、记录规则漏触发，或用户指出「这应该被记录」。
+## 用户授权
 
-Latch 的阶段、模板、验证和收尾流程以 Latch skill 与 CLI 为准。本文件只负责触发，不承载流程。
+- 创建 task 前必须有明确的 Latch 请求。
+- plan 必须展示给用户；只有明确实施授权后才能执行 `approve`。
+- `done` 只能在用户明确要求完成、归档或结束 task 后执行。
+- `abandon` 只能在用户明确要求放弃或取消后执行。
+- 模糊认可不作为实施、归档或放弃授权。
 
-## Latch 记录写法
+## 开发规则
 
-- Latch 记录给后续接手的人和 AI 看，目标不是越短越好，而是能接手、能核对、能看出为什么这么做。
-- `goal` 写完成后要改变什么；不要把背景、做法和愿望都塞进目标。
-- `scope` 写本次会碰哪里、不碰哪里；如果边界来自风险或用户偏好，直接写原因。
-- `acceptance` 写怎么判断没跑偏；能用命令、截图、人工核对或产物位置说明，就写清楚。
-- `next` 只写下一手怎么接；如果有先后顺序、等待条件或不做项，分开写，不压成一句口号。不写「已完成 X、verify 通过」这类状态，状态让 `stage` 和 `latest_verify` 表达。
-- 不用互联网黑话；能说「规则」「办法」「原因」「结果」，就不要写「口径」「抓手」「链路」「闭环」。
-- 保留必要英文术语、命令和文件名；少用括号标签、形容词和套话。删掉后不影响事实的词，再删。
+- 写代码前读取现有实现、相关测试和 import。
+- 做最小可维护改动，不顺手重构或清理无关代码。
+- 不回滚、覆盖或清理用户改动。
+- 明确标识符先用 `rg`；仓库存在 `.codegraph/` 时，调用关系和删除影响使用 CodeGraph。
+- JavaScript 和 TypeScript 命令使用 `pnpm`。
+- 验证强度与风险匹配；完成前至少运行相关测试和 `git diff --check`。
+- 不自动执行 Git add、commit、push。
 
-## 规划与最小改动边界
+## v2 边界
 
-- 「最小改动」约束实现和 diff，不约束思考范围。规划、复盘、路线讨论、提交回顾和项目后续判断，先完整探索问题面、选项、风险、长期影响和可回退路径，再给出最小可执行下一步。
-- 规划类任务不要为了显得克制而只提一个小修；需要先说明更大的问题面、哪些暂不做、为什么当前只落一小步。
-- 全面梳理先分层取证：先看 `git log --stat` / `git show --name-only`、文件列表、目录结构、文档标题和已有 brief；只有这些不足以判断时，再读完整 patch、长文档或宽范围 `rg` 输出。
-- 宽读之前先说明为什么摘要证据不够；能用 Top 1-3 个相关文件回答时，不扩大到全仓库。
+- phase 只有 `plan`、`dev`、`check`、`review`。
+- blocked 是附加状态，不是 phase。
+- 同一 workspace 同时只允许一张 task 处于 `dev`、`check` 或 `review`。
+- 锁顺序固定为 `workspace -> task -> state`。
+- task.json 是当前事实；events 是历史，state 是 actor 的 current 索引。
+- 不实现自动任务分类、knowledge、聊天保存、自动 Git 或自动 worktree。
 
-## 新能力判断
+## 文档与验证
 
-提出新 CLI 能力、项目规则生成、扫描项目、自动写文件或接入外部系统前，必须先给出判断依据，不允许只顺着外部建议或上轮说法改口。
-
-每个建议至少回答四件事：
-
-1. 依据来自代码、文档、真实使用，还是推测。
-2. 是否扩大 Latch 的职责；如果扩大，为什么必须由 Latch 做。
-3. 如果判断错了，回退成本是什么。
-4. 有没有更小的替代方案，例如只改文档、模板或手册。
-
-证据不足时，默认只做低风险文档或模板；`doctor`、`init-agent`、项目扫描、规则生成、skill 生成等能力不得直接排期。
-
-新增 CLI 命令、数据目录、真源格式、生成时机或职责边界后，收尾前必须检查 `docs/`、`README.md`、`AGENTS.md` 和技能文档里是否还有旧口径；至少用一次 `rg` 搜相关关键词，只改命中的相关段落，不全文重写。
-
-## 代码检索默认
-
-- 明确标识符、函数名、事件名、文件名片段、配置 key、路由 path、API 名称：先用 `rg` / `rg --files`。
-- 业务语义、跨模块概念、字段配置、状态恢复、搜索条件构建、中文自然语言描述：用 `semble search "<query>" . --top-k 8`。
-- 调用链、影响面、依赖关系、谁调用谁、symbol source：仓库有 `.codegraph/` 时用 `codegraph explore "<query>"`。
-- 不默认用 MCP 做代码检索。
-- 先搜，再只读 Top 1-3 个相关文件或符号范围；不要先翻大目录或长文件。
-
-新开 Latch 任务前，先用 `latch list --json --brief` 查 open task，避免同题重复记录。续接已有 Latch 任务时，再用 `latch context --json --brief` 判断当前 task 是否同一件事；需要完整字段时再用 `latch context --json`。同题续接才继续当前 task；换题必须 `latch checkpoint --new "<标题>" ...`。有 current task 时，带标题的 `checkpoint` 不能当作补记旧任务使用。旧任务若已被误记污染，只补污染说明和新 task ID，不继续混写。
-
-如果用户已经明确点名某张 task，先用 `latch context <id> --json --brief` 或 `latch resume --brief --task <id>` 读取，不要因为当前 actor 没有 current task 就先新开任务。`latch` 的写命令按串行使用，不并行跑多个 `checkpoint`、`save`、`next`、`verify`、`done`、`abandon` 或 `use --force`。
-
-用户要求收尾、提交、结束或归档时，先用 `latch list --json --brief` 看全局 open task：当前 actor 已满足门禁的 `finish` task 等用户确认后归档；非当前 owner 已满足门禁的 `finish` task 先提示用户决定是否 `--force` 归档；非 `finish` 的 open task 先提示保留或 `abandon`。验证通过后优先用 `latch finish --changes "..." --verified "..." --unverified "..." --followup "..."` 补 closure；knowledge 默认 skip，需要沉淀规则时显式加 `--knowledge generate --knowledge-reason "..."`。只有判断为 `generate` 的任务，才要求真正执行 `latch knowledge generate` 后再 `done`。
-
-任务完成后又发现还有事要做，按「新增范围是否在原任务 scope/acceptance 内」判断，不按 finish 状态判断：只是补 closure、验证说明、讨论摘记或同步台账，继续当前 task（`latch save` 或重跑 `latch finish` 补记录，finish 阶段也能写）；属于新增实质范围（改代码、跨 repo 同步、加新规则、重新验证、原验收有缺口），新开 follow-up task 并在原 task 的 `next` 或 notes 里引用新 task ID，不把已 finish/done 的任务当可重开的工作区。已 `done` 归档的任务只作历史记录，后续一律新开 task。判断标准是 scope，不是 finish：同步若本就在原任务 acceptance 里，应在 finish 前做完，而不是 finish 后再拆任务。
-
-不要把 `task.json`、`notes.md` 或知识卡当成 PRD。中等功能额外写 `docs/briefs/YYYY-MM-DD-<slug>.md`，大需求额外写 `docs/prd/YYYY-MM-DD-<slug>.md`；小任务只用 `latch log` 或 Latch 任务记录，不写 brief/PRD。
-
-规划问答、外部建议取舍、用户逐条确认，只要改变了范围、不做项、验收或下一步，就补一段「讨论摘记」。小任务写在当前 task 的 `notes.md`；中等任务写到 `docs/briefs/YYYY-MM-DD-<slug>.md`，再用 `latch save --artifact brief:<path>` 挂回 task。不要逐字抄完整对话，只记问题、用户确认、采纳/不采纳、结论和未决点。
+- 当前文档入口：`docs/INDEX.md`。
+- CLI 参考：`docs/HANDBOOK.md`。
+- 设计边界：`docs/DESIGN.md`。
+- 安装与回退：`docs/AI_INSTALL.md`。
+- canonical skill：`skills/latch/SKILL.md`。
+- 中文技术文档采用克制、准确、可扫读的写法；机器可读标识符保持原样。

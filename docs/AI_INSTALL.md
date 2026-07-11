@@ -1,157 +1,75 @@
-# Latch AI 安装说明
+# Latch v2 本机安装
 
-本文件给安装 Latch 的 AI 使用。目标是在新项目中接入 Latch，并在用户确认后生成项目规则草稿。
+Latch v2 面向个人 macOS 开发环境。当前第一阶段不执行本页命令；只有用户明确批准第二阶段切换后才操作全局环境。
 
-## 前置检查
+## 前置记录
 
-首次安装或本机开发安装：
+切换前记录：
+
+- 当前全局 `latch` 的实际路径和链接目标；
+- 可恢复的 v1 commit 或构建目录；
+- 两个全局 skill 路径和目标；
+- Latch-Board 当前 commit；
+- 各接入项目 `.latch` 的备份位置与校验结果。
+
+任一来源或恢复步骤不明确时停止切换。
+
+## 构建 CLI
 
 ```bash
+pnpm install
+pnpm check
 pnpm build
-pnpm add --global .
 ```
 
-先确认全局命令可用：
+package bin 指向 `dist/cli.js`。本机可以使用 pnpm link，但应先确认现有全局命令是否已经链接到当前 repo；repo 构建会立即影响这种链接。
 
-```bash
-latch
-```
+## 链接 canonical skill
 
-如果 `latch` 报 `command not found`，先判断是不是 AI 工具使用了非交互 shell。可以尝试：
-
-```bash
-zsh -ic 'latch --help'
-```
-
-请求本身是在排查 `latch` 命令可用性或 fallback 时，先按安装和环境问题处理，不进入 Latch 流程。命令恢复后，如果发现项目规则、skill 或接入文档需要修改，再按普通触发规则进入 Latch。
-
-如果交互 zsh 能找到 `latch`，说明是当前执行环境没有加载用户的 PATH，不要误判为 Latch 未安装。如果仍不可用，停止安装流程，提示用户先完成全局安装或链接。不要把本机绝对路径写进目标项目文档、`AGENTS.md` 或 skill。
-
-确认命令可用后，在已接入项目中允许执行的轻量命令：
-
-```bash
-git status --short
-latch --help
-latch list --json --brief
-latch context --json --brief
-latch context <task-id> --json --brief
-latch resume --brief
-latch resume --brief --task <task-id>
-```
-
-准备进入 Latch 或新开 checkpoint 前，先运行 `latch list --json --brief` 查 open task。已有同题任务时续接，确实没有再新建。
-
-如果 `context --json --brief` 显示已有 current task，AI 必须先判断是不是同一件事：
-
-- 同一件事续接：继续用 `save`、`next`、`verify`，或不带标题的 `checkpoint` 补字段。
-- 另一件新事：必须用 `latch checkpoint --new "<title>" ...`，不能在有 current task 时带标题直接跑 `checkpoint`。
-
-旧任务一旦被误记污染，先把新问题切到新的 task；旧任务只补污染说明和新 task ID，不继续混写。
-
-如果用户已经明确指定 task ID，先用 `latch context <task-id> --json --brief` 或 `latch resume --brief --task <task-id>` 读取现场；`<task-id>` 可以是完整 ID，也可以是唯一前缀。不要因为当前 actor 没有 current task，就先新开 `checkpoint`。
-
-验证通过后，推荐用一条命令补收尾：`latch finish --changes "..." --verified "..." --unverified "..." --followup "..."`。如果当前还在 `check` 且门禁 verify 已通过，`finish` 会自动进入 `finish` 阶段；知识记忆默认 skip，需要沉淀规则时显式加 `--knowledge generate --knowledge-reason "..."`。用户要求收尾、提交、结束或归档时，先用 `latch list --json --brief` 看全局 open task；非当前 owner 的 `finish` task 不静默忽略，先提示是否 `--force`。只有用户确认后才执行 `latch done`。
-
-`latch verify -- <command>` 直接执行一个进程，不经过 shell。不要把 `pnpm a && pnpm b`、管道、glob 或 `$VAR` 展开写成一条 verify；需要多条验证时，分开执行多次。默认 verify 是收尾门禁；全量命令有既有失败、只想记录诊断结果时，用 `latch verify --diagnostic -- <command>`，它不会覆盖门禁验证。
-
-Latch 的写命令（`checkpoint`、`save`、`finish`、`next`、`verify`、`done`、`abandon`、`use --force`）按串行调用设计。不要并行执行多个写命令，否则会撞 `.latch/.lock`。
-
-多 agent 场景下，接入方应给每个 agent 提供稳定的 `LATCH_ACTOR`，不要直接暴露裸线程 ID。`LATCH_ACTOR` 是唯一可靠身份来源，推荐格式是 `<tool>:<agent>:<session>`，至少包含 `<tool>:<session>`，例如 `codex:default:<thread-id>`、`claude:planner:<session>`、`opencode:default:<run-id>`。如果没显式设置，Latch 只会尽力自动识别工具来源：Codex 的 `CODEX_THREAD_ID` 会写成 `codex:default:<thread-id>`，Claude Code 写成 `claude:default`，OpenCode 写成 `opencode:default`，都没有时写成 `unknown:default`。自动识别不能稳定区分具体 agent 或 session。
-
-安装阶段不要自动执行目标项目的 `typecheck`、`test` 或 `build`。这些命令可能很慢、已有失败，或产生副作用。
-
-## 更新全局命令
-
-修改 Latch CLI 后，需要重新构建并更新本机全局命令：
-
-```bash
-pnpm build
-pnpm add --global .
-```
-
-只修改文档、模板或 skill 时，不需要更新全局命令。
-
-## 更新全局 skill
-
-Latch skill 的源内容在当前 repo 维护：`docs/templates/LATCH_SKILL.md` 是入口模板，`docs/` 是手册真源。同步到本机全局 skill 时运行：
-
-```bash
-pnpm run sync:skill
-```
-
-该命令会更新：
+canonical source：
 
 ```text
-~/.codex/skills/latch/SKILL.md
-~/.codex/skills/latch/docs/
-~/.agents/skills/latch/SKILL.md
-~/.agents/skills/latch/docs/
+skills/latch/SKILL.md
 ```
 
-不要手动在全局 skill 目录里改流程规则；先改当前 repo 的模板或文档，再同步。
+检查目标：
 
-## 初始化 Latch
+```bash
+pnpm skill:check
+```
 
-目标项目没有 `.latch/` 时，运行：
+创建或更新链接：
+
+```bash
+pnpm skill:link
+```
+
+目标为：
+
+```text
+~/.codex/skills/latch
+~/.agents/skills/latch
+```
+
+链接脚本只管理符号链接，不复制文档快照。
+
+## 初始化项目
+
+v2 不迁移 v1。已有 `.latch` 时先备份并确认恢复方法，再删除或移动旧目录，最后执行：
 
 ```bash
 latch init
 ```
 
-检查 `.latch/` 的提交策略。默认建议把 `.latch/` 加入 `.gitignore`，是否提交由用户决定。
+业务项目的 AGENTS 只保留显式 Latch 入口、全局 skill 使用方式和项目自身验证规则。
 
-## 生成项目规则草稿
+## 回退
 
-安装结束前询问用户：
+按切换的相反顺序恢复：
 
-```text
-是否需要为当前项目生成 AGENTS.md 规则草稿？我只读取项目事实，推断项留空并等用户确认。
-```
+1. 业务项目 `.latch`；
+2. Latch-Board；
+3. 全局 skill 链接；
+4. 全局 CLI。
 
-生成草稿时，使用 `docs/templates/PROJECT_AGENTS.md` 作为模板。
-
-可以自动填写的事实：
-
-- 包管理器。
-- `package.json` scripts。
-- 是否已有 `.latch/`。
-- 是否已有 `AGENTS.md`。
-
-必须留给用户确认的判断：
-
-- 项目风险域。
-- 验证命令是否可靠。
-- 不要自动改动的目录或文件。
-- 项目特殊收尾规则。
-
-如果目标项目没有 `AGENTS.md`，可以在用户确认后创建草稿。
-
-如果目标项目已有 `AGENTS.md`，不要直接覆盖或自动合并。给出完整 Markdown 段落作为 patch 建议，等待用户确认。
-
-## Skill 副本
-
-优先使用全局 skill，例如：
-
-```text
-~/.codex/skills/latch/SKILL.md
-~/.agents/skills/latch/SKILL.md
-```
-
-全局 skill 适合个人多项目共用，更新一次即可影响后续会话。项目内 skill 副本只在需要把某个项目固定在特定 Latch 规则版本时使用。
-
-安装最后询问用户是否需要写入目标项目的 skill 副本，例如：
-
-```text
-是否需要写入 .agents/skills/latch/SKILL.md 或 .opencode/skills/latch/SKILL.md？
-```
-
-不默认创建项目内 skill 副本。用户确认后，只写用户当前使用的工具对应目录。
-
-## 禁止事项
-
-- 不写入本机绝对路径。
-- 不自动扫描项目并推断风险域。
-- 不自动总结项目规则。
-- 不自动生成项目专属 skill。
-- 不运行重型验证命令。
-- 不使用 `git add .`。
+回退不依赖 v2 migration。
