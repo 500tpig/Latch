@@ -50,7 +50,7 @@ function plan(overrides = {}) {
     goal: '实现 Slice 3',
     scope: ['src/core/progress.ts'],
     acceptance: ['lifecycle tests pass'],
-    approach: ['使用 workspace 短锁'],
+    approach: ['使用 per-task 短锁'],
     api_assumptions: [],
     permission_assumptions: [],
     data_assumptions: [],
@@ -217,7 +217,7 @@ test('review correction returns to dev, preserves approval, and increments work 
   assert.equal(feedback.summary, '改用明确图标')
 })
 
-test('dev, check, review, and blocked keep workspace occupied; plan releases it', () => {
+test('active tasks allow approve and return a shared worktree warning', () => {
   for (const phase of ['dev', 'check', 'review']) {
     const cwd = temporaryDirectory()
     init(cwd)
@@ -227,26 +227,25 @@ test('dev, check, review, and blocked keep workspace occupied; plan releases it'
       if (phase !== 'dev') task.work_revision = 1
     })
     const second = checkpoint(cwd, `second ${phase}`)
-    const occupied = approve(cwd, second)
-    assert.notEqual(occupied.status, 0)
-    assert.match(occupied.stderr, /occupied by/)
+    const approved = approve(cwd, second)
+    assert.equal(approved.status, 0, approved.stderr)
+    assert.match(JSON.parse(approved.stdout).warnings[0], /Shared worktree/)
+    assert.equal(readTask(cwd, first.task_id).phase, phase)
 
     writeTask(cwd, first.task_id, (task) => {
       task.blocked = {
         reason: 'waiting', waiting_for: 'user', blocked_at: new Date().toISOString(),
       }
     })
-    assert.notEqual(approve(cwd, second).status, 0)
-
-    writeTask(cwd, first.task_id, (task) => {
-      task.phase = 'plan'
-    })
-    const released = approve(cwd, second)
-    assert.equal(released.status, 0, released.stderr)
+    const third = checkpoint(cwd, `third ${phase}`)
+    const blockedApproved = approve(cwd, third)
+    assert.equal(blockedApproved.status, 0, blockedApproved.stderr)
+    assert.match(JSON.parse(blockedApproved.stdout).warnings[0], /Shared worktree/)
+    assert.equal(readTask(cwd, first.task_id).phase, phase)
   }
 })
 
-test('archived done and abandoned tasks do not occupy the workspace', () => {
+test('archived done and abandoned tasks do not produce a shared worktree warning', () => {
   for (const outcome of ['done', 'abandoned']) {
     const cwd = temporaryDirectory()
     init(cwd)
@@ -261,10 +260,11 @@ test('archived done and abandoned tasks do not occupy the workspace', () => {
     const second = checkpoint(cwd, `after ${outcome}`)
     const result = approve(cwd, second)
     assert.equal(result.status, 0, result.stderr)
+    assert.deepEqual(JSON.parse(result.stdout).warnings, [])
   }
 })
 
-test('two real processes approving different tasks allow only one success', async () => {
+test('two real processes approving different tasks both succeed independently', async () => {
   const cwd = temporaryDirectory()
   init(cwd)
   const first = checkpoint(cwd, 'parallel first')
@@ -276,28 +276,20 @@ test('two real processes approving different tasks allow only one success', asyn
     runAsync(cwd, args(first), 'codex:parallel-a'),
     runAsync(cwd, args(second), 'codex:parallel-b'),
   ])
-  assert.deepEqual(results.map((result) => result.status).sort(), [0, 1])
-  assert.equal(
-    [readTask(cwd, first.task_id), readTask(cwd, second.task_id)].filter(
-      (task) => task.phase === 'dev',
-    ).length,
-    1,
-  )
+  assert.deepEqual(results.map((result) => result.status).sort(), [0, 0])
+  for (const task of [first, second]) {
+    assert.equal(readTask(cwd, task.task_id).phase, 'dev')
+    assert.equal(eventEntries(cwd, task.task_id).length, 3)
+  }
 })
 
-test('workspace lock conflict has no task or event side effects', () => {
+test('unused workspace lock does not block approval', () => {
   const cwd = temporaryDirectory()
   init(cwd)
   const created = checkpoint(cwd, 'lock conflict')
   const lockPath = join(cwd, '.latch', '.locks', 'workspace.lock')
   writeFileSync(lockPath, `${JSON.stringify({ pid: process.pid, created_at: new Date().toISOString() })}\n`)
-  const beforeTask = readFileSync(taskPath(cwd, created.task_id), 'utf8')
-  const beforeEvents = readFileSync(eventsPath(cwd, created.task_id), 'utf8')
-
   const result = approve(cwd, created)
-  assert.notEqual(result.status, 0)
-  assert.match(result.stderr, /lock is busy/)
-  assert.equal(readFileSync(taskPath(cwd, created.task_id), 'utf8'), beforeTask)
-  assert.equal(readFileSync(eventsPath(cwd, created.task_id), 'utf8'), beforeEvents)
+  assert.equal(result.status, 0, result.stderr)
   assert.equal(existsSync(lockPath), true)
 })

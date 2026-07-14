@@ -10,7 +10,7 @@ plan -> dev -> check -> review -> done
 plan/dev/check/review -> abandoned
 ```
 
-blocked 不改变 phase。处于 dev、check、review 的 blocked task 继续占用当前 workspace。
+blocked 不改变 phase。其他处于 dev、check、review 的 task 不阻止批准；共享 worktree 风险仍会作为 warning 返回。
 
 ## 命令
 
@@ -51,7 +51,7 @@ latch approve <task-id> --expect-revision 7 --reason "用户批准当前 plan"
 latch approve <task-id> --expect-revision 12 --feedback "修正实现细节"
 ```
 
-首次批准绑定当前 plan revision。review 中的明确实现修正保留 plan approval，增加 `work_revision` 并回到 dev。
+首次批准绑定当前 plan revision。review 中的明确实现修正保留 plan approval，增加 `work_revision` 并回到 dev。发现其他活动 task 时，批准仍会成功，并提示共享 worktree 风险。
 
 ### 验证
 
@@ -98,4 +98,4 @@ latch abandon <task-id> --expect-revision 5 --reason "用户取消"
 - actor current：`.latch/state.json`；
 - archive：`.latch/archive/YYYY-MM/<task-id>/`。
 
-所有 task 更新需要 `--expect-revision`。锁顺序固定为 `workspace -> task -> state`。真正并行实现需要外部 Git worktree；Latch 不负责创建或合并 worktree。
+所有 task 更新需要 `--expect-revision`。task 使用独立短锁；需要组合锁时顺序固定为 `task -> state`。Latch 不跟踪 task 的文件归属，验证命令针对整个 worktree；需要代码隔离时由用户使用外部 Git worktree，Latch 不负责创建或合并它。

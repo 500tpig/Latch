@@ -4,7 +4,6 @@ import {
   readArchivedTaskV2,
   readTaskV2,
   updateTaskV2,
-  withWorkspaceLockV2,
   worktreeOccupantV2,
 } from './task-store.js'
 import type { TaskStoreV2, TaskWriteResultV2 } from './task-store.js'
@@ -22,31 +21,37 @@ function requireText(value: string | undefined, message: string): string {
   return value.trim()
 }
 
-/**
- * workspace 锁只保护占用扫描和 phase 写入；updateTaskV2 在其内部再取 task 锁。
- * 若未来需要同时更新 current state，锁顺序必须继续保持 workspace -> task -> state。
- */
+function sharedWorktreeWarnings(store: TaskStoreV2, taskId: string): string[] {
+  const occupant = worktreeOccupantV2(store, taskId)
+  if (!occupant) return []
+  return [
+    `Shared worktree: task ${occupant.id} is also active in phase ${occupant.phase}; verify changes against the whole worktree or use a separate Git worktree.`,
+  ]
+}
+
+function withWarnings(
+  result: TaskWriteResultV2,
+  warnings: string[],
+): TaskWriteResultV2 {
+  return { ...result, warnings: [...result.warnings, ...warnings] }
+}
+
 export function approveTaskV2(
   store: TaskStoreV2,
   id: string,
   input: ApproveTaskV2Input,
 ): TaskWriteResultV2 {
-  return withWorkspaceLockV2(store, () => {
+  return (() => {
     const current = readTaskV2(store, id)
     if (current.blocked) throw new Error(`Task is blocked: ${current.blocked.reason}`)
     if (current.plan.open_questions.length > 0)
       throw new Error('Cannot approve while plan.open_questions is not empty.')
-
-    const occupant = worktreeOccupantV2(store, current.id)
-    if (occupant)
-      throw new Error(
-        `Workspace is occupied by ${occupant.id} in phase ${occupant.phase}.`,
-      )
+    const warnings = sharedWorktreeWarnings(store, current.id)
 
     if (current.phase === 'plan') {
       if (input.feedback) throw new Error('--feedback requires a task in review.')
       const reason = requireText(input.reason, '--reason is required in plan.')
-      return updateTaskV2(store, current.id, {
+      return withWarnings(updateTaskV2(store, current.id, {
         expectRevision: input.expectRevision,
         actor: input.actor,
         events: [
@@ -74,7 +79,7 @@ export function approveTaskV2(
           task.phase = 'dev'
           delete task.submission
         },
-      })
+      }), warnings)
     }
 
     if (current.phase === 'review') {
@@ -88,7 +93,7 @@ export function approveTaskV2(
         current.plan_revision
       )
         throw new Error('Current plan does not have a valid implementation approval.')
-      return updateTaskV2(store, current.id, {
+      return withWarnings(updateTaskV2(store, current.id, {
         expectRevision: input.expectRevision,
         actor: input.actor,
         events: [
@@ -111,11 +116,11 @@ export function approveTaskV2(
           task.phase = 'dev'
           delete task.submission
         },
-      })
+      }), warnings)
     }
 
     throw new Error(`Cannot approve task in phase ${current.phase}.`)
-  })
+  })()
 }
 
 import type { VerifyResult } from './types.js'

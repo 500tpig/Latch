@@ -16,7 +16,7 @@ Latch 是个人 macOS 开发环境中的本地任务状态记录器。它帮助 
 - 创建 task 不等于批准实施；
 - 每张 implementation task 单独获得 direct approval；
 - plan 和 work revision 使旧结果明确失效；
-- 同一 workspace 只允许一张实现态 task；
+- 不同 task 可以在同一 workspace 独立推进；共享 worktree 风险通过 warning 提示；
 - 原子写和短锁保护当前事实，不引入通用事务框架；
 - archive 使用目录 rename 作为提交点。
 

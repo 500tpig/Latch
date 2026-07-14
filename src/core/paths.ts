@@ -9,7 +9,6 @@ export type LatchPathsV2 = {
   archiveDir: string
   locksDir: string
   taskLocksDir: string
-  workspaceLockPath: string
   statePath: string
   stateLockPath: string
 }
@@ -29,7 +28,6 @@ export function pathsForWorkspace(workspaceRoot: string): LatchPathsV2 {
     archiveDir: join(v2LatchDir, 'archive'),
     locksDir,
     taskLocksDir: join(locksDir, 'tasks'),
-    workspaceLockPath: join(locksDir, 'workspace.lock'),
     statePath: join(v2LatchDir, 'state.json'),
     stateLockPath: join(locksDir, 'state.lock'),
   }

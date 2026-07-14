@@ -28,15 +28,15 @@
 - 不回滚、覆盖或清理用户改动。
 - 明确标识符先用 `rg`；仓库存在 `.codegraph/` 时，调用关系和删除影响使用 CodeGraph。
 - JavaScript 和 TypeScript 命令使用 `pnpm`。
-- 验证强度与风险匹配；完成前至少运行相关测试和 `git diff --check`。
+- 完成前运行 `pnpm check` 和 `git diff --check`；若任务只需更小范围验证，说明原因并运行相关测试。
 - 不自动执行 Git add、commit、push。
 
 ## v2 边界
 
 - phase 只有 `plan`、`dev`、`check`、`review`。
 - blocked 是附加状态，不是 phase。
-- 同一 workspace 同时只允许一张 task 处于 `dev`、`check` 或 `review`。
-- 锁顺序固定为 `workspace -> task -> state`。
+- 同一 workspace 的不同 task 可以独立处于 `dev`、`check` 或 `review`；共享 worktree 风险只作为 approve warning。
+- 需要组合锁时顺序固定为 `task -> state`。
 - task.json 是当前事实；events 是历史，state 是 actor 的 current 索引。
 - 不实现自动任务分类、knowledge、聊天保存、自动 Git 或自动 worktree。
 

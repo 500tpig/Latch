@@ -373,10 +373,6 @@ function withV2Lock<T>(path: string, fn: () => T): T {
   }
 }
 
-export function withWorkspaceLockV2<T>(store: TaskStoreV2, fn: () => T): T {
-  return withV2Lock(store.paths.workspaceLockPath, fn)
-}
-
 export function withTaskLockV2<T>(
   store: TaskStoreV2,
   id: string,
