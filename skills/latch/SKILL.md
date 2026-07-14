@@ -15,6 +15,11 @@ Use Latch only after the request explicitly mentions Latch.
 4. Read task artifacts, then `docs/INDEX.md`, then 1–3 directly relevant project documents.
 5. Preserve unrelated worktree changes.
 
+## Plan writing
+
+- Wrap each file path, code identifier, configuration key, and command in inline code.
+- Keep each plan item to one sentence; do not add bold text or local links solely for presentation.
+
 ## Create and approve
 
 Create a task only with explicit authorization and a complete plan file:
