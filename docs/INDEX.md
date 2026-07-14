@@ -14,7 +14,7 @@ v2 命令、phase、验证、review 和 archive 流程。
 
 ### [本机安装](AI_INSTALL.md)
 
-个人 macOS 环境的 CLI、canonical skill、备份和回退步骤。第一阶段不执行全局切换。
+个人 macOS 环境的 v2 CLI、canonical skill、项目初始化、备份和回退步骤。
 
 ### [文档分层](ARTIFACTS.md)
 
@@ -28,6 +28,10 @@ Task 数据、项目文档和 artifact 的职责边界。
 
 Latch、Latch-Board、appearance-sec 和 monitoring 的当前兼容状态。
 
+### [观察期](OBSERVATION.md)
+
+10 张真实 v2 task 的起点、样本规则、进度检查、证据来源和评估方式。
+
 ## 当前产品契约
 
 ### [Latch v2 PRD](prd/2026-07-10-latch-v2.md)
@@ -38,12 +42,13 @@ Latch、Latch-Board、appearance-sec 和 monitoring 的当前兼容状态。
 
 ### [Latch v2 分窗口实施计划](briefs/2026-07-10-latch-v2-implementation-slices.md)
 
-- 状态：`approved`，Revision 2；Slice 6 已归档，Slice 7 已完成并停在 review；
-- 用途：第一阶段 7 个顺序 slice 的范围、验收和交接记录。
+- 状态：`approved`，Revision 2；
+- 用途：第一阶段 7 个顺序 slice 的范围、验收和交接记录。当前接入结果以
+  [接入状态](ADOPTER_SYNC.md)为准。
 
 ### [第一阶段验收结果](FIRST_PHASE_REVIEW.md)
 
-第一阶段命令、数据、验证和第二阶段前置条件。
+第一阶段命令、数据、验证和第二阶段前置条件，仅用于历史追溯。
 
 ## 模板
 

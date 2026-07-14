@@ -1,5 +1,8 @@
 # Latch v2 第一阶段验收
 
+> 本页记录第一阶段验收时的事实，不代表当前全局安装和接入状态。当前状态见
+> [Latch v2 接入状态](ADOPTER_SYNC.md)。
+
 ## 结果
 
 Latch repo 内的 v2 runtime、文档、canonical skill 和正式 CLI 入口已完成。第一阶段没有切换真实全局 CLI/skill，也没有修改外部 repo。
