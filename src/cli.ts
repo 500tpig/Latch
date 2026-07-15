@@ -24,11 +24,20 @@ import {
   takeoverTaskV3,
   updateTaskV2,
 } from './core/task-store.js'
-import type { TaskArtifact, TaskPlan } from './core/types.js'
+import type {
+  ImplementationAuthorizationInput,
+  KnowledgeImpact,
+  RetrospectiveRecordInput,
+  TaskArtifact,
+  TaskPlan,
+  TaskProfile,
+} from './core/types.js'
 import {
   abandonTaskV2,
   approveTaskV2,
+  changeTaskProfileV3,
   doneTaskV2,
+  patchSubmissionKnowledgeImpactV3,
   submitTaskV2,
   verifyTaskV2,
 } from './core/progress.js'
@@ -45,9 +54,10 @@ Commands:
   claim <task-id> --expect-revision <revision> [--reason <text>]
   takeover <task-id> --expect-revision <revision> --reason <text>
   save <task-id> --expect-revision <revision> [changes]
-  approve <task-id> --expect-revision <revision> (--reason <text> | --feedback <text>)
+  approve <task-id> --expect-revision <revision> [--reason <text> | --authorization-file <path> | --retrospective-file <path>] [--feedback <text>]
   verify <task-id> --expect-revision <revision> --name <name> [--diagnostic] [-- command...]
-  submit <task-id> --expect-revision <revision> --changes <text> --unverified <text> [--no-verify --reason <text>]
+  submit <task-id> --expect-revision <revision> --changes <text> --unverified <text> [--knowledge-impact-file <path>] [--no-verify --reason <text>]
+  patch-submission-knowledge-impact <task-id> --expect-revision <revision> --knowledge-impact-file <path>
   done <task-id> --expect-revision <revision> --followup <text>
   abandon <task-id> --expect-revision <revision> --reason <text>`
 
@@ -63,13 +73,15 @@ const commandUsage: Record<string, string> = {
   takeover:
     'Usage: latch takeover <task-id> --expect-revision <revision> --reason <text> [--json]',
   save:
-    'Usage: latch save <task-id> --expect-revision <revision> [--plan-file <path>] [--feedback <text>] [--decision <text>] [--artifact <kind>:<path>] [--remove-artifact <kind>:<path>] [--block-reason <text> --waiting-for <text> | --unblock] [--json]',
+    'Usage: latch save <task-id> --expect-revision <revision> [--plan-file <path>] [--feedback <text>] [--decision <text>] [--artifact <kind>:<path>] [--remove-artifact <kind>:<path>] [--block-reason <text> --waiting-for <text> | --unblock] [--profile <light|standard> --profile-reason <text> [--user-requested-narrowing]] [--json]',
   approve:
-    'Usage: latch approve <task-id> --expect-revision <revision> (--reason <text> | --feedback <text>) [--json]',
+    'Usage: latch approve <task-id> --expect-revision <revision> [--reason <text> | --authorization-file <path> | --retrospective-file <path>] [--feedback <text>] [--json]',
   verify:
     'Usage: latch verify <task-id> --expect-revision <revision> --name <name> [--diagnostic] [-- command...] [--json]',
   submit:
-    'Usage: latch submit <task-id> --expect-revision <revision> --changes <text> --unverified <text> [--no-verify --reason <text>] [--json]',
+    'Usage: latch submit <task-id> --expect-revision <revision> --changes <text> --unverified <text> [--knowledge-impact-file <path>] [--no-verify --reason <text>] [--json]',
+  'patch-submission-knowledge-impact':
+    'Usage: latch patch-submission-knowledge-impact <task-id> --expect-revision <revision> --knowledge-impact-file <path> [--json]',
   done:
     'Usage: latch done <task-id> --expect-revision <revision> --followup <text> [--json]',
   abandon:
@@ -85,6 +97,7 @@ const actorRequiredCommands = new Set([
   'approve',
   'verify',
   'submit',
+  'patch-submission-knowledge-impact',
   'done',
   'abandon',
 ])
@@ -150,6 +163,11 @@ function artifactLabel(value: TaskArtifact) {
 function readPlan(cwd: string, planFile: string | undefined) {
   if (!planFile) fail('invalid_arguments', '--plan-file is required.')
   return readJsonFile<TaskPlan>(resolve(cwd, planFile))
+}
+
+function readInputFile<T>(cwd: string, path: string | undefined, option: string) {
+  if (!path) fail('invalid_arguments', `${option} is required.`)
+  return readJsonFile<T>(resolve(cwd, path))
 }
 
 function json(value: unknown) {
@@ -346,6 +364,9 @@ function runSave(args: string[], cwd: string, actor: string) {
     'block-reason': { type: 'string' },
     'waiting-for': { type: 'string' },
     unblock: { type: 'boolean' },
+    profile: { type: 'string' },
+    'profile-reason': { type: 'string' },
+    'user-requested-narrowing': { type: 'boolean' },
   })
   if (parsed.values.help) return process.stdout.write(`${commandUsage.save}\n`)
   requirePositionals('save', parsed.positionals, 1)
@@ -360,6 +381,40 @@ function runSave(args: string[], cwd: string, actor: string) {
   const hasBlock = parsed.values['block-reason'] || parsed.values['waiting-for']
   if (hasBlock && (!parsed.values['block-reason'] || !parsed.values['waiting-for']))
     fail('invalid_arguments', '--block-reason and --waiting-for are both required.')
+
+  if (parsed.values.profile) {
+    if (parsed.values.profile !== 'light' && parsed.values.profile !== 'standard')
+      fail('invalid_arguments', '--profile must be light or standard.')
+    const combined = Boolean(
+      parsed.values['plan-file'] ||
+      parsed.values.feedback ||
+      parsed.values.decision ||
+      parsed.values.question ||
+      parsed.values.answer ||
+      parsed.values.artifact?.length ||
+      parsed.values['remove-artifact']?.length ||
+      hasBlock ||
+      parsed.values.unblock,
+    )
+    if (combined)
+      fail('invalid_arguments', '--profile must be saved as a standalone change.')
+    const store = openTaskStoreV2(cwd)
+    const result = changeTaskProfileV3(store, parsed.positionals[0], {
+      expectRevision,
+      actor,
+      profile: parsed.values.profile as TaskProfile,
+      reason: parsed.values['profile-reason'] ?? '',
+      userRequestedNarrowing: Boolean(parsed.values['user-requested-narrowing']),
+    })
+    if (parsed.values.json)
+      return json(mutationJson(result.task, result.warnings, expectRevision))
+    process.stdout.write(
+      `Changed ${result.task.id} profile to ${result.task.profile}.\n`,
+    )
+    return printWarnings(result.warnings)
+  }
+  if (parsed.values['profile-reason'] || parsed.values['user-requested-narrowing'])
+    fail('invalid_arguments', '--profile-reason and narrowing require --profile.')
 
   const store = openTaskStoreV2(cwd)
   const current = readTaskV2(store, parsed.positionals[0])
@@ -482,22 +537,50 @@ function runApprove(args: string[], cwd: string, actor: string) {
     'expect-revision': { type: 'string' },
     reason: { type: 'string' },
     feedback: { type: 'string' },
+    'authorization-file': { type: 'string' },
+    'retrospective-file': { type: 'string' },
   })
   if (parsed.values.help) return process.stdout.write(`${commandUsage.approve}
 `)
   requirePositionals('approve', parsed.positionals, 1)
   if (parsed.values.reason && parsed.values.feedback)
     fail('invalid_arguments', '--reason and --feedback cannot be combined.')
+  if (parsed.values['authorization-file'] && parsed.values['retrospective-file'])
+    fail(
+      'invalid_arguments',
+      '--authorization-file and --retrospective-file cannot be combined.',
+    )
+  if (
+    parsed.values.reason &&
+    (parsed.values['authorization-file'] || parsed.values['retrospective-file'])
+  )
+    fail('invalid_arguments', '--reason cannot be combined with structured work_basis.')
   const expectRevision = positiveInteger(
     parsed.values['expect-revision'],
     '--expect-revision',
   )
   const store = openTaskStoreV2(cwd)
+  const authorization = parsed.values['authorization-file']
+    ? readInputFile<ImplementationAuthorizationInput>(
+        cwd,
+        parsed.values['authorization-file'],
+        '--authorization-file',
+      )
+    : undefined
+  const retrospective = parsed.values['retrospective-file']
+    ? readInputFile<RetrospectiveRecordInput>(
+        cwd,
+        parsed.values['retrospective-file'],
+        '--retrospective-file',
+      )
+    : undefined
   const result = approveTaskV2(store, parsed.positionals[0], {
     expectRevision,
     actor,
     reason: parsed.values.reason,
     feedback: parsed.values.feedback,
+    authorization,
+    retrospective,
   })
   if (parsed.values.json)
     return json(mutationJson(result.task, result.warnings, expectRevision))
@@ -556,6 +639,7 @@ function runSubmit(args: string[], cwd: string, actor: string) {
     unverified: { type: 'string' },
     'no-verify': { type: 'boolean' },
     reason: { type: 'string' },
+    'knowledge-impact-file': { type: 'string' },
   })
   if (parsed.values.help) return process.stdout.write(`${commandUsage.submit}\n`)
   requirePositionals('submit', parsed.positionals, 1)
@@ -566,6 +650,13 @@ function runSubmit(args: string[], cwd: string, actor: string) {
   if (!parsed.values.changes) fail('invalid_arguments', '--changes is required.')
   if (parsed.values.unverified === undefined)
     fail('invalid_arguments', '--unverified is required.')
+  const knowledgeImpact = parsed.values['knowledge-impact-file']
+    ? readInputFile<KnowledgeImpact>(
+        cwd,
+        parsed.values['knowledge-impact-file'],
+        '--knowledge-impact-file',
+      )
+    : undefined
   const store = openTaskStoreV2(cwd)
   const result = submitTaskV2(store, parsed.positionals[0], {
     expectRevision,
@@ -574,10 +665,51 @@ function runSubmit(args: string[], cwd: string, actor: string) {
     unverified: parsed.values.unverified,
     noVerify: Boolean(parsed.values['no-verify']),
     reason: parsed.values.reason,
+    knowledgeImpact,
   })
   if (parsed.values.json)
     return json(mutationJson(result.task, result.warnings, expectRevision))
   process.stdout.write(`Submitted ${result.task.id} for review.\n`)
+  printWarnings(result.warnings)
+}
+
+function runPatchSubmissionKnowledgeImpact(
+  args: string[],
+  cwd: string,
+  actor: string,
+) {
+  const parsed = parseCommand(args, {
+    ...commonOptions(),
+    'expect-revision': { type: 'string' },
+    'knowledge-impact-file': { type: 'string' },
+  })
+  if (parsed.values.help)
+    return process.stdout.write(
+      `${commandUsage['patch-submission-knowledge-impact']}\n`,
+    )
+  requirePositionals(
+    'patch-submission-knowledge-impact',
+    parsed.positionals,
+    1,
+  )
+  const expectRevision = positiveInteger(
+    parsed.values['expect-revision'],
+    '--expect-revision',
+  )
+  const knowledgeImpact = readInputFile<KnowledgeImpact>(
+    cwd,
+    parsed.values['knowledge-impact-file'],
+    '--knowledge-impact-file',
+  )
+  const store = openTaskStoreV2(cwd)
+  const result = patchSubmissionKnowledgeImpactV3(
+    store,
+    parsed.positionals[0],
+    { expectRevision, actor, knowledgeImpact },
+  )
+  if (parsed.values.json)
+    return json(mutationJson(result.task, result.warnings, expectRevision))
+  process.stdout.write(`Patched ${result.task.id} submission knowledge impact.\n`)
   printWarnings(result.warnings)
 }
 
@@ -675,6 +807,8 @@ function run(argv: string[], cwd: string) {
       return runVerify(args, cwd, actor)
     case 'submit':
       return runSubmit(args, cwd, actor)
+    case 'patch-submission-knowledge-impact':
+      return runPatchSubmissionKnowledgeImpact(args, cwd, actor)
     case 'done':
       return runDone(args, cwd, actor)
     case 'abandon':

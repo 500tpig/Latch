@@ -41,7 +41,71 @@ export type TaskArtifact = {
   path: string
 }
 
-// C1 期间 schema 3 仅供临时 fixture；默认产品创建仍固定为 schema 2。
+export type TaskProfile = 'light' | 'standard'
+
+export type ImplementationAuthorization = {
+  kind: 'implementation_authorization'
+  plan_revision: number
+  authorized_at: string
+  source: 'user_request' | 'user_approve' | 'user_delta'
+  reason: string
+  scope: {
+    summary: string
+    paths?: string[]
+    notes?: string
+  }
+}
+
+export type RetrospectiveRecord = {
+  kind: 'retrospective_record'
+  recorded_at: string
+  reason: string
+  implemented_before_task: true
+  scope_summary: string
+  plan_revision: number
+  work_revision: number
+}
+
+export type WorkBasis = ImplementationAuthorization | RetrospectiveRecord
+
+export type ImplementationAuthorizationInput = Omit<
+  ImplementationAuthorization,
+  'plan_revision' | 'authorized_at'
+>
+
+export type RetrospectiveRecordInput = Omit<
+  RetrospectiveRecord,
+  'recorded_at' | 'plan_revision' | 'work_revision'
+> & {
+  code_unchanged?: true
+}
+
+export type WorkBasisInput =
+  | ImplementationAuthorizationInput
+  | RetrospectiveRecordInput
+
+export type KnowledgeImpact =
+  | { kind: 'none'; reason: string }
+  | {
+      kind: 'updated'
+      summary: string
+      artifact_refs: TaskArtifact[]
+    }
+
+export type TaskSubmission = {
+  plan_revision?: number
+  work_revision: number
+  changes: string
+  verified: string
+  unverified: string
+  knowledge_impact?: KnowledgeImpact
+  no_verify?: {
+    reason: string
+  }
+  submitted_at: string
+}
+
+// C1/C2 期间 schema 3 仅供临时 fixture；默认产品创建仍固定为 schema 2。
 export type TaskV2 = {
   schema_version: 2 | 3
   id: string
@@ -49,6 +113,8 @@ export type TaskV2 = {
   phase: TaskPhase
   outcome?: TaskOutcome
   primary_writer?: string
+  profile?: TaskProfile
+  work_basis?: WorkBasis
   revision: number
   plan_revision: number
   work_revision: number
@@ -65,16 +131,7 @@ export type TaskV2 = {
     gate: Record<string, VerifyResult>
     diagnostic: Record<string, VerifyResult>
   }
-  submission?: {
-    work_revision: number
-    changes: string
-    verified: string
-    unverified: string
-    no_verify?: {
-      reason: string
-    }
-    submitted_at: string
-  }
+  submission?: TaskSubmission
   closure?: {
     changes: string
     verified: string
@@ -113,9 +170,17 @@ export const WRITER_EVENT_TYPES = [
   'writer_taken_over',
 ] as const
 
+export const LIGHT_EVENT_TYPES = [
+  'implementation_authorized',
+  'retrospective_recorded',
+  'profile_changed',
+  'submission_knowledge_impact_patched',
+] as const
+
 export const TASK_EVENT_TYPES_V3 = [
   ...TASK_EVENT_TYPES,
   ...WRITER_EVENT_TYPES,
+  ...LIGHT_EVENT_TYPES,
 ] as const
 
 export type TaskEventTypeV2 = (typeof TASK_EVENT_TYPES)[number]

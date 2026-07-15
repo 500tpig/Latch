@@ -79,7 +79,14 @@ function writeTask(cwd, task) {
 
 function createV3(cwd, actor = writerA) {
   const store = initTaskStoreV2(cwd)
-  return createTaskV3(store, { title: 'actor fixture', plan: plan() }, actor).task
+  const task = createTaskV3(
+    store,
+    { title: 'actor fixture', plan: plan(), profile: 'standard' },
+    actor,
+  ).task
+  delete task.profile
+  writeTask(cwd, task)
+  return task
 }
 
 test.afterEach(() => {

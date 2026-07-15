@@ -38,6 +38,7 @@ function taskSummary(task: TaskV2, brief: boolean) {
     revision: task.revision,
     plan_revision: task.plan_revision,
     work_revision: task.work_revision,
+    profile: task.profile ?? 'standard',
     ...(task.blocked ? { blocked: task.blocked } : {}),
     created_at: task.created_at,
     updated_at: task.updated_at,
@@ -74,6 +75,7 @@ function briefTask(task: TaskV2) {
     revision: task.revision,
     plan_revision: task.plan_revision,
     work_revision: task.work_revision,
+    profile: task.profile ?? 'standard',
     goal: task.plan.goal,
     scope: task.plan.scope,
     acceptance: task.plan.acceptance,
@@ -81,6 +83,7 @@ function briefTask(task: TaskV2) {
     ...(task.implementation_approval
       ? { implementation_approval: task.implementation_approval }
       : {}),
+    ...(task.work_basis ? { work_basis: task.work_basis } : {}),
     ...(task.blocked ? { blocked: task.blocked } : {}),
     verification_plan: briefVerificationPlan(task),
     verification: task.verification,
@@ -133,6 +136,7 @@ export function contextHumanV2(
     `Revision: ${task.revision}`,
     `Plan revision: ${task.plan_revision}`,
     `Work revision: ${task.work_revision}`,
+    `Profile: ${task.profile ?? 'standard'}`,
     `Current: ${current ? 'yes' : 'no'}`,
     `Goal: ${task.plan.goal}`,
     `Scope: ${task.plan.scope.join(' | ') || '-'}`,

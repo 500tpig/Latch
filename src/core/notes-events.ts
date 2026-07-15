@@ -78,6 +78,54 @@ function validateTaskEvent(
     if (typeof value.reason !== 'string' || !value.reason.trim())
       throw new Error(`Invalid writer_taken_over reason in ${path}.`)
   }
+  if (value.type === 'implementation_authorized') {
+    if (!Number.isInteger(value.plan_revision) || (value.plan_revision as number) < 1)
+      throw new Error(`Invalid authorization plan_revision in ${path}.`)
+    if (
+      value.source !== 'user_request' &&
+      value.source !== 'user_approve' &&
+      value.source !== 'user_delta'
+    )
+      throw new Error(`Invalid authorization source in ${path}.`)
+    if (typeof value.reason !== 'string' || !value.reason.trim())
+      throw new Error(`Invalid authorization reason in ${path}.`)
+    if (
+      !isRecord(value.scope) ||
+      typeof value.scope.summary !== 'string' ||
+      !value.scope.summary.trim()
+    )
+      throw new Error(`Invalid authorization scope in ${path}.`)
+  }
+  if (value.type === 'retrospective_recorded') {
+    if (!Number.isInteger(value.plan_revision) || (value.plan_revision as number) < 1)
+      throw new Error(`Invalid retrospective plan_revision in ${path}.`)
+    if (!Number.isInteger(value.work_revision) || (value.work_revision as number) < 1)
+      throw new Error(`Invalid retrospective work_revision in ${path}.`)
+    if (value.implemented_before_task !== true)
+      throw new Error(`Invalid retrospective implemented_before_task in ${path}.`)
+    if (typeof value.reason !== 'string' || !value.reason.trim())
+      throw new Error(`Invalid retrospective reason in ${path}.`)
+    if (typeof value.scope_summary !== 'string' || !value.scope_summary.trim())
+      throw new Error(`Invalid retrospective scope_summary in ${path}.`)
+  }
+  if (value.type === 'profile_changed') {
+    if (
+      (value.from !== 'light' && value.from !== 'standard') ||
+      (value.to !== 'light' && value.to !== 'standard') ||
+      value.from === value.to
+    )
+      throw new Error(`Invalid profile change in ${path}.`)
+    if (typeof value.reason !== 'string' || !value.reason.trim())
+      throw new Error(`Invalid profile change reason in ${path}.`)
+  }
+  if (value.type === 'submission_knowledge_impact_patched') {
+    if (!Number.isInteger(value.plan_revision) || (value.plan_revision as number) < 1)
+      throw new Error(`Invalid patch plan_revision in ${path}.`)
+    if (!Number.isInteger(value.work_revision) || (value.work_revision as number) < 0)
+      throw new Error(`Invalid patch work_revision in ${path}.`)
+    if (value.knowledge_impact_kind !== 'none' && value.knowledge_impact_kind !== 'updated')
+      throw new Error(`Invalid patch knowledge_impact_kind in ${path}.`)
+  }
 }
 
 export function validateTaskEventV2(

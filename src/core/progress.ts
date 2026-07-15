@@ -1,13 +1,24 @@
 import { spawnSync } from 'node:child_process'
 import {
   archiveTaskV2,
+  assertKnowledgeImpact,
   assertTaskWritableV2,
+  materializeWorkBasisV3,
   readArchivedTaskV2,
   readTaskV2,
   updateTaskV2,
+  updateTaskV3,
   worktreeOccupantV2,
 } from './task-store.js'
 import type { TaskStoreV2, TaskWriteResultV2 } from './task-store.js'
+import type {
+  ImplementationAuthorizationInput,
+  KnowledgeImpact,
+  RetrospectiveRecordInput,
+  TaskProfile,
+  TaskV2,
+  VerifyResult,
+} from './types.js'
 import { now } from './utils.js'
 
 export type ApproveTaskV2Input = {
@@ -15,6 +26,8 @@ export type ApproveTaskV2Input = {
   actor: string
   reason?: string
   feedback?: string
+  authorization?: ImplementationAuthorizationInput
+  retrospective?: RetrospectiveRecordInput
 }
 
 function requireText(value: string | undefined, message: string): string {
@@ -37,94 +50,298 @@ function withWarnings(
   return { ...result, warnings: [...result.warnings, ...warnings] }
 }
 
+function profileOf(task: TaskV2): TaskProfile {
+  return task.profile ?? 'standard'
+}
+
+function usesLightProofPackage(task: TaskV2) {
+  return task.schema_version === 3 && task.profile !== undefined
+}
+
+function hasValidLegacyApproval(task: TaskV2) {
+  return (
+    profileOf(task) === 'standard' &&
+    task.implementation_approval?.approved_plan_revision === task.plan_revision
+  )
+}
+
+function hasValidWorkBasis(task: TaskV2) {
+  const basis = task.work_basis
+  if (!basis || basis.plan_revision !== task.plan_revision) return false
+  return (
+    basis.kind === 'implementation_authorization' ||
+    basis.work_revision === task.work_revision
+  )
+}
+
+function assertValidWorkBasis(task: TaskV2) {
+  if (hasValidWorkBasis(task) || hasValidLegacyApproval(task)) return
+  throw new Error('Current task does not have a valid work_basis.')
+}
+
+function gatePlan(task: TaskV2) {
+  return task.plan.verification_plan.filter((item) => item.kind === 'gate')
+}
+
+function missingCurrentGates(task: TaskV2) {
+  return gatePlan(task).filter((item) => {
+    const result = task.verification.gate[item.name]
+    return (
+      !result ||
+      result.work_revision !== task.work_revision ||
+      result.status !== 'pass'
+    )
+  })
+}
+
+function assertSubmissionProof(task: TaskV2) {
+  const submission = task.submission
+  if (!submission) throw new Error('Current task does not have a submission.')
+  const gates = gatePlan(task)
+  if (submission.no_verify) {
+    if (profileOf(task) === 'light')
+      throw new Error('Light submit denied: --no-verify is not allowed for profile=light.')
+    if (gates.length > 0)
+      throw new Error('Current no-verify submission no longer has a gate-free plan.')
+    return
+  }
+  if (gates.length === 0 || missingCurrentGates(task).length > 0)
+    throw new Error('Current submission no longer has valid gate results.')
+}
+
 export function approveTaskV2(
   store: TaskStoreV2,
   id: string,
   input: ApproveTaskV2Input,
 ): TaskWriteResultV2 {
-  return (() => {
-    const current = readTaskV2(store, id)
-    if (current.blocked) throw new Error(`Task is blocked: ${current.blocked.reason}`)
-    if (current.plan.open_questions.length > 0)
-      throw new Error('Cannot approve while plan.open_questions is not empty.')
-    const warnings = sharedWorktreeWarnings(store, current.id)
+  const current = readTaskV2(store, id)
+  if (current.blocked) throw new Error(`Task is blocked: ${current.blocked.reason}`)
+  if (current.plan.open_questions.length > 0)
+    throw new Error('Cannot approve while plan.open_questions is not empty.')
+  if (input.authorization && input.retrospective)
+    throw new Error('Authorization and retrospective inputs cannot be combined.')
+  const warnings = sharedWorktreeWarnings(store, current.id)
 
-    if (current.phase === 'plan') {
-      if (input.feedback) throw new Error('--feedback requires a task in review.')
-      const reason = requireText(input.reason, '--reason is required in plan.')
-      return withWarnings(updateTaskV2(store, current.id, {
+  if (current.phase === 'plan') {
+    if (input.feedback) throw new Error('--feedback requires a task in review.')
+    if (usesLightProofPackage(current)) {
+      if (input.reason)
+        throw new Error('--reason cannot replace structured schema 3 work_basis input.')
+      if (!input.authorization && !input.retrospective)
+        throw new Error(
+          'Schema 3 approval requires --authorization-file or --retrospective-file.',
+        )
+      if (input.authorization) {
+        const workRevision = current.work_revision + 1
+        const basis = materializeWorkBasisV3(
+          input.authorization,
+          current.plan_revision,
+          workRevision,
+        )
+        return withWarnings(updateTaskV3(store, current.id, {
+          expectRevision: input.expectRevision,
+          actor: input.actor,
+          events: [
+            {
+              type: 'implementation_authorized',
+              fields: {
+                plan_revision: basis.plan_revision,
+                source: basis.source,
+                reason: basis.reason,
+                scope: basis.scope,
+              },
+            },
+            { type: 'work_started', fields: { work_revision: workRevision } },
+          ],
+          update(task) {
+            task.work_basis = basis
+            delete task.implementation_approval
+            task.work_revision = workRevision
+            task.phase = 'dev'
+            delete task.submission
+          },
+        }), warnings)
+      }
+
+      const retrospective = input.retrospective!
+      const firstRecord = current.work_revision === 0
+      if (firstRecord) {
+        if (current.work_basis || current.implementation_approval || current.submission)
+          throw new Error(
+            'Retrospective denied: cannot apply retrospective_record to in-flight authorized task.',
+          )
+      } else if (
+        current.work_basis?.kind !== 'retrospective_record' ||
+        retrospective.code_unchanged !== true ||
+        current.submission
+      ) {
+        throw new Error(
+          'Retrospective rebind requires a prior retrospective_record, no submission, and code_unchanged=true.',
+        )
+      }
+      const workRevision = firstRecord ? 1 : current.work_revision
+      const basis = materializeWorkBasisV3(
+        retrospective,
+        current.plan_revision,
+        workRevision,
+      )
+      return withWarnings(updateTaskV3(store, current.id, {
         expectRevision: input.expectRevision,
         actor: input.actor,
         events: [
           {
-            type: 'implementation_approved',
+            type: 'retrospective_recorded',
             fields: {
-              plan_revision: current.plan_revision,
-              source: 'user',
-              reason,
+              plan_revision: basis.plan_revision,
+              work_revision: basis.work_revision,
+              reason: basis.reason,
+              implemented_before_task: basis.implemented_before_task,
+              scope_summary: basis.scope_summary,
             },
           },
-          {
-            type: 'work_started',
-            fields: { work_revision: current.work_revision + 1 },
-          },
+          ...(firstRecord
+            ? [{ type: 'work_started' as const, fields: { work_revision: 1 } }]
+            : []),
         ],
         update(task) {
-          task.implementation_approval = {
-            approved_plan_revision: task.plan_revision,
-            approved_at: now(),
-            source: 'user',
-            reason,
-          }
-          task.work_revision += 1
+          task.work_basis = basis
+          delete task.implementation_approval
+          task.work_revision = workRevision
           task.phase = 'dev'
           delete task.submission
         },
       }), warnings)
     }
 
-    if (current.phase === 'review') {
-      if (input.reason) throw new Error('--reason cannot be combined with --feedback.')
-      const feedback = requireText(
-        input.feedback,
-        '--feedback is required for a task in review.',
-      )
-      if (
-        current.implementation_approval?.approved_plan_revision !==
-        current.plan_revision
-      )
-        throw new Error('Current plan does not have a valid implementation approval.')
-      return withWarnings(updateTaskV2(store, current.id, {
+    if (input.authorization || input.retrospective)
+      throw new Error('Structured work_basis requires schema_version 3 with profile.')
+    const reason = requireText(input.reason, '--reason is required in plan.')
+    return withWarnings(updateTaskV2(store, current.id, {
+      expectRevision: input.expectRevision,
+      actor: input.actor,
+      events: [
+        {
+          type: 'implementation_approved',
+          fields: {
+            plan_revision: current.plan_revision,
+            source: 'user',
+            reason,
+          },
+        },
+        {
+          type: 'work_started',
+          fields: { work_revision: current.work_revision + 1 },
+        },
+      ],
+      update(task) {
+        task.implementation_approval = {
+          approved_plan_revision: task.plan_revision,
+          approved_at: now(),
+          source: 'user',
+          reason,
+        }
+        task.work_revision += 1
+        task.phase = 'dev'
+        delete task.submission
+      },
+    }), warnings)
+  }
+
+  if (current.phase === 'review') {
+    if (input.reason) throw new Error('--reason cannot be combined with --feedback.')
+    if (input.retrospective)
+      throw new Error('Retrospective cannot be started from review.')
+    const feedback = requireText(
+      input.feedback,
+      '--feedback is required for a task in review.',
+    )
+    if (usesLightProofPackage(current)) {
+      const workRevision = current.work_revision + 1
+      const nextBasis = input.authorization
+        ? materializeWorkBasisV3(
+            input.authorization,
+            current.plan_revision,
+            workRevision,
+          )
+        : undefined
+      if (current.work_basis?.kind === 'retrospective_record' && !nextBasis)
+        throw new Error(
+          'Retrospective work cannot continue after review feedback; authorize first.',
+        )
+      if (!nextBasis) assertValidWorkBasis(current)
+      return withWarnings(updateTaskV3(store, current.id, {
         expectRevision: input.expectRevision,
         actor: input.actor,
         events: [
+          ...(nextBasis?.kind === 'implementation_authorization'
+            ? [{
+                type: 'implementation_authorized' as const,
+                fields: {
+                  plan_revision: nextBasis.plan_revision,
+                  source: nextBasis.source,
+                  reason: nextBasis.reason,
+                  scope: nextBasis.scope,
+                },
+              }]
+            : []),
           {
             type: 'review_feedback',
             fields: {
               plan_revision: current.plan_revision,
-              work_revision: current.work_revision + 1,
+              work_revision: workRevision,
               classification: 'implementation_correction',
               summary: feedback,
             },
           },
-          {
-            type: 'work_started',
-            fields: { work_revision: current.work_revision + 1 },
-          },
+          { type: 'work_started', fields: { work_revision: workRevision } },
         ],
         update(task) {
-          task.work_revision += 1
+          if (nextBasis) {
+            task.work_basis = nextBasis
+            delete task.implementation_approval
+          }
+          task.work_revision = workRevision
           task.phase = 'dev'
           delete task.submission
         },
       }), warnings)
     }
 
-    throw new Error(`Cannot approve task in phase ${current.phase}.`)
-  })()
-}
+    if (input.authorization)
+      throw new Error('Structured authorization requires schema_version 3 with profile.')
+    if (
+      current.implementation_approval?.approved_plan_revision !==
+      current.plan_revision
+    )
+      throw new Error('Current plan does not have a valid implementation approval.')
+    return withWarnings(updateTaskV2(store, current.id, {
+      expectRevision: input.expectRevision,
+      actor: input.actor,
+      events: [
+        {
+          type: 'review_feedback',
+          fields: {
+            plan_revision: current.plan_revision,
+            work_revision: current.work_revision + 1,
+            classification: 'implementation_correction',
+            summary: feedback,
+          },
+        },
+        {
+          type: 'work_started',
+          fields: { work_revision: current.work_revision + 1 },
+        },
+      ],
+      update(task) {
+        task.work_revision += 1
+        task.phase = 'dev'
+        delete task.submission
+      },
+    }), warnings)
+  }
 
-import type { VerifyResult } from './types.js'
+  throw new Error(`Cannot approve task in phase ${current.phase}.`)
+}
 
 export type VerifyTaskV2Input = {
   expectRevision: number
@@ -140,9 +357,8 @@ export type VerifyTaskV2Result = TaskWriteResultV2 & {
 
 function assertReadyForWork(task: ReturnType<typeof readTaskV2>) {
   if (task.blocked) throw new Error(`Task is blocked: ${task.blocked.reason}`)
-  if (
-    task.implementation_approval?.approved_plan_revision !== task.plan_revision
-  )
+  if (usesLightProofPackage(task)) return assertValidWorkBasis(task)
+  if (!hasValidLegacyApproval(task))
     throw new Error('Current plan does not have a valid implementation approval.')
 }
 
@@ -234,6 +450,7 @@ export type SubmitTaskV2Input = {
   unverified: string
   noVerify: boolean
   reason?: string
+  knowledgeImpact?: KnowledgeImpact
 }
 
 export function submitTaskV2(
@@ -243,37 +460,41 @@ export function submitTaskV2(
 ): TaskWriteResultV2 {
   const current = readTaskV2(store, id)
   assertReadyForWork(current)
+  if (current.plan.open_questions.length > 0)
+    throw new Error('Cannot submit while plan.open_questions is not empty.')
   const changes = requireText(input.changes, '--changes is required.')
   if (typeof input.unverified !== 'string')
     throw new Error('--unverified is required.')
-  const gatePlan = current.plan.verification_plan.filter(
-    (item) => item.kind === 'gate',
-  )
+  const gates = gatePlan(current)
   let noVerifyReason: string | undefined
   if (input.noVerify) {
+    if (profileOf(current) === 'light')
+      throw new Error('Light submit denied: --no-verify is not allowed for profile=light.')
     if (current.phase !== 'dev')
       throw new Error('No-verify submission requires phase dev.')
-    if (gatePlan.length > 0)
+    if (gates.length > 0)
       throw new Error('No-verify submission requires a plan without gates.')
     noVerifyReason = requireText(input.reason, '--reason is required with --no-verify.')
   } else {
     if (input.reason) throw new Error('--reason requires --no-verify.')
     if (current.phase !== 'check')
       throw new Error('Gate submission requires phase check.')
-    if (gatePlan.length === 0)
+    if (gates.length === 0)
       throw new Error('Gate submission requires at least one planned gate.')
-    const missing = gatePlan.filter((item) => {
-      const result = current.verification.gate[item.name]
-      return (
-        !result ||
-        result.work_revision !== current.work_revision ||
-        result.status !== 'pass'
-      )
-    })
+    const missing = missingCurrentGates(current)
     if (missing.length > 0)
       throw new Error(
         `Current work revision has incomplete gates: ${missing.map((item) => item.name).join(', ')}.`,
       )
+  }
+  if (usesLightProofPackage(current)) {
+    if (!input.knowledgeImpact)
+      throw new Error('--knowledge-impact-file is required for schema 3 submission.')
+    assertKnowledgeImpact(input.knowledgeImpact, current.artifacts, 'submit input')
+  } else if (input.knowledgeImpact) {
+    throw new Error(
+      'Knowledge impact requires schema_version 3; frozen v2 data was not modified.',
+    )
   }
   const verified = verificationSummary(current)
   return updateTaskV2(store, current.id, {
@@ -283,21 +504,138 @@ export function submitTaskV2(
       {
         type: 'submitted',
         fields: {
+          ...(usesLightProofPackage(current)
+            ? { plan_revision: current.plan_revision }
+            : {}),
           work_revision: current.work_revision,
           no_verify: input.noVerify,
+          ...(input.knowledgeImpact
+            ? { knowledge_impact_kind: input.knowledgeImpact.kind }
+            : {}),
         },
       },
     ],
     update(task) {
       task.submission = {
+        ...(usesLightProofPackage(task)
+          ? { plan_revision: task.plan_revision }
+          : {}),
         work_revision: task.work_revision,
         changes,
         verified,
         unverified: input.unverified,
+        ...(input.knowledgeImpact
+          ? { knowledge_impact: structuredClone(input.knowledgeImpact) }
+          : {}),
         ...(noVerifyReason ? { no_verify: { reason: noVerifyReason } } : {}),
         submitted_at: now(),
       }
       task.phase = 'review'
+    },
+  })
+}
+
+export type ChangeTaskProfileV3Input = {
+  expectRevision: number
+  actor: string
+  profile: TaskProfile
+  reason: string
+  userRequestedNarrowing: boolean
+}
+
+export function changeTaskProfileV3(
+  store: TaskStoreV2,
+  id: string,
+  input: ChangeTaskProfileV3Input,
+): TaskWriteResultV2 {
+  const current = readTaskV2(store, id)
+  if (current.schema_version !== 3)
+    throw new Error(
+      'Profile changes require schema_version 3; frozen v2 data was not modified.',
+    )
+  const from = profileOf(current)
+  if (input.profile === from)
+    throw new Error(`Task profile is already ${from}.`)
+  const reason = requireText(input.reason, '--profile-reason is required.')
+  const hasAuthorization =
+    (current.work_basis?.kind === 'implementation_authorization' &&
+      current.work_basis.plan_revision === current.plan_revision) ||
+    hasValidLegacyApproval(current)
+  if (
+    from === 'standard' &&
+    input.profile === 'light' &&
+    hasAuthorization &&
+    !input.userRequestedNarrowing
+  )
+    throw new Error(
+      'Standard to light requires explicit user-requested narrowing when authorization is active.',
+    )
+  return updateTaskV3(store, current.id, {
+    expectRevision: input.expectRevision,
+    actor: input.actor,
+    events: [{
+      type: 'profile_changed',
+      fields: { from, to: input.profile, reason },
+    }],
+    update(task) {
+      task.profile = input.profile
+      task.plan_revision += 1
+      task.phase = 'plan'
+      delete task.implementation_approval
+      delete task.submission
+      task.verification = { gate: {}, diagnostic: {} }
+    },
+  })
+}
+
+export type PatchSubmissionKnowledgeImpactV3Input = {
+  expectRevision: number
+  actor: string
+  knowledgeImpact: KnowledgeImpact
+}
+
+export function patchSubmissionKnowledgeImpactV3(
+  store: TaskStoreV2,
+  id: string,
+  input: PatchSubmissionKnowledgeImpactV3Input,
+): TaskWriteResultV2 {
+  const current = readTaskV2(store, id)
+  if (!usesLightProofPackage(current))
+    throw new Error(
+      'Submission patch requires a schema 3 profile; frozen v2 data was not modified.',
+    )
+  if (current.blocked) throw new Error(`Task is blocked: ${current.blocked.reason}`)
+  if (current.phase !== 'review')
+    throw new Error('Patch denied: task must be in review.')
+  const submission = current.submission
+  if (!submission) throw new Error('Patch denied: submission is required.')
+  if (submission.knowledge_impact)
+    throw new Error('Patch denied: submission already has knowledge_impact.')
+  if (
+    submission.plan_revision !== undefined &&
+    submission.plan_revision !== current.plan_revision
+  )
+    throw new Error('Patch denied: submission plan_revision mismatch.')
+  if (submission.work_revision !== current.work_revision)
+    throw new Error('Patch denied: submission work_revision mismatch.')
+  assertValidWorkBasis(current)
+  assertSubmissionProof(current)
+  assertKnowledgeImpact(input.knowledgeImpact, current.artifacts, 'patch input')
+
+  return updateTaskV3(store, current.id, {
+    expectRevision: input.expectRevision,
+    actor: input.actor,
+    events: [{
+      type: 'submission_knowledge_impact_patched',
+      fields: {
+        plan_revision: current.plan_revision,
+        work_revision: current.work_revision,
+        knowledge_impact_kind: input.knowledgeImpact.kind,
+      },
+    }],
+    update(task) {
+      task.submission!.plan_revision = task.plan_revision
+      task.submission!.knowledge_impact = structuredClone(input.knowledgeImpact)
     },
   })
 }
@@ -326,21 +664,19 @@ export function doneTaskV2(
   const submission = current.submission
   if (!submission || submission.work_revision !== current.work_revision)
     throw new Error('Current work revision does not have a valid submission.')
-  if (!submission.no_verify) {
-    const gates = current.plan.verification_plan.filter((item) => item.kind === 'gate')
-    if (
-      gates.length === 0 ||
-      gates.some((item) => {
-        const result = current.verification.gate[item.name]
-        return (
-          !result ||
-          result.work_revision !== current.work_revision ||
-          result.status !== 'pass'
-        )
-      })
+  if (usesLightProofPackage(current)) {
+    if (submission.plan_revision !== current.plan_revision)
+      throw new Error('Current submission plan_revision is stale.')
+    if (!submission.knowledge_impact)
+      throw new Error('Current submission does not have knowledge_impact.')
+    assertKnowledgeImpact(
+      submission.knowledge_impact,
+      current.artifacts,
+      'current submission',
     )
-      throw new Error('Current submission no longer has valid gate results.')
+    assertValidWorkBasis(current)
   }
+  assertSubmissionProof(current)
   return archiveTaskV2(store, current.id, {
     expectRevision: input.expectRevision,
     actor: input.actor,

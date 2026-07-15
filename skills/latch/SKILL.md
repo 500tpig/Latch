@@ -20,6 +20,18 @@ Use Latch only after the request explicitly mentions Latch.
 - Wrap each file path, code identifier, configuration key, and command in inline code.
 - Keep each plan item to one sentence; do not add bold text or local links solely for presentation.
 
+## C2 decision rules (partial release)
+
+The explicit Latch entry rule remains active until the final contract and instruction surface ship together. After the user explicitly invokes Latch or continues an existing Latch task, classify the request before implementation:
+
+- Grill and keep the task in `plan` when the goal, success criteria, scope, product choice, root cause, or high-risk change is unclear; record only questions that block implementation in `open_questions`.
+- Use light request authorization only when the change, scope, success criteria, and low-risk implementation are all concrete, `open_questions` is empty, and no extra scope is inferred.
+- Use `source: user_request` for a complete low-risk request, `source: user_delta` for a precise low-risk addition to the current plan, and `source: user_approve` after a displayed standard plan receives explicit approval.
+- Use standard plan and explicit approval when implementation requires design choice, migration, authentication, public API changes, destructive data handling, or multiple disputed gates.
+- Stop and return to `plan` when implementation reveals missing information or scope expansion; do not stretch an earlier authorization to cover it.
+
+Schema 3 fixture authorization uses `--authorization-file`; retrospective input uses `--retrospective-file`; submit and legacy patch use `--knowledge-impact-file`. Until C6/R2 is delivered, do not use these options to upgrade or modify real schema 2 `.latch` tasks; real task management continues through the frozen v2 commands.
+
 ## Create and approve
 
 Create a task only with explicit authorization and a complete plan file:

@@ -101,3 +101,9 @@ latch abandon <task-id> --expect-revision 5 --reason "用户取消"
 - archive：`.latch/archive/YYYY-MM/<task-id>/`。
 
 所有 task 更新需要 `--expect-revision`。task 使用独立短锁；需要组合锁时顺序固定为 `task -> state`。Latch 不跟踪 task 的文件归属，验证命令针对整个 worktree；需要代码隔离时由用户使用外部 Git worktree，Latch 不负责创建或合并它。
+
+## Schema 3 部分实现边界
+
+C1/C2 已在临时 fixture 中实现 session writer 与 Light 证明包的 schema 3 读取、校验和生命周期行为。schema 3 fixture 支持结构化 authorization、retrospective、`knowledge_impact` 与 legacy submission patch，并保持 submit 后进入 review。
+
+默认 `latch checkpoint` 仍创建 schema 2 task，真实 `.latch` 不写 schema 3 或 v3-only event。schema 2→3 迁移、R2 `downgrade-v2` 和全面 current 切换仍未发布；本手册其余命令继续以 v2 为准。

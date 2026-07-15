@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { randomBytes } from 'node:crypto'
-import { join } from 'node:path'
+import { isAbsolute, join, normalize, sep } from 'node:path'
 import { discoverWorkspaceRoot, pathsForWorkspace } from './paths.js'
 import type { LatchPathsV2 } from './paths.js'
 import { now, readJsonFile, slug, writeJsonAtomic } from './utils.js'
@@ -23,15 +23,23 @@ import {
   validateTaskEventV2,
   validateTaskEventV3,
 } from './notes-events.js'
-import { TASK_EVENT_TYPES } from './types.js'
+import { TASK_EVENT_TYPES, TASK_EVENT_TYPES_V3 } from './types.js'
 import type {
+  ImplementationAuthorization,
+  ImplementationAuthorizationInput,
+  KnowledgeImpact,
   LatchStateV2,
+  RetrospectiveRecord,
+  RetrospectiveRecordInput,
   TaskArtifact,
   TaskEvent,
   TaskEventType,
   TaskEventTypeV2,
   TaskPlan,
+  TaskProfile,
   TaskV2,
+  WorkBasis,
+  WorkBasisInput,
 } from './types.js'
 
 const V2_SCHEMA_VERSION = 2 as const
@@ -40,6 +48,7 @@ const STALE_LOCK_MILLISECONDS = 60_000
 const CANONICAL_TASK_ID =
   /^\d{17}-[a-z0-9\u4e00-\u9fa5]+(?:-[a-z0-9\u4e00-\u9fa5]+)*-[a-f0-9]{6}$/
 const taskEventTypes = new Set<string>(TASK_EVENT_TYPES)
+const taskEventTypesV3 = new Set<string>(TASK_EVENT_TYPES_V3)
 
 export type TaskStoreV2 = {
   paths: LatchPathsV2
@@ -49,6 +58,11 @@ export type CreateTaskV2Input = {
   title: string
   plan: TaskPlan
   artifacts?: TaskArtifact[]
+}
+
+export type CreateTaskV3Input = CreateTaskV2Input & {
+  profile: TaskProfile
+  workBasis?: WorkBasisInput
 }
 
 export type TaskWriteResultV2 = {
@@ -71,6 +85,10 @@ export type UpdateTaskV2Options = {
   actor: string
   events: TaskEventInputV2[]
   update: (task: TaskV2) => void
+}
+
+export type UpdateTaskV3Options = Omit<UpdateTaskV2Options, 'events'> & {
+  events: TaskEventInput[]
 }
 
 export type ArchiveTaskV2Options = {
@@ -118,6 +136,129 @@ function requireStringArray(
 ): asserts value is string[] {
   if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string'))
     throw new Error(`Invalid ${field} in ${path}.`)
+}
+
+function assertRelativePath(value: string, field: string, path: string) {
+  const normalized = normalize(value)
+  if (
+    isAbsolute(value) ||
+    normalized === '.' ||
+    normalized === '..' ||
+    normalized.startsWith(`..${sep}`)
+  )
+    throw new Error(`Invalid ${field} in ${path}.`)
+}
+
+function assertWorkBasis(value: unknown, path: string): asserts value is WorkBasis {
+  if (!isRecord(value)) throw new Error(`Invalid work_basis in ${path}.`)
+  requireInteger(value.plan_revision, 'work_basis.plan_revision', path, 1)
+  requireString(value.reason, 'work_basis.reason', path)
+  if (value.kind === 'implementation_authorization') {
+    requireString(value.authorized_at, 'work_basis.authorized_at', path)
+    if (
+      value.source !== 'user_request' &&
+      value.source !== 'user_approve' &&
+      value.source !== 'user_delta'
+    )
+      throw new Error(`Invalid work_basis.source in ${path}.`)
+    if (!isRecord(value.scope))
+      throw new Error(`Invalid work_basis.scope in ${path}.`)
+    requireString(value.scope.summary, 'work_basis.scope.summary', path)
+    if (value.scope.paths !== undefined)
+      requireStringArray(value.scope.paths, 'work_basis.scope.paths', path)
+    if (value.scope.notes !== undefined)
+      requireString(value.scope.notes, 'work_basis.scope.notes', path)
+    return
+  }
+  if (value.kind === 'retrospective_record') {
+    requireString(value.recorded_at, 'work_basis.recorded_at', path)
+    if (value.implemented_before_task !== true)
+      throw new Error(`Invalid work_basis.implemented_before_task in ${path}.`)
+    requireString(value.scope_summary, 'work_basis.scope_summary', path)
+    requireInteger(value.work_revision, 'work_basis.work_revision', path, 1)
+    return
+  }
+  throw new Error(`Invalid work_basis.kind in ${path}.`)
+}
+
+export function materializeWorkBasisV3(
+  input: ImplementationAuthorizationInput,
+  planRevision: number,
+  workRevision: number,
+): ImplementationAuthorization
+export function materializeWorkBasisV3(
+  input: RetrospectiveRecordInput,
+  planRevision: number,
+  workRevision: number,
+): RetrospectiveRecord
+export function materializeWorkBasisV3(
+  input: WorkBasisInput,
+  planRevision: number,
+  workRevision: number,
+): WorkBasis
+export function materializeWorkBasisV3(
+  input: WorkBasisInput,
+  planRevision: number,
+  workRevision: number,
+): WorkBasis {
+  let basis: WorkBasis
+  if (input?.kind === 'implementation_authorization') {
+    basis = {
+      kind: input.kind,
+      plan_revision: planRevision,
+      authorized_at: now(),
+      source: input.source,
+      reason: input.reason,
+      scope: structuredClone(input.scope),
+    }
+  } else if (input?.kind === 'retrospective_record') {
+    basis = {
+      kind: input.kind,
+      recorded_at: now(),
+      reason: input.reason,
+      implemented_before_task: input.implemented_before_task,
+      scope_summary: input.scope_summary,
+      plan_revision: planRevision,
+      work_revision: workRevision,
+    }
+  } else {
+    throw new Error('Invalid work_basis input.')
+  }
+  assertWorkBasis(basis, 'work basis input')
+  return basis
+}
+
+export function assertKnowledgeImpact(
+  value: unknown,
+  artifacts: TaskArtifact[],
+  path: string,
+): asserts value is KnowledgeImpact {
+  if (!isRecord(value)) throw new Error(`Invalid knowledge_impact in ${path}.`)
+  if (value.kind === 'none') {
+    requireString(value.reason, 'knowledge_impact.reason', path)
+    return
+  }
+  if (value.kind !== 'updated')
+    throw new Error(`Invalid knowledge_impact.kind in ${path}.`)
+  requireString(value.summary, 'knowledge_impact.summary', path)
+  if (!Array.isArray(value.artifact_refs) || value.artifact_refs.length === 0)
+    throw new Error(`Invalid knowledge_impact.artifact_refs in ${path}.`)
+  const artifactKeys = new Set(artifacts.map((item) => `${item.kind}\u0000${item.path}`))
+  for (const reference of value.artifact_refs) {
+    if (!isRecord(reference))
+      throw new Error(`Invalid knowledge_impact.artifact_refs in ${path}.`)
+    requireString(reference.kind, 'knowledge_impact.artifact_refs.kind', path)
+    requireString(reference.path, 'knowledge_impact.artifact_refs.path', path)
+    assertRelativePath(
+      reference.path,
+      'knowledge_impact.artifact_refs.path',
+      path,
+    )
+    if (!artifactKeys.has(`${reference.kind}\u0000${reference.path}`))
+      throw new Error(
+        `Knowledge impact artifact is not attached to the task: ${reference.kind}:${reference.path}.`,
+      )
+  }
 }
 
 function assertTaskPlan(plan: unknown, path: string): asserts plan is TaskPlan {
@@ -220,6 +361,17 @@ function assertTaskV2(value: unknown, path: string): asserts value is TaskV2 {
     )
       throw new Error(`Invalid primary_writer in ${path}.`)
   }
+  if (value.profile !== undefined) {
+    if (value.schema_version !== V3_SCHEMA_VERSION)
+      throw new Error(`Invalid profile in ${path}: schema_version 3 is required.`)
+    if (value.profile !== 'light' && value.profile !== 'standard')
+      throw new Error(`Invalid profile in ${path}.`)
+  }
+  if (value.work_basis !== undefined) {
+    if (value.schema_version !== V3_SCHEMA_VERSION)
+      throw new Error(`Invalid work_basis in ${path}: schema_version 3 is required.`)
+    assertWorkBasis(value.work_basis, path)
+  }
   requireString(value.id, 'id', path)
   if (!CANONICAL_TASK_ID.test(value.id as string))
     throw new Error(`Invalid canonical task id in ${path}.`)
@@ -278,6 +430,13 @@ function assertTaskV2(value: unknown, path: string): asserts value is TaskV2 {
     requireString(value.blocked.waiting_for, 'blocked.waiting_for', path)
     requireString(value.blocked.blocked_at, 'blocked.blocked_at', path)
   }
+  if (!Array.isArray(value.artifacts))
+    throw new Error(`Invalid artifacts in ${path}.`)
+  for (const artifact of value.artifacts) {
+    if (!isRecord(artifact)) throw new Error(`Invalid artifact in ${path}.`)
+    requireString(artifact.kind, 'artifact.kind', path)
+    requireString(artifact.path, 'artifact.path', path)
+  }
   if (value.submission !== undefined) {
     if (!isRecord(value.submission))
       throw new Error(`Invalid submission in ${path}.`)
@@ -287,12 +446,31 @@ function assertTaskV2(value: unknown, path: string): asserts value is TaskV2 {
       path,
       0,
     )
+    if (value.submission.plan_revision !== undefined) {
+      if (value.schema_version !== V3_SCHEMA_VERSION)
+        throw new Error(
+          `Invalid submission.plan_revision in ${path}: schema_version 3 is required.`,
+        )
+      requireInteger(
+        value.submission.plan_revision,
+        'submission.plan_revision',
+        path,
+        1,
+      )
+    }
     requireString(value.submission.changes, 'submission.changes', path)
     if (typeof value.submission.verified !== 'string')
       throw new Error(`Invalid submission.verified in ${path}.`)
     if (typeof value.submission.unverified !== 'string')
       throw new Error(`Invalid submission.unverified in ${path}.`)
     requireString(value.submission.submitted_at, 'submission.submitted_at', path)
+    if (value.submission.knowledge_impact !== undefined) {
+      if (value.schema_version !== V3_SCHEMA_VERSION)
+        throw new Error(
+          `Invalid submission.knowledge_impact in ${path}: schema_version 3 is required.`,
+        )
+      assertKnowledgeImpact(value.submission.knowledge_impact, value.artifacts, path)
+    }
     if (value.submission.no_verify !== undefined) {
       if (!isRecord(value.submission.no_verify))
         throw new Error(`Invalid submission.no_verify in ${path}.`)
@@ -313,13 +491,6 @@ function assertTaskV2(value: unknown, path: string): asserts value is TaskV2 {
     if (typeof value.closure.followup !== 'string')
       throw new Error(`Invalid closure.followup in ${path}.`)
     requireString(value.closure.accepted_at, 'closure.accepted_at', path)
-  }
-  if (!Array.isArray(value.artifacts))
-    throw new Error(`Invalid artifacts in ${path}.`)
-  for (const artifact of value.artifacts) {
-    if (!isRecord(artifact)) throw new Error(`Invalid artifact in ${path}.`)
-    requireString(artifact.kind, 'artifact.kind', path)
-    requireString(artifact.path, 'artifact.path', path)
   }
 }
 
@@ -612,7 +783,7 @@ function eventWriteWarning(task: TaskV2, error: unknown) {
 
 function createTask(
   store: TaskStoreV2,
-  input: CreateTaskV2Input,
+  input: CreateTaskV2Input | CreateTaskV3Input,
   actor: string,
   schemaVersion: 2 | 3,
 ): TaskWriteResultV2 {
@@ -628,15 +799,31 @@ function createTask(
   let id = makeTaskId(input.title)
   while (existsSync(taskDirectoryV2(store, id))) id = makeTaskId(input.title)
   const timestamp = now()
+  const profile = schemaVersion === V3_SCHEMA_VERSION
+    ? (input as CreateTaskV3Input).profile
+    : undefined
+  if (schemaVersion === V3_SCHEMA_VERSION && !profile)
+    throw new Error('profile is required for schema_version 3 task creation.')
+  const workBasisInput = schemaVersion === V3_SCHEMA_VERSION
+    ? (input as CreateTaskV3Input).workBasis
+    : undefined
+  if (workBasisInput && input.plan.open_questions.length > 0)
+    throw new Error('Cannot create work_basis while plan.open_questions is not empty.')
+  const workRevision = workBasisInput ? 1 : 0
+  const workBasis = workBasisInput
+    ? materializeWorkBasisV3(workBasisInput, 1, workRevision)
+    : undefined
   const task: TaskV2 = {
     schema_version: schemaVersion,
     id,
     title: input.title.trim(),
-    phase: 'plan',
+    phase: workBasis ? 'dev' : 'plan',
     ...(schemaVersion === V3_SCHEMA_VERSION ? { primary_writer: actor } : {}),
+    ...(profile ? { profile } : {}),
+    ...(workBasis ? { work_basis: workBasis } : {}),
     revision: 1,
     plan_revision: 1,
-    work_revision: 0,
+    work_revision: workRevision,
     workspace_root: store.paths.workspaceRoot,
     plan: structuredClone(input.plan),
     verification: {
@@ -650,12 +837,34 @@ function createTask(
   const taskDirectory = taskDirectoryV2(store, id)
   const taskPath = taskJsonPathV2(store, id)
   assertTaskV2(task, taskPath)
-  const creationEvent = makeTaskEvent(task, 'task_created', actor)
-  validateTaskEventForTask(
-    task,
-    creationEvent,
-    join(taskDirectory, 'events.jsonl'),
-  )
+  const creationEvents = [makeTaskEvent(task, 'task_created', actor)]
+  if (workBasis?.kind === 'implementation_authorization')
+    creationEvents.push(makeTaskEvent(task, 'implementation_authorized', actor, {
+      plan_revision: workBasis.plan_revision,
+      source: workBasis.source,
+      reason: workBasis.reason,
+      scope: workBasis.scope,
+    }))
+  if (workBasis?.kind === 'retrospective_record')
+    creationEvents.push(makeTaskEvent(task, 'retrospective_recorded', actor, {
+      plan_revision: workBasis.plan_revision,
+      work_revision: workBasis.work_revision,
+      reason: workBasis.reason,
+      implemented_before_task: workBasis.implemented_before_task,
+      scope_summary: workBasis.scope_summary,
+    }))
+  if (workBasis)
+    creationEvents.push(makeTaskEvent(task, 'work_started', actor, {
+      work_revision: workBasis.kind === 'retrospective_record'
+        ? workBasis.work_revision
+        : task.work_revision,
+    }))
+  for (const event of creationEvents)
+    validateTaskEventForTask(
+      task,
+      event,
+      join(taskDirectory, 'events.jsonl'),
+    )
 
   const warnings: string[] = []
   withTaskLockV2(store, id, () => {
@@ -669,7 +878,8 @@ function createTask(
       throw error
     }
     try {
-      appendTaskEventForTask(taskDirectory, task, creationEvent)
+      for (const event of creationEvents)
+        appendTaskEventForTask(taskDirectory, task, event)
     } catch (error) {
       warnings.push(eventWriteWarning(task, error))
     }
@@ -696,7 +906,7 @@ export function createTaskV2(
 
 export function createTaskV3(
   store: TaskStoreV2,
-  input: CreateTaskV2Input,
+  input: CreateTaskV3Input,
   actor: string,
 ): TaskWriteResultV2 {
   return createTask(store, input, actor, V3_SCHEMA_VERSION)
@@ -884,6 +1094,27 @@ export function updateTaskV2(
     ...options,
     events: () => options.events,
     authorize: (task) => assertPrimaryWriter(task, options.actor),
+  })
+}
+
+export function updateTaskV3(
+  store: TaskStoreV2,
+  id: string,
+  options: UpdateTaskV3Options,
+): TaskWriteResultV2 {
+  for (const event of options.events)
+    if (!taskEventTypesV3.has(event.type))
+      throw new Error(`Unknown schema 3 task event type: ${event.type}`)
+  return commitTaskUpdate(store, id, {
+    ...options,
+    events: () => options.events,
+    authorize(task) {
+      if (task.schema_version !== V3_SCHEMA_VERSION)
+        throw new Error(
+          'Schema 3 update requires schema_version 3; frozen v2 data was not modified.',
+        )
+      assertPrimaryWriter(task, options.actor)
+    },
   })
 }
 
