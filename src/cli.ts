@@ -7,6 +7,13 @@ import {
   isWritableActor,
 } from './core/actor.js'
 import {
+  checkKnowledgeDocument,
+  checkTaskKnowledgeDocuments,
+  fingerprintKnowledgeDocument,
+  type KnowledgeCheckResult,
+} from './core/knowledge.js'
+import { discoverWorkspaceRoot } from './core/paths.js'
+import {
   contextHumanV2,
   contextJsonV2,
   jsonEnvelopeV2,
@@ -53,6 +60,7 @@ Commands:
   use <task-id>
   list [--group <id> [--include-archive]] [--json] [--brief]
   context [task-id] [--json] [--brief]
+  knowledge <fingerprint|check> [options]
   claim <task-id> --expect-revision <revision> [--reason <text>]
   takeover <task-id> --expect-revision <revision> --reason <text>
   save <task-id> --expect-revision <revision> [changes]
@@ -71,6 +79,8 @@ const commandUsage: Record<string, string> = {
   list:
     'Usage: latch list [--group <id> [--include-archive]] [--json] [--brief]',
   context: 'Usage: latch context [task-id] [--json] [--brief]',
+  knowledge:
+    'Usage: latch knowledge fingerprint --path <path> [--json]\n       latch knowledge check (--path <path> | --task <task-id>) [--json]',
   claim:
     'Usage: latch claim <task-id> --expect-revision <revision> [--reason <text>] [--json]',
   takeover:
@@ -322,6 +332,74 @@ function runContext(args: string[], cwd: string, actor: string) {
   if (parsed.values.json)
     return json(contextJsonV2(store, task, actor, Boolean(parsed.values.brief)))
   process.stdout.write(`${contextHumanV2(store, task, actor)}\n`)
+}
+
+function knowledgeCheckHuman(result: KnowledgeCheckResult) {
+  return [
+    `Knowledge: ${result.path}`,
+    `Freshness: ${result.freshness}`,
+    `Review needed: ${result.review_needed ? 'yes' : 'no'}`,
+    ...(result.fingerprint ? [`Fingerprint: ${result.fingerprint}`] : []),
+    `Files: ${result.files.length}`,
+    ...(result.error ? [`Error: ${result.error}`] : []),
+    ...result.warnings.map((warning) => `Warning: ${warning}`),
+  ].join('\n')
+}
+
+function runKnowledge(args: string[], cwd: string) {
+  const action = args[0]
+  if (!action || action === '--help' || action === '-h')
+    return process.stdout.write(`${commandUsage.knowledge}\n`)
+  if (action !== 'fingerprint' && action !== 'check')
+    fail('invalid_arguments', `Unknown knowledge command: ${action}\n${commandUsage.knowledge}`)
+
+  const parsed = parseCommand(args.slice(1), {
+    ...commonOptions(),
+    path: { type: 'string' },
+    task: { type: 'string' },
+  })
+  if (parsed.values.help)
+    return process.stdout.write(`${commandUsage.knowledge}\n`)
+  if (parsed.positionals.length > 0)
+    fail('invalid_arguments', commandUsage.knowledge)
+
+  if (action === 'fingerprint') {
+    if (!parsed.values.path || parsed.values.task)
+      fail('invalid_arguments', 'knowledge fingerprint requires --path and does not accept --task.')
+    const workspaceRoot = discoverWorkspaceRoot(cwd, { forInit: true })
+    const result = fingerprintKnowledgeDocument(workspaceRoot, parsed.values.path)
+    if (parsed.values.json)
+      return json({ ...jsonEnvelopeV2(), knowledge: result })
+    process.stdout.write([
+      `Knowledge: ${result.path}`,
+      `Algorithm: ${result.algorithm}`,
+      `Fingerprint: ${result.fingerprint}`,
+      `Files: ${result.files.length}`,
+      ...result.warnings.map((warning) => `Warning: ${warning}`),
+    ].join('\n') + '\n')
+    return
+  }
+
+  if (Boolean(parsed.values.path) === Boolean(parsed.values.task))
+    fail('invalid_arguments', 'knowledge check requires exactly one of --path or --task.')
+  if (parsed.values.path) {
+    const workspaceRoot = discoverWorkspaceRoot(cwd, { forInit: true })
+    const result = checkKnowledgeDocument(workspaceRoot, parsed.values.path)
+    if (parsed.values.json)
+      return json({ ...jsonEnvelopeV2(), knowledge: result })
+    process.stdout.write(`${knowledgeCheckHuman(result)}\n`)
+    return
+  }
+
+  const store = openTaskStoreV2(cwd)
+  const task = readTaskV2(store, parsed.values.task!)
+  const result = checkTaskKnowledgeDocuments(store.paths.workspaceRoot, task)
+  if (parsed.values.json)
+    return json({ ...jsonEnvelopeV2(), ...result })
+  process.stdout.write([
+    `Task: ${result.task_id}`,
+    ...result.documents.map(knowledgeCheckHuman),
+  ].join('\n') + '\n')
 }
 
 function runClaim(args: string[], cwd: string, actor: string) {
@@ -872,6 +950,8 @@ function run(argv: string[], cwd: string) {
       return runList(args, cwd, actor)
     case 'context':
       return runContext(args, cwd, actor)
+    case 'knowledge':
+      return runKnowledge(args, cwd)
     case 'claim':
       return runClaim(args, cwd, actor)
     case 'takeover':

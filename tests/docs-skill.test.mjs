@@ -47,7 +47,7 @@ test('canonical skill is the only tracked repo skill source', () => {
 })
 
 test('current docs contain no local absolute path or removed command examples', () => {
-  const removedCommands = /latch (?:start|next|resume|log|finish|knowledge)(?:\s|`|$)/
+  const removedCommands = /latch (?:start|next|resume|log|finish)(?:\s|`|$)/
   for (const path of currentDocs) {
     const content = text(path)
     assert.doesNotMatch(content, /\/Users\//, path)

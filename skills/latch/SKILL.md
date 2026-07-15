@@ -40,6 +40,14 @@ Schema 3 fixture authorization uses `--authorization-file`; retrospective input 
 - Use `list --group <id>` for open members, add `--include-archive` only when history is needed, and treat context siblings as read-only hints.
 - Until C6/R2 is delivered, create or mutate `group_id` only in schema 3 fixtures; default `checkpoint` and real schema 2 `.latch` tasks remain group-free.
 
+## C4 knowledge freshness rules (partial release)
+
+- Use `knowledge fingerprint --path <path>` to calculate `sha256-v1`, and use `knowledge check --path <path>` to read freshness without modifying the document.
+- Use `knowledge check --task <id>` only for a submitted `knowledge_impact.updated`; it reports each referenced artifact and does not authorize or complete the task.
+- Treat `stale`, `baseline_missing`, and `error` as review-needed evidence, and never present them as current source facts.
+- Update `last_fingerprint` and provenance only as part of an explicitly authorized knowledge document edit; reading, context generation, submit, and done never update the baseline.
+- Freshness is not a submit, done, group, or archive gate in the partial release; existing Light proof rules remain the lifecycle contract.
+
 ## Create and approve
 
 Create a task only with explicit authorization and a complete plan file:
