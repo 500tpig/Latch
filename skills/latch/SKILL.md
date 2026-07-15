@@ -32,6 +32,14 @@ The explicit Latch entry rule remains active until the final contract and instru
 
 Schema 3 fixture authorization uses `--authorization-file`; retrospective input uses `--retrospective-file`; submit and legacy patch use `--knowledge-impact-file`. Until C6/R2 is delivered, do not use these options to upgrade or modify real schema 2 `.latch` tasks; real task management continues through the frozen v2 commands.
 
+## C3 group rules (partial release)
+
+- Use `group_id` only as an optional exact-match label when the user identifies a related wave or batch; do not infer a group solely from overlapping paths.
+- Keep every member as an independent task with its own writer, authorization, verification, review, and archive decision.
+- A blocked or archived sibling never blocks another member, and continuing one task never authorizes group-wide claim or takeover.
+- Use `list --group <id>` for open members, add `--include-archive` only when history is needed, and treat context siblings as read-only hints.
+- Until C6/R2 is delivered, create or mutate `group_id` only in schema 3 fixtures; default `checkpoint` and real schema 2 `.latch` tasks remain group-free.
+
 ## Create and approve
 
 Create a task only with explicit authorization and a complete plan file:

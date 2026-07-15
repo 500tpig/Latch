@@ -105,7 +105,7 @@ export type TaskSubmission = {
   submitted_at: string
 }
 
-// C1/C2 期间 schema 3 仅供临时 fixture；默认产品创建仍固定为 schema 2。
+// C1-C3 期间 schema 3 仅供临时 fixture；默认产品创建仍固定为 schema 2。
 export type TaskV2 = {
   schema_version: 2 | 3
   id: string
@@ -114,6 +114,7 @@ export type TaskV2 = {
   outcome?: TaskOutcome
   primary_writer?: string
   profile?: TaskProfile
+  group_id?: string
   work_basis?: WorkBasis
   revision: number
   plan_revision: number
@@ -177,10 +178,13 @@ export const LIGHT_EVENT_TYPES = [
   'submission_knowledge_impact_patched',
 ] as const
 
+export const GROUP_EVENT_TYPES = ['group_changed'] as const
+
 export const TASK_EVENT_TYPES_V3 = [
   ...TASK_EVENT_TYPES,
   ...WRITER_EVENT_TYPES,
   ...LIGHT_EVENT_TYPES,
+  ...GROUP_EVENT_TYPES,
 ] as const
 
 export type TaskEventTypeV2 = (typeof TASK_EVENT_TYPES)[number]

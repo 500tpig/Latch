@@ -104,6 +104,8 @@ latch abandon <task-id> --expect-revision 5 --reason "用户取消"
 
 ## Schema 3 部分实现边界
 
-C1/C2 已在临时 fixture 中实现 session writer 与 Light 证明包的 schema 3 读取、校验和生命周期行为。schema 3 fixture 支持结构化 authorization、retrospective、`knowledge_impact` 与 legacy submission patch，并保持 submit 后进入 review。
+C1–C3 已在临时 fixture 中实现 session writer、Light 证明包与 Group 最小集的 schema 3 读取、校验和生命周期行为。schema 3 fixture 支持结构化 authorization、retrospective、`knowledge_impact`、legacy submission patch 与可选 `group_id`，并保持 submit 后进入 review。
 
-默认 `latch checkpoint` 仍创建 schema 2 task，真实 `.latch` 不写 schema 3 或 v3-only event。schema 2→3 迁移、R2 `downgrade-v2` 和全面 current 切换仍未发布；本手册其余命令继续以 v2 为准。
+Group 只聚合 task，不增加 group phase、revision、锁或完成门禁。schema 3 fixture 可使用 `save --group` 或 `save --clear-group` 修改单张 task；`list --group [--include-archive]` 返回精确匹配的成员与派生计数，`context` 只附带受限的 sibling 摘要。Group 变更不会修改 plan、work basis、verification 或 submission。
+
+默认 `latch checkpoint` 仍创建 schema 2 task，不接受 `--group`。真实 `.latch` 不写 schema 3 或 v3-only event。schema 2→3 迁移、R2 `downgrade-v2` 和全面 current 切换仍未发布；本手册其余命令继续以 v2 为准。

@@ -18,6 +18,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+function validGroupId(value: unknown) {
+  return (
+    typeof value === 'string' &&
+    value.trim() !== '' &&
+    value.length <= 128 &&
+    !/[\u0000-\u001f\u007f]/.test(value)
+  )
+}
+
 function validateTaskEvent(
   value: unknown,
   path: string,
@@ -125,6 +134,15 @@ function validateTaskEvent(
       throw new Error(`Invalid patch work_revision in ${path}.`)
     if (value.knowledge_impact_kind !== 'none' && value.knowledge_impact_kind !== 'updated')
       throw new Error(`Invalid patch knowledge_impact_kind in ${path}.`)
+  }
+  if (value.type === 'group_changed') {
+    if (
+      (value.from !== undefined && !validGroupId(value.from)) ||
+      (value.to !== undefined && !validGroupId(value.to)) ||
+      (value.from === undefined && value.to === undefined) ||
+      value.from === value.to
+    )
+      throw new Error(`Invalid group_changed event in ${path}.`)
   }
 }
 

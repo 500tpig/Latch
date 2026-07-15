@@ -1,6 +1,7 @@
 import type { TaskStoreV2 } from './task-store.js'
 import {
   currentTaskIdV2,
+  listGroupTasksV3,
   listTasksV2,
   taskEventsV2,
   taskHistoryIncompleteV2,
@@ -20,14 +21,23 @@ export function jsonEnvelopeV2(): JsonEnvelopeV2 {
   }
 }
 
-function taskSummary(task: TaskV2, brief: boolean) {
+function taskSummary(task: TaskV2, brief: boolean, grouped = false) {
   if (brief)
     return {
       id: task.id,
       title: task.title,
       phase: task.phase,
       revision: task.revision,
-      ...(task.blocked ? { blocked: task.blocked } : {}),
+      ...(grouped
+        ? {
+            profile: task.profile ?? 'standard',
+            group_id: task.group_id,
+            blocked: Boolean(task.blocked),
+            ...(task.outcome ? { outcome: task.outcome } : {}),
+          }
+        : task.blocked
+          ? { blocked: task.blocked }
+          : {}),
       updated_at: task.updated_at,
     }
 
@@ -39,14 +49,69 @@ function taskSummary(task: TaskV2, brief: boolean) {
     plan_revision: task.plan_revision,
     work_revision: task.work_revision,
     profile: task.profile ?? 'standard',
-    ...(task.blocked ? { blocked: task.blocked } : {}),
+    ...(task.group_id !== undefined ? { group_id: task.group_id } : {}),
+    ...(grouped
+      ? {
+          blocked: Boolean(task.blocked),
+          ...(task.outcome ? { outcome: task.outcome } : {}),
+        }
+      : task.blocked
+        ? { blocked: task.blocked }
+        : {}),
     created_at: task.created_at,
     updated_at: task.updated_at,
   }
 }
 
-export function listJsonV2(store: TaskStoreV2, actor: string, brief: boolean) {
+type GroupListOptions = {
+  groupId?: string
+  includeArchive?: boolean
+}
+
+function byPhase(tasks: TaskV2[]) {
+  const counts: Partial<Record<TaskV2['phase'], number>> = {}
+  for (const phase of ['plan', 'dev', 'check', 'review'] as const) {
+    const count = tasks.filter((task) => task.phase === phase).length
+    if (count > 0) counts[phase] = count
+  }
+  return counts
+}
+
+export function listJsonV2(
+  store: TaskStoreV2,
+  actor: string,
+  brief: boolean,
+  options: GroupListOptions = {},
+) {
   const currentTaskId = currentTaskIdV2(store, actor)
+  if (options.groupId !== undefined) {
+    const members = listGroupTasksV3(
+      store,
+      options.groupId,
+      Boolean(options.includeArchive),
+    )
+    const tasks = [...members.open, ...members.archived].sort((left, right) =>
+      left.created_at.localeCompare(right.created_at),
+    )
+    return {
+      ...jsonEnvelopeV2(),
+      ...(currentTaskId ? { current_task_id: currentTaskId } : {}),
+      tasks: tasks.map((task) => taskSummary(task, brief, true)),
+      group: {
+        group_id: options.groupId,
+        open_count: members.open.length,
+        by_phase: byPhase(members.open),
+        blocked_count: members.open.filter((task) => task.blocked).length,
+        ...(options.includeArchive
+          ? {
+              done_archived_count: members.archived.filter(
+                (task) => task.outcome === 'done',
+              ).length,
+            }
+          : {}),
+      },
+    }
+  }
   return {
     ...jsonEnvelopeV2(),
     ...(currentTaskId ? { current_task_id: currentTaskId } : {}),
@@ -76,6 +141,7 @@ function briefTask(task: TaskV2) {
     plan_revision: task.plan_revision,
     work_revision: task.work_revision,
     profile: task.profile ?? 'standard',
+    ...(task.group_id !== undefined ? { group_id: task.group_id } : {}),
     goal: task.plan.goal,
     scope: task.plan.scope,
     acceptance: task.plan.acceptance,
@@ -93,6 +159,39 @@ function briefTask(task: TaskV2) {
   }
 }
 
+function pathHints(task: TaskV2) {
+  const basisPaths =
+    task.work_basis?.kind === 'implementation_authorization' &&
+    task.work_basis.plan_revision === task.plan_revision
+      ? task.work_basis.scope.paths ?? []
+      : []
+  return [...new Set([
+    ...basisPaths,
+    ...task.artifacts.map((artifact) => artifact.path),
+  ])].slice(0, 5)
+}
+
+function groupContext(store: TaskStoreV2, task: TaskV2) {
+  if (task.group_id === undefined) return undefined
+  const members = listGroupTasksV3(store, task.group_id, true)
+  const all = [...members.open, ...members.archived].sort((left, right) =>
+    left.created_at.localeCompare(right.created_at),
+  )
+  const siblings = all.filter((member) => member.id !== task.id)
+  return {
+    group_id: task.group_id,
+    member_count: all.length,
+    siblings: siblings.slice(0, 20).map((sibling) => ({
+      task_id: sibling.id,
+      title: sibling.title,
+      phase: sibling.phase,
+      blocked: Boolean(sibling.blocked),
+      path_hints: pathHints(sibling),
+    })),
+    truncated: siblings.length > 20,
+  }
+}
+
 export function contextJsonV2(
   store: TaskStoreV2,
   task: TaskV2,
@@ -100,26 +199,45 @@ export function contextJsonV2(
   brief: boolean,
 ) {
   const events = taskEventsV2(store, task.id)
+  const group = groupContext(store, task)
   return {
     ...jsonEnvelopeV2(),
     current: currentTaskIdV2(store, actor) === task.id,
     task: brief ? briefTask(task) : task,
     recent_events: brief ? events.slice(-5) : events,
     history_incomplete: taskHistoryIncompleteV2(store, task.id),
+    ...(group ? { group } : {}),
   }
 }
 
-export function listHumanV2(store: TaskStoreV2, actor: string) {
-  const tasks = listTasksV2(store)
+export function listHumanV2(
+  store: TaskStoreV2,
+  actor: string,
+  options: GroupListOptions = {},
+) {
+  const members = options.groupId !== undefined
+    ? listGroupTasksV3(store, options.groupId, Boolean(options.includeArchive))
+    : undefined
+  const tasks = members
+    ? [...members.open, ...members.archived]
+    : listTasksV2(store)
   if (tasks.length === 0) return 'No open Latch v2 tasks.'
   const currentTaskId = currentTaskIdV2(store, actor)
-  return tasks
+  const lines = tasks
     .map((task) => {
       const marker = task.id === currentTaskId ? '*' : ' '
       const blocked = task.blocked ? ` blocked: ${task.blocked.reason}` : ''
-      return `${marker} ${task.id}  ${task.phase}  r${task.revision}  ${task.title}${blocked}`
+      const outcome = task.outcome ? ` ${task.outcome}` : ''
+      return `${marker} ${task.id}  ${task.phase}${outcome}  r${task.revision}  ${task.title}${blocked}`
     })
-    .join('\n')
+  if (!members) return lines.join('\n')
+  const archived = options.includeArchive
+    ? `, ${members.archived.filter((task) => task.outcome === 'done').length} done archived`
+    : ''
+  return [
+    `Group ${options.groupId}: ${members.open.length} open, ${members.open.filter((task) => task.blocked).length} blocked${archived}`,
+    ...lines,
+  ].join('\n')
 }
 
 export function contextHumanV2(
@@ -129,6 +247,7 @@ export function contextHumanV2(
 ) {
   const current = currentTaskIdV2(store, actor) === task.id
   const historyIncomplete = taskHistoryIncompleteV2(store, task.id)
+  const group = groupContext(store, task)
   const lines = [
     `Task: ${task.id}`,
     `Title: ${task.title}`,
@@ -137,6 +256,7 @@ export function contextHumanV2(
     `Plan revision: ${task.plan_revision}`,
     `Work revision: ${task.work_revision}`,
     `Profile: ${task.profile ?? 'standard'}`,
+    ...(task.group_id !== undefined ? [`Group: ${task.group_id}`] : []),
     `Current: ${current ? 'yes' : 'no'}`,
     `Goal: ${task.plan.goal}`,
     `Scope: ${task.plan.scope.join(' | ') || '-'}`,
@@ -148,6 +268,19 @@ export function contextHumanV2(
   if (task.blocked) {
     lines.push(`Blocked: ${task.blocked.reason}`)
     lines.push(`Waiting for: ${task.blocked.waiting_for}`)
+  }
+  if (group) {
+    lines.push(`Group members: ${group.member_count}`)
+    for (const sibling of group.siblings) {
+      const blocked = sibling.blocked ? ' blocked' : ''
+      const paths = sibling.path_hints.length > 0
+        ? ` paths: ${sibling.path_hints.join(', ')}`
+        : ''
+      lines.push(
+        `Sibling: ${sibling.task_id} ${sibling.phase}${blocked} ${sibling.title}${paths}`,
+      )
+    }
+    if (group.truncated) lines.push('Group siblings: truncated')
   }
   return lines.join('\n')
 }

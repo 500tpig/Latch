@@ -14,6 +14,7 @@ import {
   listJsonV2,
 } from './core/task-view.js'
 import {
+  assertGroupIdV3,
   claimTaskV3,
   createTaskV2,
   currentTaskIdV2,
@@ -23,6 +24,7 @@ import {
   selectCurrentTaskV2,
   takeoverTaskV3,
   updateTaskV2,
+  updateTaskV3,
 } from './core/task-store.js'
 import type {
   ImplementationAuthorizationInput,
@@ -49,7 +51,7 @@ Commands:
   init
   checkpoint <title> --plan-file <path>
   use <task-id>
-  list [--json] [--brief]
+  list [--group <id> [--include-archive]] [--json] [--brief]
   context [task-id] [--json] [--brief]
   claim <task-id> --expect-revision <revision> [--reason <text>]
   takeover <task-id> --expect-revision <revision> --reason <text>
@@ -66,14 +68,15 @@ const commandUsage: Record<string, string> = {
   checkpoint:
     'Usage: latch checkpoint <title> --plan-file <path> [--artifact <kind>:<path>] [--json]',
   use: 'Usage: latch use <task-id> [--json]',
-  list: 'Usage: latch list [--json] [--brief]',
+  list:
+    'Usage: latch list [--group <id> [--include-archive]] [--json] [--brief]',
   context: 'Usage: latch context [task-id] [--json] [--brief]',
   claim:
     'Usage: latch claim <task-id> --expect-revision <revision> [--reason <text>] [--json]',
   takeover:
     'Usage: latch takeover <task-id> --expect-revision <revision> --reason <text> [--json]',
   save:
-    'Usage: latch save <task-id> --expect-revision <revision> [--plan-file <path>] [--feedback <text>] [--decision <text>] [--artifact <kind>:<path>] [--remove-artifact <kind>:<path>] [--block-reason <text> --waiting-for <text> | --unblock] [--profile <light|standard> --profile-reason <text> [--user-requested-narrowing]] [--json]',
+    'Usage: latch save <task-id> --expect-revision <revision> [--plan-file <path>] [--feedback <text>] [--decision <text>] [--artifact <kind>:<path>] [--remove-artifact <kind>:<path>] [--block-reason <text> --waiting-for <text> | --unblock] [--profile <light|standard> --profile-reason <text> [--user-requested-narrowing] | --group <id> | --clear-group] [--json]',
   approve:
     'Usage: latch approve <task-id> --expect-revision <revision> [--reason <text> | --authorization-file <path> | --retrospective-file <path>] [--feedback <text>] [--json]',
   verify:
@@ -130,6 +133,16 @@ function positiveInteger(raw: string | undefined, name: string) {
   if (!raw || !/^\d+$/.test(raw) || Number(raw) < 1)
     fail('invalid_arguments', `${name} must be a positive integer.`)
   return Number(raw)
+}
+
+function groupId(raw: string | undefined) {
+  if (raw === undefined) return undefined
+  try {
+    assertGroupIdV3(raw, '--group')
+    return raw
+  } catch (error) {
+    fail('invalid_arguments', error instanceof Error ? error.message : String(error))
+  }
 }
 
 function artifact(raw: string): TaskArtifact {
@@ -263,14 +276,25 @@ function runList(args: string[], cwd: string, actor: string) {
   const parsed = parseCommand(args, {
     ...commonOptions(),
     brief: { type: 'boolean' },
+    group: { type: 'string' },
+    'include-archive': { type: 'boolean' },
   })
   if (parsed.values.help) return process.stdout.write(`${commandUsage.list}\n`)
   requirePositionals('list', parsed.positionals, 0)
   validateBrief(parsed.values.json, parsed.values.brief)
+  const selectedGroup = groupId(parsed.values.group)
+  if (parsed.values['include-archive'] && selectedGroup === undefined)
+    fail('invalid_arguments', '--include-archive requires --group.')
   const store = openTaskStoreV2(cwd)
   if (parsed.values.json)
-    return json(listJsonV2(store, actor, Boolean(parsed.values.brief)))
-  process.stdout.write(`${listHumanV2(store, actor)}\n`)
+    return json(listJsonV2(store, actor, Boolean(parsed.values.brief), {
+      groupId: selectedGroup,
+      includeArchive: Boolean(parsed.values['include-archive']),
+    }))
+  process.stdout.write(`${listHumanV2(store, actor, {
+    groupId: selectedGroup,
+    includeArchive: Boolean(parsed.values['include-archive']),
+  })}\n`)
 }
 
 function targetTask(cwd: string, actor: string, id: string | undefined) {
@@ -367,6 +391,8 @@ function runSave(args: string[], cwd: string, actor: string) {
     profile: { type: 'string' },
     'profile-reason': { type: 'string' },
     'user-requested-narrowing': { type: 'boolean' },
+    group: { type: 'string' },
+    'clear-group': { type: 'boolean' },
   })
   if (parsed.values.help) return process.stdout.write(`${commandUsage.save}\n`)
   requirePositionals('save', parsed.positionals, 1)
@@ -381,6 +407,57 @@ function runSave(args: string[], cwd: string, actor: string) {
   const hasBlock = parsed.values['block-reason'] || parsed.values['waiting-for']
   if (hasBlock && (!parsed.values['block-reason'] || !parsed.values['waiting-for']))
     fail('invalid_arguments', '--block-reason and --waiting-for are both required.')
+
+  const selectedGroup = groupId(parsed.values.group)
+  const clearGroup = Boolean(parsed.values['clear-group'])
+  if (selectedGroup !== undefined && clearGroup)
+    fail('invalid_arguments', '--group and --clear-group cannot be combined.')
+  if (selectedGroup !== undefined || clearGroup) {
+    const combined = Boolean(
+      parsed.values['plan-file'] ||
+      parsed.values.feedback ||
+      parsed.values.decision ||
+      parsed.values.question ||
+      parsed.values.answer ||
+      parsed.values.artifact?.length ||
+      parsed.values['remove-artifact']?.length ||
+      hasBlock ||
+      parsed.values.unblock ||
+      parsed.values.profile ||
+      parsed.values['profile-reason'] ||
+      parsed.values['user-requested-narrowing'],
+    )
+    if (combined)
+      fail('invalid_arguments', '--group must be saved as a standalone change.')
+    const store = openTaskStoreV2(cwd)
+    const current = readTaskV2(store, parsed.positionals[0])
+    const nextGroup = clearGroup ? undefined : selectedGroup
+    if (current.schema_version === 3 && current.group_id === nextGroup)
+      fail('invalid_arguments', 'save did not change group_id.')
+    const result = updateTaskV3(store, current.id, {
+      expectRevision,
+      actor,
+      events: [{
+        type: 'group_changed',
+        fields: {
+          ...(current.group_id !== undefined ? { from: current.group_id } : {}),
+          ...(nextGroup !== undefined ? { to: nextGroup } : {}),
+        },
+      }],
+      update(task) {
+        if (nextGroup === undefined) delete task.group_id
+        else task.group_id = nextGroup
+      },
+    })
+    if (parsed.values.json)
+      return json(mutationJson(result.task, result.warnings, expectRevision))
+    process.stdout.write(
+      nextGroup === undefined
+        ? `Cleared ${result.task.id} group.\n`
+        : `Changed ${result.task.id} group to ${nextGroup}.\n`,
+    )
+    return printWarnings(result.warnings)
+  }
 
   if (parsed.values.profile) {
     if (parsed.values.profile !== 'light' && parsed.values.profile !== 'standard')

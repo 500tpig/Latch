@@ -62,6 +62,7 @@ export type CreateTaskV2Input = {
 
 export type CreateTaskV3Input = CreateTaskV2Input & {
   profile: TaskProfile
+  groupId?: string
   workBasis?: WorkBasisInput
 }
 
@@ -136,6 +137,18 @@ function requireStringArray(
 ): asserts value is string[] {
   if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string'))
     throw new Error(`Invalid ${field} in ${path}.`)
+}
+
+export function assertGroupIdV3(
+  value: unknown,
+  path: string,
+): asserts value is string {
+  if (typeof value !== 'string' || value.trim() === '')
+    throw new Error(`Invalid group_id in ${path}: empty string.`)
+  if (value.length > 128)
+    throw new Error(`Invalid group_id in ${path}: exceeds max length 128.`)
+  if (/[\u0000-\u001f\u007f]/.test(value))
+    throw new Error(`Invalid group_id in ${path}: contains ASCII control characters.`)
 }
 
 function assertRelativePath(value: string, field: string, path: string) {
@@ -366,6 +379,11 @@ function assertTaskV2(value: unknown, path: string): asserts value is TaskV2 {
       throw new Error(`Invalid profile in ${path}: schema_version 3 is required.`)
     if (value.profile !== 'light' && value.profile !== 'standard')
       throw new Error(`Invalid profile in ${path}.`)
+  }
+  if (Object.hasOwn(value, 'group_id')) {
+    if (value.schema_version !== V3_SCHEMA_VERSION)
+      throw new Error(`Invalid group_id in ${path}: schema_version 3 is required.`)
+    assertGroupIdV3(value.group_id, path)
   }
   if (value.work_basis !== undefined) {
     if (value.schema_version !== V3_SCHEMA_VERSION)
@@ -728,6 +746,39 @@ export function listTasksV2(store: TaskStoreV2): TaskV2[] {
     .sort((left, right) => left.created_at.localeCompare(right.created_at))
 }
 
+export function listArchivedTasksV2(store: TaskStoreV2): TaskV2[] {
+  if (!existsSync(store.paths.archiveDir)) return []
+  const ids = new Set<string>()
+  for (const month of readDirSync(store.paths.archiveDir, { withFileTypes: true })) {
+    if (!month.isDirectory() || !/^\d{4}-\d{2}$/.test(month.name)) continue
+    const monthPath = join(store.paths.archiveDir, month.name)
+    for (const entry of readDirSync(monthPath, { withFileTypes: true }))
+      if (
+        entry.isDirectory() &&
+        existsSync(join(monthPath, entry.name, 'task.json'))
+      )
+        ids.add(entry.name)
+  }
+  return [...ids]
+    .map((id) => readArchivedTaskV2(store, id))
+    .filter((task): task is TaskV2 => task !== undefined)
+    .sort((left, right) => left.created_at.localeCompare(right.created_at))
+}
+
+export function listGroupTasksV3(
+  store: TaskStoreV2,
+  groupId: string,
+  includeArchive = false,
+) {
+  assertGroupIdV3(groupId, 'group query')
+  return {
+    open: listTasksV2(store).filter((task) => task.group_id === groupId),
+    archived: includeArchive
+      ? listArchivedTasksV2(store).filter((task) => task.group_id === groupId)
+      : [],
+  }
+}
+
 export function worktreeOccupantV2(
   store: TaskStoreV2,
   exceptTaskId?: string,
@@ -807,6 +858,10 @@ function createTask(
   const workBasisInput = schemaVersion === V3_SCHEMA_VERSION
     ? (input as CreateTaskV3Input).workBasis
     : undefined
+  const groupId = schemaVersion === V3_SCHEMA_VERSION
+    ? (input as CreateTaskV3Input).groupId
+    : undefined
+  if (groupId !== undefined) assertGroupIdV3(groupId, 'checkpoint input')
   if (workBasisInput && input.plan.open_questions.length > 0)
     throw new Error('Cannot create work_basis while plan.open_questions is not empty.')
   const workRevision = workBasisInput ? 1 : 0
@@ -820,6 +875,7 @@ function createTask(
     phase: workBasis ? 'dev' : 'plan',
     ...(schemaVersion === V3_SCHEMA_VERSION ? { primary_writer: actor } : {}),
     ...(profile ? { profile } : {}),
+    ...(groupId !== undefined ? { group_id: groupId } : {}),
     ...(workBasis ? { work_basis: workBasis } : {}),
     revision: 1,
     plan_revision: 1,
