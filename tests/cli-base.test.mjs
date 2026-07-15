@@ -273,7 +273,90 @@ test('list and context expose stable full and brief JSON', () => {
   )
   assert.equal(briefContext.task.goal, '实现 v2 CLI')
   assert.equal('plan' in briefContext.task, false)
+  assert.deepEqual(briefContext.task.verification_plan, [
+    {
+      name: 'tests',
+      command: ['pnpm', 'test'],
+      kind: 'gate',
+      status: 'pending',
+    },
+  ])
   assert.equal(briefContext.recent_events.length, 1)
+})
+
+test('brief context summarizes planned verification states', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const created = checkpoint(cwd, 'Verification summary', {
+    verification_plan: [
+      { name: 'passed', command: ['pnpm', 'test'], kind: 'gate' },
+      { name: 'failed', command: ['pnpm', 'typecheck'], kind: 'gate' },
+      { name: 'stale', command: ['pnpm', 'check'], kind: 'gate' },
+      { name: 'pending', command: ['pnpm', 'build'], kind: 'diagnostic' },
+    ],
+  })
+  const task = readTask(cwd, created.task_id)
+  const createdAt = new Date().toISOString()
+  task.work_revision = 2
+  task.verification.gate.passed = {
+    name: 'passed',
+    kind: 'gate',
+    command: ['pnpm', 'test'],
+    status: 'pass',
+    exit_code: 0,
+    work_revision: 2,
+    created_at: createdAt,
+  }
+  task.verification.gate.failed = {
+    name: 'failed',
+    kind: 'gate',
+    command: ['pnpm', 'typecheck'],
+    status: 'fail',
+    exit_code: 1,
+    work_revision: 2,
+    created_at: createdAt,
+  }
+  task.verification.gate.stale = {
+    name: 'stale',
+    kind: 'gate',
+    command: ['pnpm', 'check'],
+    status: 'pass',
+    exit_code: 0,
+    work_revision: 1,
+    created_at: createdAt,
+  }
+  writeFileSync(taskPath(cwd, created.task_id), `${JSON.stringify(task, null, 2)}\n`)
+
+  const briefContext = JSON.parse(
+    run(cwd, ['context', created.task_id, '--json', '--brief']).stdout,
+  )
+  assert.deepEqual(briefContext.task.verification_plan, [
+    {
+      name: 'passed',
+      command: ['pnpm', 'test'],
+      kind: 'gate',
+      status: 'pass',
+    },
+    {
+      name: 'failed',
+      command: ['pnpm', 'typecheck'],
+      kind: 'gate',
+      status: 'fail',
+    },
+    {
+      name: 'stale',
+      command: ['pnpm', 'check'],
+      kind: 'gate',
+      status: 'stale',
+    },
+    {
+      name: 'pending',
+      command: ['pnpm', 'build'],
+      kind: 'diagnostic',
+      status: 'pending',
+    },
+  ])
+  assert.deepEqual(briefContext.task.verification, task.verification)
 })
 
 test('brief requires JSON and read commands do not initialize storage', () => {

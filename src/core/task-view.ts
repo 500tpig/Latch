@@ -53,6 +53,19 @@ export function listJsonV2(store: TaskStoreV2, actor: string, brief: boolean) {
   }
 }
 
+function briefVerificationPlan(task: TaskV2) {
+  return task.plan.verification_plan.map((item) => {
+    const result = task.verification[item.kind][item.name]
+    const status = !result
+      ? 'pending'
+      : result.work_revision !== task.work_revision
+        ? 'stale'
+        : result.status
+
+    return { ...item, status }
+  })
+}
+
 function briefTask(task: TaskV2) {
   return {
     id: task.id,
@@ -69,6 +82,7 @@ function briefTask(task: TaskV2) {
       ? { implementation_approval: task.implementation_approval }
       : {}),
     ...(task.blocked ? { blocked: task.blocked } : {}),
+    verification_plan: briefVerificationPlan(task),
     verification: task.verification,
     ...(task.submission ? { submission: task.submission } : {}),
     artifacts: task.artifacts,
