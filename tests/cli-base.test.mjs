@@ -30,7 +30,7 @@ function run(cwd, args, options = {}) {
     encoding: 'utf8',
     env: {
       ...process.env,
-      LATCH_ACTOR: options.actor ?? 'codex:test-session',
+      LATCH_ACTOR: options.actor ?? 'codex:session:test-session',
     },
   })
 }
@@ -231,14 +231,14 @@ test('use resolves a unique prefix, stores canonical ID, and does not append tas
   const eventsBefore = readFileSync(join(directory, 'events.jsonl'), 'utf8')
 
   const result = run(cwd, ['use', created.task_id.slice(0, 20), '--json'], {
-    actor: 'codex:another-session',
+    actor: 'codex:session:another-session',
   })
 
   assert.equal(result.status, 0, result.stderr)
   assert.equal(JSON.parse(result.stdout).task_id, created.task_id)
   const state = JSON.parse(readFileSync(join(cwd, '.latch', 'state.json'), 'utf8'))
   assert.equal(
-    state.actors['codex:another-session'].current_task_id,
+    state.actors['codex:session:another-session'].current_task_id,
     created.task_id,
   )
   assert.equal(readFileSync(join(directory, 'events.jsonl'), 'utf8'), eventsBefore)

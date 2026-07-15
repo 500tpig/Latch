@@ -58,7 +58,7 @@ function plan(overrides = {}) {
   }
 }
 
-function create(store, title = '相同标题', actor = 'codex:session-a') {
+function create(store, title = '相同标题', actor = 'codex:session:a') {
   return createTaskV2(store, { title, plan: plan() }, actor).task
 }
 
@@ -101,7 +101,7 @@ test('schema v2 使用毫秒时间和随机后缀，重复标题不覆盖且不�
   const events = readTaskEventsV2(taskDirectory(store, first.id))
   assert.deepEqual(events.map((event) => event.type), ['task_created'])
   assert.equal(taskHistoryIncompleteV2(store, first.id), false)
-  assert.ok(events.every((event) => event.actor === 'codex:session-a'))
+  assert.ok(events.every((event) => event.actor === 'codex:session:a'))
   assert.ok(events.every((event) => event.revision === 1))
 })
 
@@ -111,7 +111,7 @@ test('无效创建参数在任何 task 或 current 写入前失败', () => {
   const stateBefore = readFileSync(store.paths.statePath, 'utf8')
 
   assert.throws(
-    () => createTaskV2(store, { title: '', plan: plan() }, 'codex:session-a'),
+    () => createTaskV2(store, { title: '', plan: plan() }, 'codex:session:a'),
     /Invalid title/,
   )
   assert.deepEqual(readdirSync(store.paths.tasksDir), [])
@@ -156,15 +156,15 @@ test('unique prefix 选择 current 后 state 只保存 canonical 完整 ID', () 
   const second = create(store, '第二个任务')
   const prefix = uniquePrefix(first.id, [first.id, second.id])
 
-  const selected = selectCurrentTaskV2(store, 'codex:session-b', prefix)
+  const selected = selectCurrentTaskV2(store, 'codex:session:b', prefix)
 
   assert.equal(selected, first.id)
-  assert.equal(currentTaskIdV2(store, 'codex:session-b'), first.id)
+  assert.equal(currentTaskIdV2(store, 'codex:session:b'), first.id)
   assert.deepEqual(readStateV2(store), {
     schema_version: 2,
     actors: {
-      'codex:session-a': { current_task_id: second.id },
-      'codex:session-b': { current_task_id: first.id },
+      'codex:session:a': { current_task_id: second.id },
+      'codex:session:b': { current_task_id: first.id },
     },
   })
   assert.equal('current_task_id' in readStateV2(store), false)
@@ -174,12 +174,12 @@ test('unique prefix 选择 current 后 state 只保存 canonical 完整 ID', () 
 test('archive 清除所有 actor 的 current 并保留 v2 task 与 events', () => {
   const root = temporaryDirectory()
   const store = initTaskStoreV2(root)
-  const task = create(store, '待归档任务', 'codex:session-a')
-  selectCurrentTaskV2(store, 'claude:session-b', task.id)
+  const task = create(store, '待归档任务', 'codex:session:a')
+  selectCurrentTaskV2(store, 'claude:session:b', task.id)
 
   const result = archiveTaskV2(store, task.id, {
     expectRevision: 1,
-    actor: 'codex:session-a',
+    actor: 'codex:session:a',
     outcome: 'done',
   })
   const archived = result.task
@@ -187,8 +187,8 @@ test('archive 清除所有 actor 的 current 并保留 v2 task 与 events', () =
   assert.deepEqual(result.warnings, [])
   assert.equal(archived.outcome, 'done')
   assert.equal(archived.revision, 2)
-  assert.equal(currentTaskIdV2(store, 'codex:session-a'), undefined)
-  assert.equal(currentTaskIdV2(store, 'claude:session-b'), undefined)
+  assert.equal(currentTaskIdV2(store, 'codex:session:a'), undefined)
+  assert.equal(currentTaskIdV2(store, 'claude:session:b'), undefined)
   assert.deepEqual(readStateV2(store), { schema_version: 2, actors: {} })
   assert.equal(existsSync(taskDirectory(store, task.id)), false)
 
@@ -209,7 +209,7 @@ test('create 的 current state 写失败时 task 仍创建并返回 warning', ()
     createTaskV2(
       store,
       { title: 'create warning', plan: plan() },
-      'codex:session-a',
+      'codex:session:a',
     ),
   )
 
@@ -217,7 +217,7 @@ test('create 的 current state 写失败时 task 仍创建并返回 warning', ()
   assert.equal(result.warnings.length, 1)
   assert.match(result.warnings[0], /was not selected as current/)
   assert.equal(readTaskV2(store, result.task.id).id, result.task.id)
-  assert.equal(currentTaskIdV2(store, 'codex:session-a'), undefined)
+  assert.equal(currentTaskIdV2(store, 'codex:session:a'), undefined)
 })
 
 test('event 追加失败时 task 更新仍返回成功和 warning', () => {
@@ -230,7 +230,7 @@ test('event 追加失败时 task 更新仍返回成功和 warning', () => {
 
   const result = updateTaskV2(store, task.id, {
     expectRevision: 1,
-    actor: 'codex:writer',
+    actor: 'codex:session:writer',
     events: [{ type: 'plan_updated' }],
     update(next) {
       next.plan.approach = ['task.json 是提交点']
@@ -249,12 +249,12 @@ test('event 追加失败时 task 更新仍返回成功和 warning', () => {
 test('archive state 清理失败时归档仍成功且 stale current 不生效', () => {
   const root = temporaryDirectory()
   const store = initTaskStoreV2(root)
-  const task = create(store, 'archive warning', 'codex:session-a')
+  const task = create(store, 'archive warning', 'codex:session:a')
 
   const result = withStateLockV2(store, () =>
     archiveTaskV2(store, task.id, {
       expectRevision: 1,
-      actor: 'codex:session-a',
+      actor: 'codex:session:a',
       outcome: 'done',
     }),
   )
@@ -263,8 +263,8 @@ test('archive state 清理失败时归档仍成功且 stale current 不生效', 
   assert.equal(result.warnings.length, 1)
   assert.match(result.warnings[0], /current task state was not cleaned/)
   assert.equal(existsSync(taskDirectory(store, task.id)), false)
-  assert.equal(currentTaskIdV2(store, 'codex:session-a'), undefined)
-  assert.equal(readStateV2(store).actors['codex:session-a'].current_task_id, task.id)
+  assert.equal(currentTaskIdV2(store, 'codex:session:a'), undefined)
+  assert.equal(readStateV2(store).actors['codex:session:a'].current_task_id, task.id)
   const archivedDirectory = join(
     store.paths.archiveDir,
     result.task.updated_at.slice(0, 7),
@@ -279,7 +279,7 @@ test('过期 revision 拒绝写入，task、events 和 state 保持不变', () =
   const task = create(store, '并发更新')
   const updateResult = updateTaskV2(store, task.id, {
     expectRevision: 1,
-    actor: 'codex:writer',
+    actor: 'codex:session:writer',
     events: [{ type: 'plan_updated' }],
     update(next) {
       next.plan.approach = ['先写 store，再接 CLI']
@@ -287,7 +287,7 @@ test('过期 revision 拒绝写入，task、events 和 state 保持不变', () =
   })
   assert.deepEqual(updateResult.warnings, [])
   assert.equal(updateResult.task.revision, 2)
-  selectCurrentTaskV2(store, 'codex:reader', task.id)
+  selectCurrentTaskV2(store, 'codex:session:reader', task.id)
 
   const taskPath = join(taskDirectory(store, task.id), 'task.json')
   const eventsPath = join(taskDirectory(store, task.id), 'events.jsonl')
@@ -301,13 +301,13 @@ test('过期 revision 拒绝写入，task、events 和 state 保持不变', () =
     () =>
       updateTaskV2(store, task.id, {
         expectRevision: 1,
-        actor: 'codex:stale',
+        actor: 'codex:session:stale',
         events: [{ type: 'plan_updated' }],
         update(next) {
           next.title = '不应写入'
         },
       }),
-    /expected revision 1, current revision 2[\s\S]*Changed by: codex:writer/,
+    /expected revision 1, current revision 2[\s\S]*Changed by: codex:session:writer/,
   )
   assert.deepEqual(
     {
@@ -334,7 +334,7 @@ test('无效 schema 或结构化 event 在持久化前失败', () => {
     () =>
       updateTaskV2(store, task.id, {
         expectRevision: 1,
-        actor: 'codex:session-a',
+        actor: 'codex:session:a',
         events: [{ type: 'decision_recorded' }],
         update(next) {
           next.title = '不应持久化'
@@ -354,7 +354,7 @@ test('无效 schema 或结构化 event 在持久化前失败', () => {
     () =>
       updateTaskV2(store, task.id, {
         expectRevision: 1,
-        actor: 'codex:session-a',
+        actor: 'codex:session:a',
         events: [{ type: 'plan_updated' }],
         update(next) {
           next.blocked = { reason: '', waiting_for: '', blocked_at: '' }
@@ -379,7 +379,7 @@ test('plan 拒绝空 argv 和重复 verification name', () => {
             verification_plan: [{ name: 'tests', command: [], kind: 'gate' }],
           }),
         },
-        'codex:session-a',
+        'codex:session:a',
       ),
     /empty verification_plan.command/,
   )
@@ -397,7 +397,7 @@ test('plan 拒绝空 argv 和重复 verification name', () => {
             ],
           }),
         },
-        'codex:session-a',
+        'codex:session:a',
       ),
     /Duplicate verification_plan.name/,
   )
@@ -433,7 +433,7 @@ test('不同 task 锁互不阻塞，state 锁不阻塞 task 文件更新', () =>
   const updateResult = withStateLockV2(store, () =>
     updateTaskV2(store, first.id, {
       expectRevision: 1,
-      actor: 'codex:session-a',
+      actor: 'codex:session:a',
       events: [{ type: 'plan_updated' }],
       update(next) {
         next.plan.scope.push('tests/v2-store.test.mjs')

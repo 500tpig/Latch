@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 import { parseArgs, type ParseArgsConfig } from 'node:util'
 import { isAbsolute, normalize, resolve, sep } from 'node:path'
-import { actorId } from './core/actor.js'
+import {
+  actorId,
+  assertWritableActor,
+  isWritableActor,
+} from './core/actor.js'
 import {
   contextHumanV2,
   contextJsonV2,
@@ -10,12 +14,14 @@ import {
   listJsonV2,
 } from './core/task-view.js'
 import {
+  claimTaskV3,
   createTaskV2,
   currentTaskIdV2,
   initTaskStoreV2,
   openTaskStoreV2,
   readTaskV2,
   selectCurrentTaskV2,
+  takeoverTaskV3,
   updateTaskV2,
 } from './core/task-store.js'
 import type { TaskArtifact, TaskPlan } from './core/types.js'
@@ -36,6 +42,8 @@ Commands:
   use <task-id>
   list [--json] [--brief]
   context [task-id] [--json] [--brief]
+  claim <task-id> --expect-revision <revision> [--reason <text>]
+  takeover <task-id> --expect-revision <revision> --reason <text>
   save <task-id> --expect-revision <revision> [changes]
   approve <task-id> --expect-revision <revision> (--reason <text> | --feedback <text>)
   verify <task-id> --expect-revision <revision> --name <name> [--diagnostic] [-- command...]
@@ -50,6 +58,10 @@ const commandUsage: Record<string, string> = {
   use: 'Usage: latch use <task-id> [--json]',
   list: 'Usage: latch list [--json] [--brief]',
   context: 'Usage: latch context [task-id] [--json] [--brief]',
+  claim:
+    'Usage: latch claim <task-id> --expect-revision <revision> [--reason <text>] [--json]',
+  takeover:
+    'Usage: latch takeover <task-id> --expect-revision <revision> --reason <text> [--json]',
   save:
     'Usage: latch save <task-id> --expect-revision <revision> [--plan-file <path>] [--feedback <text>] [--decision <text>] [--artifact <kind>:<path>] [--remove-artifact <kind>:<path>] [--block-reason <text> --waiting-for <text> | --unblock] [--json]',
   approve:
@@ -63,6 +75,19 @@ const commandUsage: Record<string, string> = {
   abandon:
     'Usage: latch abandon <task-id> --expect-revision <revision> --reason <text> [--json]',
 }
+
+const actorRequiredCommands = new Set([
+  'checkpoint',
+  'use',
+  'claim',
+  'takeover',
+  'save',
+  'approve',
+  'verify',
+  'submit',
+  'done',
+  'abandon',
+])
 
 class CliV2Error extends Error {
   constructor(
@@ -245,10 +270,66 @@ function runContext(args: string[], cwd: string, actor: string) {
   if (parsed.values.help) return process.stdout.write(`${commandUsage.context}\n`)
   requirePositionals('context', parsed.positionals, [0, 1])
   validateBrief(parsed.values.json, parsed.values.brief)
+  if (!parsed.positionals[0] && !isWritableActor(actor))
+    fail(
+      'actor_required',
+      'Actor required for context without task id.\n' +
+        'Pass an explicit task id or set a session actor.',
+    )
   const { store, task } = targetTask(cwd, actor, parsed.positionals[0])
   if (parsed.values.json)
     return json(contextJsonV2(store, task, actor, Boolean(parsed.values.brief)))
   process.stdout.write(`${contextHumanV2(store, task, actor)}\n`)
+}
+
+function runClaim(args: string[], cwd: string, actor: string) {
+  const parsed = parseCommand(args, {
+    ...commonOptions(),
+    'expect-revision': { type: 'string' },
+    reason: { type: 'string' },
+  })
+  if (parsed.values.help) return process.stdout.write(`${commandUsage.claim}\n`)
+  requirePositionals('claim', parsed.positionals, 1)
+  const expectRevision = positiveInteger(
+    parsed.values['expect-revision'],
+    '--expect-revision',
+  )
+  const store = openTaskStoreV2(cwd)
+  const result = claimTaskV3(store, parsed.positionals[0], {
+    expectRevision,
+    actor,
+    reason: parsed.values.reason,
+  })
+  if (parsed.values.json)
+    return json(mutationJson(result.task, result.warnings, expectRevision))
+  process.stdout.write(`Claimed ${result.task.id} for ${actor}.\n`)
+  printWarnings(result.warnings)
+}
+
+function runTakeover(args: string[], cwd: string, actor: string) {
+  const parsed = parseCommand(args, {
+    ...commonOptions(),
+    'expect-revision': { type: 'string' },
+    reason: { type: 'string' },
+  })
+  if (parsed.values.help)
+    return process.stdout.write(`${commandUsage.takeover}\n`)
+  requirePositionals('takeover', parsed.positionals, 1)
+  const expectRevision = positiveInteger(
+    parsed.values['expect-revision'],
+    '--expect-revision',
+  )
+  if (!parsed.values.reason) fail('invalid_arguments', '--reason is required.')
+  const store = openTaskStoreV2(cwd)
+  const result = takeoverTaskV3(store, parsed.positionals[0], {
+    expectRevision,
+    actor,
+    reason: parsed.values.reason,
+  })
+  if (parsed.values.json)
+    return json(mutationJson(result.task, result.warnings, expectRevision))
+  process.stdout.write(`Transferred ${result.task.id} to ${actor}.\n`)
+  printWarnings(result.warnings)
 }
 
 function runSave(args: string[], cwd: string, actor: string) {
@@ -565,6 +646,12 @@ function run(argv: string[], cwd: string) {
   }
   const args = argv.slice(1)
   const actor = actorId()
+  if (
+    actorRequiredCommands.has(command) &&
+    !args.includes('--help') &&
+    !args.includes('-h')
+  )
+    assertWritableActor(actor)
   switch (command) {
     case 'init':
       return runInit(args, cwd)
@@ -576,6 +663,10 @@ function run(argv: string[], cwd: string) {
       return runList(args, cwd, actor)
     case 'context':
       return runContext(args, cwd, actor)
+    case 'claim':
+      return runClaim(args, cwd, actor)
+    case 'takeover':
+      return runTakeover(args, cwd, actor)
     case 'save':
       return runSave(args, cwd, actor)
     case 'approve':

@@ -41,12 +41,14 @@ export type TaskArtifact = {
   path: string
 }
 
+// C1 期间 schema 3 仅供临时 fixture；默认产品创建仍固定为 schema 2。
 export type TaskV2 = {
-  schema_version: 2
+  schema_version: 2 | 3
   id: string
   title: string
   phase: TaskPhase
   outcome?: TaskOutcome
+  primary_writer?: string
   revision: number
   plan_revision: number
   work_revision: number
@@ -106,7 +108,18 @@ export const TASK_EVENT_TYPES = [
   'abandoned',
 ] as const
 
-export type TaskEventType = (typeof TASK_EVENT_TYPES)[number]
+export const WRITER_EVENT_TYPES = [
+  'writer_claimed',
+  'writer_taken_over',
+] as const
+
+export const TASK_EVENT_TYPES_V3 = [
+  ...TASK_EVENT_TYPES,
+  ...WRITER_EVENT_TYPES,
+] as const
+
+export type TaskEventTypeV2 = (typeof TASK_EVENT_TYPES)[number]
+export type TaskEventType = (typeof TASK_EVENT_TYPES_V3)[number]
 
 export type BaseTaskEvent = {
   type: TaskEventType
@@ -132,11 +145,31 @@ export type ReviewFeedbackEvent = BaseTaskEvent & {
   summary: string
 }
 
+export type WriterClaimedEvent = BaseTaskEvent & {
+  type: 'writer_claimed'
+  reason?: string
+}
+
+export type WriterTakenOverEvent = BaseTaskEvent & {
+  type: 'writer_taken_over'
+  from: string
+  to: string
+  reason: string
+}
+
 type StandardTaskEvent = Omit<BaseTaskEvent, 'type'> & {
-  type: Exclude<TaskEventType, 'decision_recorded' | 'review_feedback'>
+  type: Exclude<
+    TaskEventType,
+    | 'decision_recorded'
+    | 'review_feedback'
+    | 'writer_claimed'
+    | 'writer_taken_over'
+  >
 } & Record<string, unknown>
 
 export type TaskEvent =
   | DecisionEvent
   | ReviewFeedbackEvent
+  | WriterClaimedEvent
+  | WriterTakenOverEvent
   | StandardTaskEvent

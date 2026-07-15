@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import {
   archiveTaskV2,
+  assertTaskWritableV2,
   readArchivedTaskV2,
   readTaskV2,
   updateTaskV2,
@@ -158,7 +159,12 @@ export function verifyTaskV2(
   id: string,
   input: VerifyTaskV2Input,
 ): VerifyTaskV2Result {
-  const current = readTaskV2(store, id)
+  const current = assertTaskWritableV2(
+    store,
+    id,
+    input.actor,
+    input.expectRevision,
+  )
   assertReadyForWork(current)
   if (current.phase !== 'dev' && current.phase !== 'check')
     throw new Error(`Cannot verify task in phase ${current.phase}.`)

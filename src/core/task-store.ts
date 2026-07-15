@@ -14,10 +14,14 @@ import { join } from 'node:path'
 import { discoverWorkspaceRoot, pathsForWorkspace } from './paths.js'
 import type { LatchPathsV2 } from './paths.js'
 import { now, readJsonFile, slug, writeJsonAtomic } from './utils.js'
+import { assertWritableActor, isWritableActor } from './actor.js'
 import {
   appendTaskEventV2,
+  appendTaskEventV3,
   readTaskEventsV2,
+  readTaskEventsV3,
   validateTaskEventV2,
+  validateTaskEventV3,
 } from './notes-events.js'
 import { TASK_EVENT_TYPES } from './types.js'
 import type {
@@ -25,15 +29,17 @@ import type {
   TaskArtifact,
   TaskEvent,
   TaskEventType,
+  TaskEventTypeV2,
   TaskPlan,
   TaskV2,
 } from './types.js'
 
 const V2_SCHEMA_VERSION = 2 as const
+const V3_SCHEMA_VERSION = 3 as const
 const STALE_LOCK_MILLISECONDS = 60_000
 const CANONICAL_TASK_ID =
   /^\d{17}-[a-z0-9\u4e00-\u9fa5]+(?:-[a-z0-9\u4e00-\u9fa5]+)*-[a-f0-9]{6}$/
-const taskEventTypes = new Set<TaskEventType>(TASK_EVENT_TYPES)
+const taskEventTypes = new Set<string>(TASK_EVENT_TYPES)
 
 export type TaskStoreV2 = {
   paths: LatchPathsV2
@@ -51,6 +57,11 @@ export type TaskWriteResultV2 = {
 }
 
 export type TaskEventInputV2 = {
+  type: TaskEventTypeV2
+  fields?: Record<string, unknown>
+}
+
+type TaskEventInput = {
   type: TaskEventType
   fields?: Record<string, unknown>
 }
@@ -68,6 +79,18 @@ export type ArchiveTaskV2Options = {
   outcome: 'done' | 'abandoned'
   update?: (task: TaskV2) => void
   eventFields?: Record<string, unknown>
+}
+
+export type ClaimTaskV3Options = {
+  expectRevision: number
+  actor: string
+  reason?: string
+}
+
+export type TakeoverTaskV3Options = {
+  expectRevision: number
+  actor: string
+  reason: string
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -182,8 +205,21 @@ function assertVerificationMap(
 
 // 读盘后和写盘前复用同一份 schema 校验，避免把无效中间状态写进 task.json。
 function assertTaskV2(value: unknown, path: string): asserts value is TaskV2 {
-  if (!isRecord(value) || value.schema_version !== V2_SCHEMA_VERSION)
+  if (
+    !isRecord(value) ||
+    (value.schema_version !== V2_SCHEMA_VERSION &&
+      value.schema_version !== V3_SCHEMA_VERSION)
+  )
     throw new Error(`Unsupported or invalid Latch task schema in ${path}.`)
+  if (Object.hasOwn(value, 'primary_writer')) {
+    if (value.schema_version !== V3_SCHEMA_VERSION)
+      throw new Error(`Invalid primary_writer in ${path}: schema_version 3 is required.`)
+    if (
+      typeof value.primary_writer !== 'string' ||
+      !isWritableActor(value.primary_writer)
+    )
+      throw new Error(`Invalid primary_writer in ${path}.`)
+  }
   requireString(value.id, 'id', path)
   if (!CANONICAL_TASK_ID.test(value.id as string))
     throw new Error(`Invalid canonical task id in ${path}.`)
@@ -285,10 +321,6 @@ function assertTaskV2(value: unknown, path: string): asserts value is TaskV2 {
     requireString(artifact.kind, 'artifact.kind', path)
     requireString(artifact.path, 'artifact.path', path)
   }
-}
-
-function assertActor(actor: string) {
-  if (!actor.trim()) throw new Error('Actor is required.')
 }
 
 function assertExpectedRevision(revision: number) {
@@ -497,10 +529,17 @@ export function readArchivedTaskV2(
   return undefined
 }
 
+function readTaskEventsForTask(store: TaskStoreV2, task: TaskV2) {
+  const directory = taskDirectoryV2(store, task.id)
+  return task.schema_version === V3_SCHEMA_VERSION
+    ? readTaskEventsV3(directory)
+    : readTaskEventsV2(directory)
+}
+
 export function taskHistoryIncompleteV2(store: TaskStoreV2, id: string) {
   const task = readTaskV2(store, id)
   const revisions = new Set(
-    readTaskEventsV2(taskDirectoryV2(store, task.id)).map((entry) => entry.revision),
+    readTaskEventsForTask(store, task).map((entry) => entry.revision),
   )
   for (let revision = 1; revision <= task.revision; revision += 1)
     if (!revisions.has(revision)) return true
@@ -509,7 +548,7 @@ export function taskHistoryIncompleteV2(store: TaskStoreV2, id: string) {
 
 export function taskEventsV2(store: TaskStoreV2, id: string) {
   const task = readTaskV2(store, id)
-  return readTaskEventsV2(taskDirectoryV2(store, task.id))
+  return readTaskEventsForTask(store, task)
 }
 
 export function listTasksV2(store: TaskStoreV2): TaskV2[] {
@@ -550,18 +589,34 @@ function makeTaskEvent(
   } as TaskEvent
 }
 
+function validateTaskEventForTask(task: TaskV2, event: TaskEvent, path: string) {
+  if (task.schema_version === V3_SCHEMA_VERSION)
+    validateTaskEventV3(event, path)
+  else validateTaskEventV2(event, path)
+}
+
+function appendTaskEventForTask(
+  taskDirectory: string,
+  task: TaskV2,
+  event: TaskEvent,
+) {
+  if (task.schema_version === V3_SCHEMA_VERSION)
+    appendTaskEventV3(taskDirectory, event)
+  else appendTaskEventV2(taskDirectory, event)
+}
+
 function eventWriteWarning(task: TaskV2, error: unknown) {
   const message = error instanceof Error ? error.message : String(error)
   return `Task ${task.id} revision ${task.revision} was committed, but its event was not recorded: ${message}`
 }
 
-// 创建前完成输入与 schema 校验，成功后把 canonical ID 写入当前 actor state。
-export function createTaskV2(
+function createTask(
   store: TaskStoreV2,
   input: CreateTaskV2Input,
   actor: string,
+  schemaVersion: 2 | 3,
 ): TaskWriteResultV2 {
-  assertActor(actor)
+  assertWritableActor(actor)
   requireString(input.title, 'title', 'checkpoint input')
   assertTaskPlan(input.plan, 'checkpoint input')
   const artifacts = structuredClone(input.artifacts ?? [])
@@ -574,10 +629,11 @@ export function createTaskV2(
   while (existsSync(taskDirectoryV2(store, id))) id = makeTaskId(input.title)
   const timestamp = now()
   const task: TaskV2 = {
-    schema_version: V2_SCHEMA_VERSION,
+    schema_version: schemaVersion,
     id,
     title: input.title.trim(),
     phase: 'plan',
+    ...(schemaVersion === V3_SCHEMA_VERSION ? { primary_writer: actor } : {}),
     revision: 1,
     plan_revision: 1,
     work_revision: 0,
@@ -595,7 +651,11 @@ export function createTaskV2(
   const taskPath = taskJsonPathV2(store, id)
   assertTaskV2(task, taskPath)
   const creationEvent = makeTaskEvent(task, 'task_created', actor)
-  validateTaskEventV2(creationEvent, join(taskDirectory, 'events.jsonl'))
+  validateTaskEventForTask(
+    task,
+    creationEvent,
+    join(taskDirectory, 'events.jsonl'),
+  )
 
   const warnings: string[] = []
   withTaskLockV2(store, id, () => {
@@ -609,7 +669,7 @@ export function createTaskV2(
       throw error
     }
     try {
-      appendTaskEventV2(taskDirectory, creationEvent)
+      appendTaskEventForTask(taskDirectory, task, creationEvent)
     } catch (error) {
       warnings.push(eventWriteWarning(task, error))
     }
@@ -625,8 +685,25 @@ export function createTaskV2(
   return { task, warnings }
 }
 
+// 默认产品路径保持冻结 v2；schema 3 创建只由临时 fixture 调用。
+export function createTaskV2(
+  store: TaskStoreV2,
+  input: CreateTaskV2Input,
+  actor: string,
+): TaskWriteResultV2 {
+  return createTask(store, input, actor, V2_SCHEMA_VERSION)
+}
+
+export function createTaskV3(
+  store: TaskStoreV2,
+  input: CreateTaskV2Input,
+  actor: string,
+): TaskWriteResultV2 {
+  return createTask(store, input, actor, V3_SCHEMA_VERSION)
+}
+
 export function currentTaskIdV2(store: TaskStoreV2, actor: string) {
-  assertActor(actor)
+  if (!isWritableActor(actor)) return undefined
   const id = readStateV2(store).actors[actor]?.current_task_id
   if (!id || !existsSync(taskJsonPathV2(store, id))) return undefined
   return id
@@ -638,7 +715,7 @@ export function selectCurrentTaskV2(
   actor: string,
   id: string,
 ) {
-  assertActor(actor)
+  assertWritableActor(actor)
   const canonicalId = resolveOpenTaskIdV2(store, id)
   withTaskLockV2(store, canonicalId, () => {
     readCanonicalTaskV2(store, canonicalId)
@@ -658,7 +735,7 @@ export function selectCurrentTaskV2(
 }
 
 function lastTaskActor(store: TaskStoreV2, task: TaskV2) {
-  const events = readTaskEventsV2(taskDirectoryV2(store, task.id))
+  const events = readTaskEventsForTask(store, task)
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index]
     if (event.revision === task.revision) return event.actor
@@ -666,11 +743,20 @@ function lastTaskActor(store: TaskStoreV2, task: TaskV2) {
   return 'unknown'
 }
 
-function assertImmutableTaskFields(current: TaskV2, next: TaskV2) {
+function assertImmutableTaskFields(
+  current: TaskV2,
+  next: TaskV2,
+  allowPrimaryWriterChange = false,
+) {
+  const primaryWriterChanged =
+    current.primary_writer !== next.primary_writer ||
+    Object.hasOwn(current, 'primary_writer') !==
+      Object.hasOwn(next, 'primary_writer')
   const changed = [
     next.schema_version !== current.schema_version && 'schema_version',
     next.id !== current.id && 'id',
     next.revision !== current.revision && 'revision',
+    !allowPrimaryWriterChange && primaryWriterChanged && 'primary_writer',
     next.workspace_root !== current.workspace_root && 'workspace_root',
     next.created_at !== current.created_at && 'created_at',
     next.updated_at !== current.updated_at && 'updated_at',
@@ -692,36 +778,80 @@ function assertRevisionMatches(
   )
 }
 
-// task.json 是提交点；event 失败不会把已提交更新伪装成完全失败。
-export function updateTaskV2(
+function assertPrimaryWriter(task: TaskV2, actor: string) {
+  if (task.schema_version === V2_SCHEMA_VERSION) return
+  if (!Object.hasOwn(task, 'primary_writer'))
+    throw new Error(
+      'Task is legacy_unclaimed: write denied.\n' +
+        'Claim this task after an explicit user continue/handle request for this task id.',
+    )
+  if (task.primary_writer !== actor)
+    throw new Error(
+      `Writer mismatch: primary_writer is ${task.primary_writer}, caller is ${actor}.\n` +
+        'Continue read-only, or takeover with explicit user handoff / confirmed transfer.',
+    )
+}
+
+export function assertTaskWritableV2(
   store: TaskStoreV2,
   id: string,
-  options: UpdateTaskV2Options,
+  actor: string,
+  expectRevision: number,
+) {
+  assertExpectedRevision(expectRevision)
+  assertWritableActor(actor)
+  const canonicalId = resolveOpenTaskIdV2(store, id)
+  return withTaskLockV2(store, canonicalId, () => {
+    const task = readCanonicalTaskV2(store, canonicalId)
+    assertRevisionMatches(store, task, expectRevision)
+    assertPrimaryWriter(task, actor)
+    return task
+  })
+}
+
+type CommitTaskUpdateOptions = {
+  expectRevision: number
+  actor: string
+  events: (current: TaskV2) => TaskEventInput[]
+  authorize: (current: TaskV2) => void
+  update: (task: TaskV2) => void
+  allowPrimaryWriterChange?: boolean
+}
+
+// task.json 是提交点；event 失败不会把已提交更新伪装成完全失败。
+function commitTaskUpdate(
+  store: TaskStoreV2,
+  id: string,
+  options: CommitTaskUpdateOptions,
 ): TaskWriteResultV2 {
   assertExpectedRevision(options.expectRevision)
-  assertActor(options.actor)
-  if (options.events.length === 0)
-    throw new Error('Task update requires at least one event.')
-  for (const event of options.events)
-    if (!taskEventTypes.has(event.type))
-      throw new Error(`Unknown task event type: ${event.type}`)
+  assertWritableActor(options.actor)
   const canonicalId = resolveOpenTaskIdV2(store, id)
 
   return withTaskLockV2(store, canonicalId, () => {
     const current = readCanonicalTaskV2(store, canonicalId)
     assertRevisionMatches(store, current, options.expectRevision)
+    options.authorize(current)
+    const eventInputs = options.events(current)
+    if (eventInputs.length === 0)
+      throw new Error('Task update requires at least one event.')
     const next = structuredClone(current)
     options.update(next)
-    assertImmutableTaskFields(current, next)
+    assertImmutableTaskFields(
+      current,
+      next,
+      options.allowPrimaryWriterChange,
+    )
     next.revision = current.revision + 1
     next.updated_at = now()
     const path = taskJsonPathV2(store, canonicalId)
     assertTaskV2(next, path)
-    const events = options.events.map((event) =>
+    const events = eventInputs.map((event) =>
       makeTaskEvent(next, event.type, options.actor, event.fields),
     )
     for (const event of events)
-      validateTaskEventV2(
+      validateTaskEventForTask(
+        next,
         event,
         join(taskDirectoryV2(store, canonicalId), 'events.jsonl'),
       )
@@ -729,13 +859,105 @@ export function updateTaskV2(
     const warnings: string[] = []
     for (const event of events) {
       try {
-        appendTaskEventV2(taskDirectoryV2(store, canonicalId), event)
+        appendTaskEventForTask(
+          taskDirectoryV2(store, canonicalId),
+          next,
+          event,
+        )
       } catch (error) {
         warnings.push(eventWriteWarning(next, error))
       }
     }
     return { task: next, warnings }
   })
+}
+
+export function updateTaskV2(
+  store: TaskStoreV2,
+  id: string,
+  options: UpdateTaskV2Options,
+): TaskWriteResultV2 {
+  for (const event of options.events)
+    if (!taskEventTypes.has(event.type))
+      throw new Error(`Unknown task event type: ${event.type}`)
+  return commitTaskUpdate(store, id, {
+    ...options,
+    events: () => options.events,
+    authorize: (task) => assertPrimaryWriter(task, options.actor),
+  })
+}
+
+export function claimTaskV3(
+  store: TaskStoreV2,
+  id: string,
+  options: ClaimTaskV3Options,
+): TaskWriteResultV2 {
+  if (options.reason !== undefined)
+    requireString(options.reason, 'reason', 'claim input')
+  return commitTaskUpdate(store, id, {
+    expectRevision: options.expectRevision,
+    actor: options.actor,
+    events: () => [
+      {
+        type: 'writer_claimed',
+        fields: options.reason ? { reason: options.reason.trim() } : undefined,
+      },
+    ],
+    authorize(task) {
+      if (task.schema_version !== V3_SCHEMA_VERSION)
+        throw new Error(
+          'Writer claim requires schema_version 3; frozen v2 data was not modified.',
+        )
+      if (Object.hasOwn(task, 'primary_writer'))
+        throw new Error(
+          `Task already has primary_writer: ${task.primary_writer}. Use takeover, not claim.`,
+        )
+    },
+    update(task) {
+      task.primary_writer = options.actor
+    },
+    allowPrimaryWriterChange: true,
+  })
+}
+
+export function takeoverTaskV3(
+  store: TaskStoreV2,
+  id: string,
+  options: TakeoverTaskV3Options,
+): TaskWriteResultV2 {
+  requireString(options.reason, 'reason', 'takeover input')
+  const result = commitTaskUpdate(store, id, {
+    expectRevision: options.expectRevision,
+    actor: options.actor,
+    events: (task) => [
+      {
+        type: 'writer_taken_over',
+        fields: {
+          from: task.primary_writer,
+          to: options.actor,
+          reason: options.reason.trim(),
+        },
+      },
+    ],
+    authorize(task) {
+      if (task.schema_version !== V3_SCHEMA_VERSION)
+        throw new Error(
+          'Writer takeover requires schema_version 3; frozen v2 data was not modified.',
+        )
+      if (!Object.hasOwn(task, 'primary_writer'))
+        throw new Error('Task is legacy_unclaimed. Use claim, not takeover.')
+      if (task.primary_writer === options.actor)
+        throw new Error(`Task primary_writer is already ${options.actor}.`)
+    },
+    update(task) {
+      task.primary_writer = options.actor
+    },
+    allowPrimaryWriterChange: true,
+  })
+  result.warnings.push(
+    'The previous writer may still modify the shared Git worktree; Latch only rejects its task writes.',
+  )
+  return result
 }
 
 function clearTaskFromStateV2(store: TaskStoreV2, id: string) {
@@ -760,12 +982,13 @@ export function archiveTaskV2(
   options: ArchiveTaskV2Options,
 ): TaskWriteResultV2 {
   assertExpectedRevision(options.expectRevision)
-  assertActor(options.actor)
+  assertWritableActor(options.actor)
   const canonicalId = resolveOpenTaskIdV2(store, id)
 
   const archivedTask = withTaskLockV2(store, canonicalId, () => {
     const current = readCanonicalTaskV2(store, canonicalId)
     assertRevisionMatches(store, current, options.expectRevision)
+    assertPrimaryWriter(current, options.actor)
     const next = structuredClone(current)
     options.update?.(next)
     assertImmutableTaskFields(current, next)
@@ -780,7 +1003,8 @@ export function archiveTaskV2(
       options.actor,
       options.eventFields,
     )
-    validateTaskEventV2(
+    validateTaskEventForTask(
+      next,
       event,
       join(taskDirectoryV2(store, canonicalId), 'events.jsonl'),
     )
@@ -793,7 +1017,7 @@ export function archiveTaskV2(
     writeJsonAtomic(path, next)
     const warnings: string[] = []
     try {
-      appendTaskEventV2(taskDirectoryV2(store, canonicalId), event)
+      appendTaskEventForTask(taskDirectoryV2(store, canonicalId), next, event)
     } catch (error) {
       warnings.push(eventWriteWarning(next, error))
     }

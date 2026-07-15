@@ -20,7 +20,7 @@ function temporaryDirectory() {
   return directory
 }
 
-function run(cwd, args, actor = 'codex:review') {
+function run(cwd, args, actor = 'codex:session:review') {
   return spawnSync(process.execPath, [cli, ...args], {
     cwd,
     encoding: 'utf8',

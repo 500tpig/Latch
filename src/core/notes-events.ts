@@ -7,20 +7,23 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
-import { TASK_EVENT_TYPES } from './types.js'
+import { isWritableActor } from './actor.js'
+import { TASK_EVENT_TYPES, TASK_EVENT_TYPES_V3 } from './types.js'
 import type { TaskEvent } from './types.js'
 
 const taskEventTypes = new Set<string>(TASK_EVENT_TYPES)
+const taskEventTypesV3 = new Set<string>(TASK_EVENT_TYPES_V3)
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-export function validateTaskEventV2(
+function validateTaskEvent(
   value: unknown,
   path: string,
+  eventTypes: Set<string>,
 ): asserts value is TaskEvent {
-  if (!isRecord(value) || !taskEventTypes.has(value.type as string))
+  if (!isRecord(value) || !eventTypes.has(value.type as string))
     throw new Error(`Invalid event type in ${path}.`)
   if (typeof value.actor !== 'string' || !value.actor.trim())
     throw new Error(`Invalid event actor in ${path}.`)
@@ -55,11 +58,54 @@ export function validateTaskEventV2(
     if (typeof value.summary !== 'string' || !value.summary.trim())
       throw new Error(`Invalid feedback summary in ${path}.`)
   }
+  if (value.type === 'writer_claimed') {
+    if (!isWritableActor(value.actor as string))
+      throw new Error(`Invalid writer_claimed actor in ${path}.`)
+    if (
+      value.reason !== undefined &&
+      (typeof value.reason !== 'string' || !value.reason.trim())
+    )
+      throw new Error(`Invalid writer_claimed reason in ${path}.`)
+  }
+  if (value.type === 'writer_taken_over') {
+    if (
+      !isWritableActor(value.actor as string) ||
+      !isWritableActor(value.from as string) ||
+      !isWritableActor(value.to as string) ||
+      value.actor !== value.to
+    )
+      throw new Error(`Invalid writer_taken_over actors in ${path}.`)
+    if (typeof value.reason !== 'string' || !value.reason.trim())
+      throw new Error(`Invalid writer_taken_over reason in ${path}.`)
+  }
 }
 
-export function appendTaskEventV2(taskDirectory: string, eventEntry: TaskEvent) {
+export function validateTaskEventV2(
+  value: unknown,
+  path: string,
+): asserts value is TaskEvent {
+  validateTaskEvent(value, path, taskEventTypes)
+}
+
+export function validateTaskEventV3(
+  value: unknown,
+  path: string,
+): asserts value is TaskEvent {
+  validateTaskEvent(value, path, taskEventTypesV3)
+}
+
+type TaskEventValidator = (
+  value: unknown,
+  path: string,
+) => asserts value is TaskEvent
+
+function appendTaskEvent(
+  taskDirectory: string,
+  eventEntry: TaskEvent,
+  validate: TaskEventValidator,
+) {
   const eventsPath = join(taskDirectory, 'events.jsonl')
-  validateTaskEventV2(eventEntry, eventsPath)
+  validate(eventEntry, eventsPath)
   const fileDescriptor = openSync(eventsPath, 'a', 0o600)
   try {
     writeFileSync(fileDescriptor, `${JSON.stringify(eventEntry)}\n`)
@@ -69,8 +115,18 @@ export function appendTaskEventV2(taskDirectory: string, eventEntry: TaskEvent) 
   }
 }
 
-// v2 不再生成 notes.md；当前状态读 task.json，历史只从 events.jsonl 读取。
-export function readTaskEventsV2(taskDirectory: string): TaskEvent[] {
+export function appendTaskEventV2(taskDirectory: string, eventEntry: TaskEvent) {
+  appendTaskEvent(taskDirectory, eventEntry, validateTaskEventV2)
+}
+
+export function appendTaskEventV3(taskDirectory: string, eventEntry: TaskEvent) {
+  appendTaskEvent(taskDirectory, eventEntry, validateTaskEventV3)
+}
+
+function readTaskEvents(
+  taskDirectory: string,
+  validate: TaskEventValidator,
+): TaskEvent[] {
   const eventsPath = join(taskDirectory, 'events.jsonl')
   if (!existsSync(eventsPath)) return []
   const lines = readFileSync(eventsPath, 'utf8').trim().split('\n').filter(Boolean)
@@ -78,11 +134,20 @@ export function readTaskEventsV2(taskDirectory: string): TaskEvent[] {
     const entryPath = `${eventsPath}:${index + 1}`
     try {
       const entry: unknown = JSON.parse(line)
-      validateTaskEventV2(entry, entryPath)
+      validate(entry, entryPath)
       return entry
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       throw new Error(`Cannot read JSON ${entryPath}: ${message}`)
     }
   })
+}
+
+// v2 不再生成 notes.md；当前状态读 task.json，历史只从 events.jsonl 读取。
+export function readTaskEventsV2(taskDirectory: string): TaskEvent[] {
+  return readTaskEvents(taskDirectory, validateTaskEventV2)
+}
+
+export function readTaskEventsV3(taskDirectory: string): TaskEvent[] {
+  return readTaskEvents(taskDirectory, validateTaskEventV3)
 }

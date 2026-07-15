@@ -8,7 +8,7 @@ import { spawnSync } from 'node:child_process'
 const cli = join(process.cwd(), 'dist/cli.js')
 function run(cwd, args) {
   return spawnSync(process.execPath, [cli, ...args], {
-    cwd, encoding: 'utf8', env: { ...process.env, LATCH_ACTOR: 'codex:integration' },
+    cwd, encoding: 'utf8', env: { ...process.env, LATCH_ACTOR: 'codex:session:integration' },
   })
 }
 function json(result) {

@@ -22,7 +22,7 @@ function temporaryDirectory() {
   return directory
 }
 
-function run(cwd, args, actor = 'codex:lifecycle') {
+function run(cwd, args, actor = 'codex:session:lifecycle') {
   return spawnSync(process.execPath, [cli, ...args], {
     cwd,
     encoding: 'utf8',
@@ -273,8 +273,8 @@ test('two real processes approving different tasks both succeed independently', 
     'approve', created.task_id, '--expect-revision', '1', '--reason', '用户批准', '--json',
   ]
   const results = await Promise.all([
-    runAsync(cwd, args(first), 'codex:parallel-a'),
-    runAsync(cwd, args(second), 'codex:parallel-b'),
+    runAsync(cwd, args(first), 'codex:session:parallel-a'),
+    runAsync(cwd, args(second), 'codex:session:parallel-b'),
   ])
   assert.deepEqual(results.map((result) => result.status).sort(), [0, 0])
   for (const task of [first, second]) {
