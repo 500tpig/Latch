@@ -28,7 +28,7 @@ function requireRead(path: string) {
 }
 
 // 同目录临时文件写完并 fsync 后再 rename，保证读者只会看到旧文件或完整新文件。
-export function writeJsonAtomic(path: string, value: unknown) {
+export function writeTextAtomic(path: string, content: string) {
   const temporaryPath = join(
     dirname(path),
     `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`,
@@ -36,7 +36,7 @@ export function writeJsonAtomic(path: string, value: unknown) {
   let fileDescriptor: number | undefined
   try {
     fileDescriptor = openSync(temporaryPath, 'wx', 0o600)
-    writeFileSync(fileDescriptor, `${JSON.stringify(value, null, 2)}\n`)
+    writeFileSync(fileDescriptor, content)
     fsyncSync(fileDescriptor)
     const descriptor = fileDescriptor
     fileDescriptor = undefined
@@ -49,6 +49,10 @@ export function writeJsonAtomic(path: string, value: unknown) {
     rmSync(temporaryPath, { force: true })
     throw error
   }
+}
+
+export function writeJsonAtomic(path: string, value: unknown) {
+  writeTextAtomic(path, `${JSON.stringify(value, null, 2)}\n`)
 }
 
 export function slug(title: string) {

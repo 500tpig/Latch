@@ -34,8 +34,9 @@ import {
 import {
   assertGroupIdV3,
   claimTaskV3,
-  createTaskV2,
+  createTaskV3,
   currentTaskIdV2,
+  downgradeTaskV2,
   initTaskStoreV2,
   openTaskStoreV2,
   readTaskV2,
@@ -81,6 +82,7 @@ Commands:
   verify <task-id> --expect-revision <revision> --name <name> [--diagnostic] [-- command...]
   submit <task-id> --expect-revision <revision> --changes <text> --unverified <text> [--knowledge-impact-file <path>] [--no-verify --reason <text>]
   patch-submission-knowledge-impact <task-id> --expect-revision <revision> --knowledge-impact-file <path>
+  downgrade-v2 --task <task-id> --expect-revision <revision> --confirm-data-loss
   done <task-id> --expect-revision <revision> --followup <text>
   abandon <task-id> --expect-revision <revision> --reason <text>`
 
@@ -111,6 +113,8 @@ const commandUsage: Record<string, string> = {
     'Usage: latch submit <task-id> --expect-revision <revision> --changes <text> --unverified <text> [--knowledge-impact-file <path>] [--no-verify --reason <text>] [--json]',
   'patch-submission-knowledge-impact':
     'Usage: latch patch-submission-knowledge-impact <task-id> --expect-revision <revision> --knowledge-impact-file <path> [--json]',
+  'downgrade-v2':
+    'Usage: latch downgrade-v2 --task <task-id> --expect-revision <revision> --confirm-data-loss [--json]',
   done:
     'Usage: latch done <task-id> --expect-revision <revision> --followup <text> [--json]',
   abandon:
@@ -127,6 +131,7 @@ const actorRequiredCommands = new Set([
   'verify',
   'submit',
   'patch-submission-knowledge-impact',
+  'downgrade-v2',
   'done',
   'abandon',
 ])
@@ -272,9 +277,14 @@ function runCheckpoint(args: string[], cwd: string, actor: string) {
   const store = openTaskStoreV2(cwd)
   const plan = readPlan(cwd, parsed.values['plan-file'])
   const artifacts = (parsed.values.artifact ?? []).map(artifact)
-  const result = createTaskV2(
+  const result = createTaskV3(
     store,
-    { title: parsed.positionals[0], plan, artifacts },
+    {
+      title: parsed.positionals[0],
+      plan,
+      artifacts,
+      profile: 'standard',
+    },
     actor,
   )
   if (parsed.values.json) return json(mutationJson(result.task, result.warnings))
@@ -977,6 +987,43 @@ function runPatchSubmissionKnowledgeImpact(
   printWarnings(result.warnings)
 }
 
+function runDowngradeV2(args: string[], cwd: string, actor: string) {
+  const parsed = parseCommand(args, {
+    ...commonOptions(),
+    task: { type: 'string' },
+    'expect-revision': { type: 'string' },
+    'confirm-data-loss': { type: 'boolean' },
+  })
+  if (parsed.values.help)
+    return process.stdout.write(`${commandUsage['downgrade-v2']}\n`)
+  requirePositionals('downgrade-v2', parsed.positionals, 0)
+  if (!parsed.values.task)
+    fail('invalid_arguments', '--task is required.')
+  if (!parsed.values['confirm-data-loss'])
+    fail(
+      'invalid_arguments',
+      '--confirm-data-loss is required because v3-only fields and events move to backup.',
+    )
+  const expectRevision = positiveInteger(
+    parsed.values['expect-revision'],
+    '--expect-revision',
+  )
+  const store = openTaskStoreV2(cwd)
+  const result = downgradeTaskV2(store, parsed.values.task, {
+    expectRevision,
+    actor,
+  })
+  if (parsed.values.json)
+    return json({
+      ...mutationJson(result.task, result.warnings, expectRevision),
+      backup_path: result.backupPath,
+    })
+  process.stdout.write(
+    `Downgraded ${result.task.id} to schema v2. Backup: ${result.backupPath}\n`,
+  )
+  printWarnings(result.warnings)
+}
+
 function runDone(args: string[], cwd: string, actor: string) {
   const parsed = parseCommand(args, {
     ...commonOptions(),
@@ -1078,6 +1125,8 @@ function run(argv: string[], cwd: string) {
       return runSubmit(args, cwd, actor)
     case 'patch-submission-knowledge-impact':
       return runPatchSubmissionKnowledgeImpact(args, cwd, actor)
+    case 'downgrade-v2':
+      return runDowngradeV2(args, cwd, actor)
     case 'done':
       return runDone(args, cwd, actor)
     case 'abandon':

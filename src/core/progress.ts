@@ -124,7 +124,12 @@ export function approveTaskV2(
 
   if (current.phase === 'plan') {
     if (input.feedback) throw new Error('--feedback requires a task in review.')
-    if (usesLightProofPackage(current)) {
+    const legacyStandardApproval =
+      profileOf(current) === 'standard' &&
+      input.reason !== undefined &&
+      !input.authorization &&
+      !input.retrospective
+    if (usesLightProofPackage(current) && !legacyStandardApproval) {
       if (input.reason)
         throw new Error('--reason cannot replace structured schema 3 work_basis input.')
       if (!input.authorization && !input.retrospective)
@@ -234,6 +239,7 @@ export function approveTaskV2(
         },
       ],
       update(task) {
+        delete task.work_basis
         task.implementation_approval = {
           approved_plan_revision: task.plan_revision,
           approved_at: now(),

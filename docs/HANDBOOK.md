@@ -33,6 +33,12 @@ latch context [task-id] --json --brief
 
 `checkpoint` 必须读取完整 plan 文件。同标题 task 不覆盖。`use` 只修改当前 actor 的索引。
 
+从 CLI 版本 `0.2.0` 开始，`checkpoint` 创建 schema 3 standard task，并将当前 canonical session actor 写入 `primary_writer`。既有 schema 2 task 保持可读，但普通写入会按 `legacy_unclaimed` 拒绝；明确继续该 task 后，使用 `claim` 完成单 task 升级：
+
+```bash
+latch claim <task-id> --expect-revision 3 --reason "继续该 task"
+```
+
 `context --json --brief` 不返回完整 `plan`，但 `task.verification_plan` 会列出每项计划验证的 `name`、`command`、`kind` 和 `status`。`status` 为 `pending`、`stale`、`pass` 或 `fail`；`task.verification` 继续保留执行结果的完整记录。
 
 ### 更新计划和状态
@@ -69,7 +75,8 @@ latch verify <task-id> --expect-revision 9 --diagnostic --name exploratory -- pn
 ```bash
 latch submit <task-id> --expect-revision 10 \
   --changes "完成实现" \
-  --unverified "未做浏览器验收"
+  --unverified "未做浏览器验收" \
+  --knowledge-impact-file impact.json
 ```
 
 无可执行 gate 的任务使用：
@@ -79,10 +86,11 @@ latch submit <task-id> --expect-revision 4 \
   --no-verify \
   --reason "只有文档改动" \
   --changes "更新设计说明" \
-  --unverified "未运行代码测试"
+  --unverified "未运行代码测试" \
+  --knowledge-impact-file impact.json
 ```
 
-submission 绑定当前 work revision。verified 摘要由结构化 gate 结果生成。
+schema 3 submission 必须通过 `impact.json` 提供 `knowledge_impact`，使用 `none` 时 reason 需说明为何不更新模块知识。submission 绑定当前 work revision，verified 摘要由结构化 gate 结果生成。
 
 ### 归档或放弃
 
@@ -92,6 +100,19 @@ latch abandon <task-id> --expect-revision 5 --reason "用户取消"
 ```
 
 `done` 只接受 review 中当前 work revision 的有效 submission。`abandon` 必须提供原因。AI 只有获得明确用户授权后才能执行这两个命令。
+
+### Schema 3 回退
+
+需要让 schema 3 task 重新被 v2 CLI 读写时，先明确确认 v3 专用字段和 event 细节只保留在 backup，再执行：
+
+```bash
+latch downgrade-v2 \
+  --task <task-id> \
+  --expect-revision 8 \
+  --confirm-data-loss
+```
+
+命令支持 open 或 archived task，并在改写前将完整 task 目录复制到 `.latch/archive/v3-backup/<task-id>-<utc-ts>/`。主 `task.json` 投影为 schema 2，主 `events.jsonl` 只保留 v2 event 并将 revision 重写为 `1..n`；`state.json` 不改写。失败时保留 `.latch` 和已创建的 backup。
 
 ## 并发与文件
 
@@ -104,9 +125,9 @@ latch abandon <task-id> --expect-revision 5 --reason "用户取消"
 
 ## 最终契约部分实现边界
 
-C1–C5 已部分实现。C1–C3 在临时 fixture 中提供 session writer、Light 证明包与 Group 最小集的 schema 3 读取、校验和生命周期行为；C4 提供独立于 task schema 的 Git 知识文档 freshness 只读检查；C5 提供受预算 Context pack 与 benchmark diagnostic。
+C1–C6 已部分实现。C1–C3 的 session writer、Light 证明包与 Group 最小集已接入真实 schema 3 task；C4 提供独立于 task schema 的 Git 知识文档 freshness 只读检查；C5 提供受预算 Context pack 与 benchmark diagnostic；C6 提供 legacy claim/patch 升级与 R2 回退。
 
-Group 只聚合 task，不增加 group phase、revision、锁或完成门禁。schema 3 fixture 可使用 `save --group` 或 `save --clear-group` 修改单张 task；`list --group [--include-archive]` 返回精确匹配的成员与派生计数，`context` 只附带受限的 sibling 摘要。Group 变更不会修改 plan、work basis、verification 或 submission。
+Group 只聚合 task，不增加 group phase、revision、锁或完成门禁。schema 3 task 可使用 `save --group` 或 `save --clear-group` 修改单张 task；`list --group [--include-archive]` 返回精确匹配的成员与派生计数，`context` 只附带受限的 sibling 摘要。Group 变更不会修改 plan、work basis、verification 或 submission。
 
 知识文档使用 YAML frontmatter 的 `covers`、`status`、`last_fingerprint` 与 `last_fingerprint_algo` 判定 freshness：
 
@@ -131,4 +152,6 @@ latch benchmark context --case-file case.json --run-file run.json \
 
 `benchmark context` 只校验 case/run 并计算主成功和 30% 次目标，不执行检索、CodeGraph 或模型判断，也不成为 task gate。
 
-默认 `latch checkpoint` 仍创建 schema 2 task，不接受 `--group`。真实 `.latch` 不写 schema 3 或 v3-only event。schema 2→3 迁移、R2 `downgrade-v2` 和全面 current 切换仍未发布；本手册其余命令继续以 v2 为准。
+schema 3 event 文件允许可选的首行 `events_meta`；未知 v3 event 会被跳过并以 `warnings` 返回，schema 2 reader 仍对未知 event fail closed。schema 3 的 `min_cli_version` 为 `0.2.0`。
+
+全面 current 切换仍未发布；`docs/INDEX.md`、显式 Latch 入口和本手册其余 v2 基础契约保持不变。

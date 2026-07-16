@@ -1,5 +1,6 @@
 import {
   closeSync,
+  cpSync,
   existsSync,
   fsyncSync,
   mkdirSync,
@@ -10,19 +11,26 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { randomBytes } from 'node:crypto'
-import { isAbsolute, join, normalize, sep } from 'node:path'
+import { isAbsolute, join, normalize, relative, sep } from 'node:path'
 import { discoverWorkspaceRoot, pathsForWorkspace } from './paths.js'
 import type { LatchPathsV2 } from './paths.js'
-import { now, readJsonFile, slug, writeJsonAtomic } from './utils.js'
+import {
+  now,
+  readJsonFile,
+  slug,
+  writeJsonAtomic,
+  writeTextAtomic,
+} from './utils.js'
 import { assertWritableActor, isWritableActor } from './actor.js'
 import {
   appendTaskEventV2,
   appendTaskEventV3,
+  readTaskEventLogV3,
   readTaskEventsV2,
-  readTaskEventsV3,
   validateTaskEventV2,
   validateTaskEventV3,
 } from './notes-events.js'
+import { downgradeTaskEvents, downgradeTaskValue } from './migration.js'
 import { TASK_EVENT_TYPES, TASK_EVENT_TYPES_V3 } from './types.js'
 import type {
   ImplementationAuthorization,
@@ -110,6 +118,10 @@ export type TakeoverTaskV3Options = {
   expectRevision: number
   actor: string
   reason: string
+}
+
+export type DowngradeTaskV2Result = TaskWriteResultV2 & {
+  backupPath: string
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -682,8 +694,12 @@ export function resolveOpenTaskIdV2(store: TaskStoreV2, id: string) {
   throw new Error(`Task not found: ${id}`)
 }
 
-function readCanonicalTaskV2(store: TaskStoreV2, canonicalId: string): TaskV2 {
-  const path = taskJsonPathV2(store, canonicalId)
+function readTaskFromDirectory(
+  store: TaskStoreV2,
+  canonicalId: string,
+  directory: string,
+) {
+  const path = join(directory, 'task.json')
   const value = readJsonFile<unknown>(path)
   assertTaskV2(value, path)
   if (value.id !== canonicalId)
@@ -691,6 +707,24 @@ function readCanonicalTaskV2(store: TaskStoreV2, canonicalId: string): TaskV2 {
   if (value.workspace_root !== store.paths.workspaceRoot)
     throw new Error(`Task workspace_root does not match ${store.paths.workspaceRoot}: ${path}.`)
   return value
+}
+
+function readCanonicalTaskV2(store: TaskStoreV2, canonicalId: string): TaskV2 {
+  return readTaskFromDirectory(
+    store,
+    canonicalId,
+    taskDirectoryV2(store, canonicalId),
+  )
+}
+
+function archivedTaskDirectoryV2(store: TaskStoreV2, id: string) {
+  if (!existsSync(store.paths.archiveDir)) return undefined
+  for (const month of readDirSync(store.paths.archiveDir, { withFileTypes: true })) {
+    if (!month.isDirectory() || !/^\d{4}-\d{2}$/.test(month.name)) continue
+    const directory = join(store.paths.archiveDir, month.name, id)
+    if (existsSync(join(directory, 'task.json'))) return directory
+  }
+  return undefined
 }
 
 export function readTaskV2(store: TaskStoreV2, id: string): TaskV2 {
@@ -702,42 +736,40 @@ export function readArchivedTaskV2(
   id: string,
 ): TaskV2 | undefined {
   assertTaskIdToken(id)
-  if (!existsSync(store.paths.archiveDir)) return undefined
-  for (const month of readDirSync(store.paths.archiveDir, { withFileTypes: true })) {
-    if (!month.isDirectory()) continue
-    const path = join(store.paths.archiveDir, month.name, id, 'task.json')
-    if (!existsSync(path)) continue
-    const value = readJsonFile<unknown>(path)
-    assertTaskV2(value, path)
-    if (value.id !== id)
-      throw new Error(`Task id does not match its archive directory in ${path}.`)
-    if (value.workspace_root !== store.paths.workspaceRoot)
-      throw new Error(`Task workspace_root does not match ${store.paths.workspaceRoot}: ${path}.`)
-    return value
-  }
-  return undefined
+  const directory = archivedTaskDirectoryV2(store, id)
+  return directory ? readTaskFromDirectory(store, id, directory) : undefined
 }
 
-function readTaskEventsForTask(store: TaskStoreV2, task: TaskV2) {
+function readTaskEventLogFromDirectory(task: TaskV2, directory: string) {
+  if (task.schema_version === V3_SCHEMA_VERSION)
+    return readTaskEventLogV3(directory)
+  return { events: readTaskEventsV2(directory), warnings: [] }
+}
+
+function readTaskEventLogForTask(store: TaskStoreV2, task: TaskV2) {
   const directory = taskDirectoryV2(store, task.id)
-  return task.schema_version === V3_SCHEMA_VERSION
-    ? readTaskEventsV3(directory)
-    : readTaskEventsV2(directory)
+  return readTaskEventLogFromDirectory(task, directory)
 }
 
-export function taskHistoryIncompleteV2(store: TaskStoreV2, id: string) {
+export function taskEventLogV2(store: TaskStoreV2, id: string) {
   const task = readTaskV2(store, id)
-  const revisions = new Set(
-    readTaskEventsForTask(store, task).map((entry) => entry.revision),
-  )
+  return readTaskEventLogForTask(store, task)
+}
+
+export function taskHistoryIncompleteV2(
+  store: TaskStoreV2,
+  id: string,
+  events = taskEventLogV2(store, id).events,
+) {
+  const task = readTaskV2(store, id)
+  const revisions = new Set(events.map((entry) => entry.revision))
   for (let revision = 1; revision <= task.revision; revision += 1)
     if (!revisions.has(revision)) return true
   return false
 }
 
 export function taskEventsV2(store: TaskStoreV2, id: string) {
-  const task = readTaskV2(store, id)
-  return readTaskEventsForTask(store, task)
+  return taskEventLogV2(store, id).events
 }
 
 export function listTasksV2(store: TaskStoreV2): TaskV2[] {
@@ -746,7 +778,7 @@ export function listTasksV2(store: TaskStoreV2): TaskV2[] {
     .sort((left, right) => left.created_at.localeCompare(right.created_at))
 }
 
-export function listArchivedTasksV2(store: TaskStoreV2): TaskV2[] {
+function archivedTaskIdsV2(store: TaskStoreV2) {
   if (!existsSync(store.paths.archiveDir)) return []
   const ids = new Set<string>()
   for (const month of readDirSync(store.paths.archiveDir, { withFileTypes: true })) {
@@ -759,7 +791,11 @@ export function listArchivedTasksV2(store: TaskStoreV2): TaskV2[] {
       )
         ids.add(entry.name)
   }
-  return [...ids]
+  return [...ids].sort()
+}
+
+export function listArchivedTasksV2(store: TaskStoreV2): TaskV2[] {
+  return archivedTaskIdsV2(store)
     .map((id) => readArchivedTaskV2(store, id))
     .filter((task): task is TaskV2 => task !== undefined)
     .sort((left, right) => left.created_at.localeCompare(right.created_at))
@@ -951,7 +987,7 @@ function createTask(
   return { task, warnings }
 }
 
-// 默认产品路径保持冻结 v2；schema 3 创建只由临时 fixture 调用。
+// createTaskV2 只保留给 legacy fixture；CLI checkpoint 使用 schema 3。
 export function createTaskV2(
   store: TaskStoreV2,
   input: CreateTaskV2Input,
@@ -1000,8 +1036,7 @@ export function selectCurrentTaskV2(
   return canonicalId
 }
 
-function lastTaskActor(store: TaskStoreV2, task: TaskV2) {
-  const events = readTaskEventsForTask(store, task)
+function lastTaskActor(task: TaskV2, events: TaskEvent[]) {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index]
     if (event.revision === task.revision) return event.actor
@@ -1013,13 +1048,20 @@ function assertImmutableTaskFields(
   current: TaskV2,
   next: TaskV2,
   allowPrimaryWriterChange = false,
+  allowSchemaUpgrade = false,
 ) {
   const primaryWriterChanged =
     current.primary_writer !== next.primary_writer ||
     Object.hasOwn(current, 'primary_writer') !==
       Object.hasOwn(next, 'primary_writer')
   const changed = [
-    next.schema_version !== current.schema_version && 'schema_version',
+    next.schema_version !== current.schema_version &&
+      !(
+        allowSchemaUpgrade &&
+        current.schema_version === V2_SCHEMA_VERSION &&
+        next.schema_version === V3_SCHEMA_VERSION
+      ) &&
+      'schema_version',
     next.id !== current.id && 'id',
     next.revision !== current.revision && 'revision',
     !allowPrimaryWriterChange && primaryWriterChanged && 'primary_writer',
@@ -1037,16 +1079,19 @@ function assertRevisionMatches(
   expectedRevision: number,
 ) {
   if (task.revision === expectedRevision) return
+  const events = readTaskEventLogForTask(store, task).events
   throw new Error(
     `Task changed: expected revision ${expectedRevision}, current revision ${task.revision}.\n` +
-      `Changed by: ${lastTaskActor(store, task)}.\n` +
+      `Changed by: ${lastTaskActor(task, events)}.\n` +
       `Run latch context ${task.id} --json --brief and retry.`,
   )
 }
 
 function assertPrimaryWriter(task: TaskV2, actor: string) {
-  if (task.schema_version === V2_SCHEMA_VERSION) return
-  if (!Object.hasOwn(task, 'primary_writer'))
+  if (
+    task.schema_version === V2_SCHEMA_VERSION ||
+    !Object.hasOwn(task, 'primary_writer')
+  )
     throw new Error(
       'Task is legacy_unclaimed: write denied.\n' +
         'Claim this task after an explicit user continue/handle request for this task id.',
@@ -1082,6 +1127,7 @@ type CommitTaskUpdateOptions = {
   authorize: (current: TaskV2) => void
   update: (task: TaskV2) => void
   allowPrimaryWriterChange?: boolean
+  allowSchemaUpgrade?: boolean
 }
 
 // task.json 是提交点；event 失败不会把已提交更新伪装成完全失败。
@@ -1107,6 +1153,7 @@ function commitTaskUpdate(
       current,
       next,
       options.allowPrimaryWriterChange,
+      options.allowSchemaUpgrade,
     )
     next.revision = current.revision + 1
     next.updated_at = now()
@@ -1191,19 +1238,25 @@ export function claimTaskV3(
       },
     ],
     authorize(task) {
-      if (task.schema_version !== V3_SCHEMA_VERSION)
-        throw new Error(
-          'Writer claim requires schema_version 3; frozen v2 data was not modified.',
-        )
-      if (Object.hasOwn(task, 'primary_writer'))
+      if (
+        task.schema_version === V3_SCHEMA_VERSION &&
+        Object.hasOwn(task, 'primary_writer')
+      )
         throw new Error(
           `Task already has primary_writer: ${task.primary_writer}. Use takeover, not claim.`,
         )
     },
     update(task) {
+      if (task.schema_version === V2_SCHEMA_VERSION) {
+        task.schema_version = V3_SCHEMA_VERSION
+        task.profile = 'standard'
+      } else if (!task.profile) {
+        task.profile = 'standard'
+      }
       task.primary_writer = options.actor
     },
     allowPrimaryWriterChange: true,
+    allowSchemaUpgrade: true,
   })
 }
 
@@ -1245,6 +1298,89 @@ export function takeoverTaskV3(
     'The previous writer may still modify the shared Git worktree; Latch only rejects its task writes.',
   )
   return result
+}
+
+function resolveTaskIdForDowngrade(store: TaskStoreV2, id: string) {
+  assertTaskIdToken(id)
+  const ids = [...new Set([
+    ...openTaskIdsV2(store),
+    ...archivedTaskIdsV2(store),
+  ])]
+  if (ids.includes(id)) return id
+  const matches = ids.filter((taskId) => taskId.startsWith(id))
+  if (matches.length === 1) return matches[0]
+  if (matches.length > 1)
+    throw new Error(`Task id is ambiguous: ${id}. Matches: ${matches.join(', ')}`)
+  throw new Error(`Task not found: ${id}`)
+}
+
+function taskDirectoryForDowngrade(store: TaskStoreV2, id: string) {
+  const openDirectory = taskDirectoryV2(store, id)
+  if (existsSync(join(openDirectory, 'task.json'))) return openDirectory
+  const archivedDirectory = archivedTaskDirectoryV2(store, id)
+  if (archivedDirectory) return archivedDirectory
+  throw new Error(`Task not found: ${id}`)
+}
+
+export function downgradeTaskV2(
+  store: TaskStoreV2,
+  id: string,
+  options: { expectRevision: number; actor: string },
+): DowngradeTaskV2Result {
+  assertExpectedRevision(options.expectRevision)
+  assertWritableActor(options.actor)
+  const canonicalId = resolveTaskIdForDowngrade(store, id)
+
+  return withTaskLockV2(store, canonicalId, () =>
+    withStateLockV2(store, () => {
+      const directory = taskDirectoryForDowngrade(store, canonicalId)
+      const taskPath = join(directory, 'task.json')
+      const current = readTaskFromDirectory(store, canonicalId, directory)
+      if (current.revision !== options.expectRevision) {
+        const events = readTaskEventLogFromDirectory(current, directory).events
+        throw new Error(
+          `Task changed: expected revision ${options.expectRevision}, current revision ${current.revision}.\n` +
+            `Changed by: ${lastTaskActor(current, events)}.\n` +
+            `Run latch context ${current.id} --json --brief and retry.`,
+        )
+      }
+      if (current.schema_version !== V3_SCHEMA_VERSION)
+        throw new Error('downgrade-v2 requires a schema_version 3 task.')
+
+      const eventLog = readTaskEventLogFromDirectory(current, directory)
+      const next = downgradeTaskValue(current)
+      const events = downgradeTaskEvents(eventLog.events)
+      assertTaskV2(next, taskPath)
+      for (const [index, event] of events.entries())
+        validateTaskEventV2(event, `${join(directory, 'events.jsonl')}:${index + 1}`)
+
+      const backupRoot = join(store.paths.archiveDir, 'v3-backup')
+      const timestamp = now().replace(/\D/g, '')
+      const backupDirectory = join(backupRoot, `${canonicalId}-${timestamp}`)
+      if (existsSync(backupDirectory))
+        throw new Error(`V3 backup already exists: ${backupDirectory}`)
+      mkdirSync(backupRoot, { recursive: true })
+      cpSync(directory, backupDirectory, {
+        recursive: true,
+        errorOnExist: true,
+        force: false,
+      })
+
+      const serializedEvents = events.length > 0
+        ? `${events.map((event) => JSON.stringify(event)).join('\n')}\n`
+        : ''
+      writeTextAtomic(join(directory, 'events.jsonl'), serializedEvents)
+      writeJsonAtomic(taskPath, next)
+
+      return {
+        task: next,
+        warnings: eventLog.warnings,
+        backupPath: relative(store.paths.workspaceRoot, backupDirectory)
+          .split(sep)
+          .join('/'),
+      }
+    }),
+  )
 }
 
 function clearTaskFromStateV2(store: TaskStoreV2, id: string) {

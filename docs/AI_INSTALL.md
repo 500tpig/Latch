@@ -3,6 +3,8 @@
 Latch v2 面向个人 macOS 开发环境。当前全局 CLI 已使用 v2 构建，两个
 全局 skill 均链接到本 repo 的 canonical source。v1 备份在观察期结束前继续保留。
 
+schema 3 task 写入与 R2 回退要求 CLI 版本不低于 `0.2.0`。该版本仍保留显式 Latch 入口和 v2 JSON envelope；全面 current 切换不在本阶段内。
+
 ## 检查当前安装
 
 检查全局命令：
@@ -19,7 +21,7 @@ pnpm list --global --depth -1
 pnpm skill:check
 ```
 
-`latch --help` 应只显示 v2 命令。接入状态与来源 commit 见
+`latch --help` 应显示 `claim`、`patch-submission-knowledge-impact` 和 `downgrade-v2`。接入状态与来源 commit 见
 [接入状态](ADOPTER_SYNC.md)。
 
 ## 构建 CLI
@@ -75,11 +77,26 @@ pnpm skill:link
 latch init
 ```
 
+初始化后的 `checkpoint` 创建 schema 3 standard task。既有 schema 2 task 不批量改写；明确继续具体 task 后，由 `claim` 完成升级。
+
 v2 不迁移 v1。已有 `.latch` 时，先将原目录备份到 repo 外，记录来源和
 checksum，确认恢复方法，再移走旧目录并执行 `latch init`。备份位置记录在
 对应接入 task 中，不写入 current 文档。
 
 业务项目的 AGENTS 只保留显式 Latch 入口、全局 skill 使用方式和项目自身验证规则。
+
+## Schema 3 task 回退
+
+回退单张 task 前先停止该 task 的其它写入，并确认 v3 专用字段和 event 细节只保留在 backup：
+
+```bash
+latch downgrade-v2 \
+  --task <task-id> \
+  --expect-revision <revision> \
+  --confirm-data-loss
+```
+
+成功后检查命令返回的 `.latch/archive/v3-backup/` 路径，并使用目标 v2 CLI 执行 `context <task-id> --json`。回退失败时不得删除 `.latch` 或已创建的 backup。
 
 ## 备份保留
 

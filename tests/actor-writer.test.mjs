@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import {
+  createTaskV2,
   createTaskV3,
   initTaskStoreV2,
 } from '../dist/core/task-store.js'
@@ -151,48 +152,58 @@ test('invalid actors cannot write or use current while explicit reads remain ava
   assert.equal(readTask(cwd, task.id).revision, 1)
 })
 
-test('default checkpoint remains v2 and cannot append writer events', () => {
+test('default checkpoint creates schema 3 and claim promotes a legacy v2 task', () => {
   const cwd = temporaryDirectory()
   assert.equal(run(cwd, ['init']).status, 0)
   writePlan(cwd)
   const created = run(cwd, [
     'checkpoint',
-    'v2 compatibility',
+    'schema 3 default',
     '--plan-file',
     'plan.json',
     '--json',
   ])
   assert.equal(created.status, 0, created.stderr)
   const id = JSON.parse(created.stdout).task_id
-  const beforeTask = readFileSync(taskPath(cwd, id), 'utf8')
-  const eventsPath = join(taskDirectory(cwd, id), 'events.jsonl')
+  const task = readTask(cwd, id)
+  assert.equal(task.schema_version, 3)
+  assert.equal(task.profile, 'standard')
+  assert.equal(task.primary_writer, writerA)
+
+  const store = initTaskStoreV2(cwd)
+  const legacy = createTaskV2(
+    store,
+    { title: 'legacy v2', plan: plan() },
+    writerA,
+  ).task
+  const eventsPath = join(taskDirectory(cwd, legacy.id), 'events.jsonl')
+  const beforeTask = readFileSync(taskPath(cwd, legacy.id), 'utf8')
   const beforeEvents = readFileSync(eventsPath, 'utf8')
 
-  const task = readTask(cwd, id)
-  assert.equal(task.schema_version, 2)
-  assert.equal('primary_writer' in task, false)
-  assert.deepEqual(beforeEvents.trim().split('\n').map(JSON.parse).map((event) => event.type), [
-    'task_created',
+  const denied = run(cwd, [
+    'save', legacy.id, '--expect-revision', '1',
+    '--block-reason', 'waiting', '--waiting-for', 'user',
   ])
+  assert.notEqual(denied.status, 0)
+  assert.match(denied.stderr, /legacy_unclaimed/)
+  assert.equal(readFileSync(taskPath(cwd, legacy.id), 'utf8'), beforeTask)
+  assert.equal(readFileSync(eventsPath, 'utf8'), beforeEvents)
 
   const claim = run(cwd, [
     'claim',
-    id,
+    legacy.id,
     '--expect-revision',
     '1',
     '--reason',
     'continue-request',
   ])
-  assert.notEqual(claim.status, 0)
-  assert.match(claim.stderr, /requires schema_version 3/)
-  assert.equal(readFileSync(taskPath(cwd, id), 'utf8'), beforeTask)
-  assert.equal(readFileSync(eventsPath, 'utf8'), beforeEvents)
-
-  task.primary_writer = writerA
-  writeTask(cwd, task)
-  const mixedSchema = run(cwd, ['context', id, '--json'])
-  assert.notEqual(mixedSchema.status, 0)
-  assert.match(mixedSchema.stderr, /schema_version 3 is required/)
+  assert.equal(claim.status, 0, claim.stderr)
+  const promoted = readTask(cwd, legacy.id)
+  assert.equal(promoted.schema_version, 3)
+  assert.equal(promoted.profile, 'standard')
+  assert.equal(promoted.primary_writer, writerA)
+  assert.equal(promoted.revision, 2)
+  assert.equal(readTaskEventsV3(taskDirectory(cwd, legacy.id)).at(-1).type, 'writer_claimed')
 })
 
 test('schema 3 creation binds the primary writer and use does not grant writes', () => {

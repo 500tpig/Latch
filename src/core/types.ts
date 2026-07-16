@@ -105,7 +105,7 @@ export type TaskSubmission = {
   submitted_at: string
 }
 
-// C1-C3 期间 schema 3 仅供临时 fixture；默认产品创建仍固定为 schema 2。
+// C6 后新 task 写 schema 3；schema 2 继续用于 legacy 读取和 R2 回退。
 export type TaskV2 = {
   schema_version: 2 | 3
   id: string
@@ -195,6 +195,15 @@ export type BaseTaskEvent = {
   task_id: string
   actor: string
   revision: number
+  created_at: string
+}
+
+export type TaskEventsMeta = {
+  type: 'events_meta'
+  events_schema_version: 3
+  actor: string
+  task_id: string
+  revision: 0
   created_at: string
 }
 

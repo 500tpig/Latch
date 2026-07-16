@@ -110,9 +110,15 @@ function verify(cwd, id, name, extra = []) {
 }
 
 function submit(cwd, id, extra = []) {
+  const impactFile = `impact-${Math.random()}.json`
+  writeFileSync(join(cwd, impactFile), `${JSON.stringify({
+    kind: 'none',
+    reason: 'Review lifecycle fixture does not change module contracts.',
+  })}\n`)
   return run(cwd, [
     'submit', id, '--expect-revision', revision(cwd, id),
-    '--changes', '实现完成', '--unverified', '未做浏览器验收', ...extra, '--json',
+    '--changes', '实现完成', '--unverified', '未做浏览器验收',
+    '--knowledge-impact-file', impactFile, ...extra, '--json',
   ])
 }
 

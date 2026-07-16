@@ -17,6 +17,7 @@ import { spawnSync } from 'node:child_process'
 import {
   archiveTaskV2,
   createTaskV2,
+  createTaskV3,
   currentTaskIdV2,
   initTaskStoreV2,
   listTasksV2,
@@ -29,7 +30,10 @@ import {
   withStateLockV2,
   withTaskLockV2,
 } from '../dist/core/task-store.js'
-import { readTaskEventsV2 } from '../dist/core/notes-events.js'
+import {
+  readTaskEventsV2,
+  readTaskEventsV3,
+} from '../dist/core/notes-events.js'
 
 const temporaryDirectories = []
 
@@ -59,6 +63,14 @@ function plan(overrides = {}) {
 }
 
 function create(store, title = '相同标题', actor = 'codex:session:a') {
+  return createTaskV3(
+    store,
+    { title, plan: plan(), profile: 'standard' },
+    actor,
+  ).task
+}
+
+function createV2(store, title = '相同标题', actor = 'codex:session:a') {
   return createTaskV2(store, { title, plan: plan() }, actor).task
 }
 
@@ -82,8 +94,8 @@ test.afterEach(() => {
 test('schema v2 使用毫秒时间和随机后缀，重复标题不覆盖且不创建 notes', () => {
   const root = temporaryDirectory()
   const store = initTaskStoreV2(root)
-  const first = create(store)
-  const second = create(store)
+  const first = createV2(store)
+  const second = createV2(store)
 
   assert.notEqual(first.id, second.id)
   assert.match(first.id, /^\d{17}-相同标题-[a-f0-9]{6}$/)
@@ -196,9 +208,9 @@ test('archive 清除所有 actor 的 current 并保留 v2 task 与 events', () =
   assert.equal(monthDirectories.length, 1)
   const archivedDirectory = join(store.paths.archiveDir, monthDirectories[0], task.id)
   const archivedJson = JSON.parse(readFileSync(join(archivedDirectory, 'task.json'), 'utf8'))
-  assert.equal(archivedJson.schema_version, 2)
+  assert.equal(archivedJson.schema_version, 3)
   assert.equal(existsSync(join(archivedDirectory, 'notes.md')), false)
-  assert.equal(readTaskEventsV2(archivedDirectory).at(-1).type, 'done')
+  assert.equal(readTaskEventsV3(archivedDirectory).at(-1).type, 'done')
 })
 
 test('create 的 current state 写失败时 task 仍创建并返回 warning', () => {
@@ -230,7 +242,7 @@ test('event 追加失败时 task 更新仍返回成功和 warning', () => {
 
   const result = updateTaskV2(store, task.id, {
     expectRevision: 1,
-    actor: 'codex:session:writer',
+    actor: 'codex:session:a',
     events: [{ type: 'plan_updated' }],
     update(next) {
       next.plan.approach = ['task.json 是提交点']
@@ -276,7 +288,7 @@ test('archive state 清理失败时归档仍成功且 stale current 不生效', 
 test('过期 revision 拒绝写入，task、events 和 state 保持不变', () => {
   const root = temporaryDirectory()
   const store = initTaskStoreV2(root)
-  const task = create(store, '并发更新')
+  const task = create(store, '并发更新', 'codex:session:writer')
   const updateResult = updateTaskV2(store, task.id, {
     expectRevision: 1,
     actor: 'codex:session:writer',

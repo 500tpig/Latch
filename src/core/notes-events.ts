@@ -9,7 +9,7 @@ import {
 import { join } from 'node:path'
 import { isWritableActor } from './actor.js'
 import { TASK_EVENT_TYPES, TASK_EVENT_TYPES_V3 } from './types.js'
-import type { TaskEvent } from './types.js'
+import type { TaskEvent, TaskEventsMeta } from './types.js'
 
 const taskEventTypes = new Set<string>(TASK_EVENT_TYPES)
 const taskEventTypesV3 = new Set<string>(TASK_EVENT_TYPES_V3)
@@ -160,6 +160,22 @@ export function validateTaskEventV3(
   validateTaskEvent(value, path, taskEventTypesV3)
 }
 
+function validateTaskEventsMeta(
+  value: unknown,
+  path: string,
+): asserts value is TaskEventsMeta {
+  if (!isRecord(value) || value.type !== 'events_meta')
+    throw new Error(`Invalid events_meta in ${path}.`)
+  if (value.events_schema_version !== 3 || value.revision !== 0)
+    throw new Error(`Invalid events_meta version or revision in ${path}.`)
+  if (typeof value.actor !== 'string' || !value.actor.trim())
+    throw new Error(`Invalid events_meta actor in ${path}.`)
+  if (typeof value.task_id !== 'string' || !value.task_id.trim())
+    throw new Error(`Invalid events_meta task_id in ${path}.`)
+  if (typeof value.created_at !== 'string' || !value.created_at.trim())
+    throw new Error(`Invalid events_meta created_at in ${path}.`)
+}
+
 type TaskEventValidator = (
   value: unknown,
   path: string,
@@ -209,11 +225,65 @@ function readTaskEvents(
   })
 }
 
+export type TaskEventLogV3 = {
+  meta?: TaskEventsMeta
+  events: TaskEvent[]
+  warnings: string[]
+}
+
+export function readTaskEventLogV3(taskDirectory: string): TaskEventLogV3 {
+  const eventsPath = join(taskDirectory, 'events.jsonl')
+  if (!existsSync(eventsPath)) return { events: [], warnings: [] }
+  const lines = readFileSync(eventsPath, 'utf8').split('\n')
+  if (lines.at(-1) === '') lines.pop()
+  if (lines.length === 0) return { events: [], warnings: [] }
+
+  let meta: TaskEventsMeta | undefined
+  const events: TaskEvent[] = []
+  const warnings: string[] = []
+  for (const [index, line] of lines.entries()) {
+    const entryPath = `${eventsPath}:${index + 1}`
+    let entry: unknown
+    try {
+      entry = JSON.parse(line)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      throw new Error(`Cannot read JSON ${entryPath}: ${message}`)
+    }
+    if (isRecord(entry) && entry.type === 'events_meta') {
+      if (index !== 0 || meta)
+        throw new Error(`Cannot read JSON ${entryPath}: events_meta must be the unique first line.`)
+      try {
+        validateTaskEventsMeta(entry, entryPath)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        throw new Error(`Cannot read JSON ${entryPath}: ${message}`)
+      }
+      meta = entry
+      continue
+    }
+    if (!isRecord(entry) || typeof entry.type !== 'string')
+      throw new Error(`Cannot read JSON ${entryPath}: Invalid event type in ${entryPath}.`)
+    if (!taskEventTypesV3.has(entry.type)) {
+      warnings.push(`Skipped unknown event type ${entry.type} in ${entryPath}.`)
+      continue
+    }
+    try {
+      validateTaskEventV3(entry, entryPath)
+      events.push(entry)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      throw new Error(`Cannot read JSON ${entryPath}: ${message}`)
+    }
+  }
+  return { ...(meta ? { meta } : {}), events, warnings }
+}
+
 // v2 不再生成 notes.md；当前状态读 task.json，历史只从 events.jsonl 读取。
 export function readTaskEventsV2(taskDirectory: string): TaskEvent[] {
   return readTaskEvents(taskDirectory, validateTaskEventV2)
 }
 
 export function readTaskEventsV3(taskDirectory: string): TaskEvent[] {
-  return readTaskEvents(taskDirectory, validateTaskEventV3)
+  return readTaskEventLogV3(taskDirectory).events
 }

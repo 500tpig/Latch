@@ -74,14 +74,19 @@ function init(cwd) {
   assert.equal(result.status, 0, result.stderr)
 }
 
-function checkpoint(cwd, title, overrides = {}) {
+function checkpoint(
+  cwd,
+  title,
+  overrides = {},
+  actor = 'codex:session:lifecycle',
+) {
   const result = run(cwd, [
     'checkpoint',
     title,
     '--plan-file',
     writePlan(cwd, plan(overrides)),
     '--json',
-  ])
+  ], actor)
   assert.equal(result.status, 0, result.stderr)
   return JSON.parse(result.stdout)
 }
@@ -141,6 +146,7 @@ test('plan requires direct approval before dev and approval binds plan revision'
   assert.equal(task.work_revision, 1)
   assert.equal(task.implementation_approval.approved_plan_revision, 1)
   assert.equal(task.implementation_approval.source, 'user')
+  assert.equal('work_basis' in task, false)
 })
 
 test('approve rejects open questions without persistence side effects', () => {
@@ -267,8 +273,18 @@ test('archived done and abandoned tasks do not produce a shared worktree warning
 test('two real processes approving different tasks both succeed independently', async () => {
   const cwd = temporaryDirectory()
   init(cwd)
-  const first = checkpoint(cwd, 'parallel first')
-  const second = checkpoint(cwd, 'parallel second')
+  const first = checkpoint(
+    cwd,
+    'parallel first',
+    {},
+    'codex:session:parallel-a',
+  )
+  const second = checkpoint(
+    cwd,
+    'parallel second',
+    {},
+    'codex:session:parallel-b',
+  )
   const args = (created) => [
     'approve', created.task_id, '--expect-revision', '1', '--reason', '用户批准', '--json',
   ]

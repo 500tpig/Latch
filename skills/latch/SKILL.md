@@ -30,7 +30,7 @@ The explicit Latch entry rule remains active until the final contract and instru
 - Use standard plan and explicit approval when implementation requires design choice, migration, authentication, public API changes, destructive data handling, or multiple disputed gates.
 - Stop and return to `plan` when implementation reveals missing information or scope expansion; do not stretch an earlier authorization to cover it.
 
-Schema 3 fixture authorization uses `--authorization-file`; retrospective input uses `--retrospective-file`; submit and legacy patch use `--knowledge-impact-file`. Until C6/R2 is delivered, do not use these options to upgrade or modify real schema 2 `.latch` tasks; real task management continues through the frozen v2 commands.
+Schema 3 authorization uses `--authorization-file`; retrospective input uses `--retrospective-file`; submit and legacy patch use `--knowledge-impact-file`. A schema 2 task must be explicitly claimed before these commands can modify it.
 
 ## C3 group rules (partial release)
 
@@ -38,7 +38,7 @@ Schema 3 fixture authorization uses `--authorization-file`; retrospective input 
 - Keep every member as an independent task with its own writer, authorization, verification, review, and archive decision.
 - A blocked or archived sibling never blocks another member, and continuing one task never authorizes group-wide claim or takeover.
 - Use `list --group <id>` for open members, add `--include-archive` only when history is needed, and treat context siblings as read-only hints.
-- Until C6/R2 is delivered, create or mutate `group_id` only in schema 3 fixtures; default `checkpoint` and real schema 2 `.latch` tasks remain group-free.
+- Create or mutate `group_id` only on schema 3 tasks; a legacy schema 2 task must be claimed first.
 
 ## C4 knowledge freshness rules (partial release)
 
@@ -56,6 +56,15 @@ Schema 3 fixture authorization uses `--authorization-file`; retrospective input 
 - Treat the 24000 pack limit, 8000 expand batch limit, and 48000 orientation expand limit as code-point budgets for the pack helper, not as limits on the whole conversation.
 - Never present stale, baseline-missing, errored, or retired knowledge as fresh; use the pack freshness label and expand into source files when current evidence is required.
 - Use `benchmark context` for reproducible diagnostics from supplied case/run files; it does not execute search tools and does not become a lifecycle gate.
+
+## C6 migration rules (partial release)
+
+- Treat CLI version `0.2.0` as the minimum writer for schema 3 task data and v3-only events.
+- Expect new `checkpoint` tasks to use schema 3, standard profile, and the current canonical session actor as `primary_writer`.
+- Treat a schema 2 open task as `legacy_unclaimed`; keep it read-only until the user explicitly continues that specific task, then run `claim` with its current revision.
+- Never infer a batch claim from one continued task, and never use ordinary writes to upgrade schema 2 data.
+- Run `downgrade-v2 --task <id> --expect-revision <n> --confirm-data-loss` only after explicit user confirmation that v3-only fields and event details will remain only in backup.
+- Preserve the returned `.latch/archive/v3-backup/` directory, do not delete `.latch`, and report any downgrade warning or partial failure before further task writes.
 
 ## Create and approve
 

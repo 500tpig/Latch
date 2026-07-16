@@ -3,7 +3,7 @@ import {
   currentTaskIdV2,
   listGroupTasksV3,
   listTasksV2,
-  taskEventsV2,
+  taskEventLogV2,
   taskHistoryIncompleteV2,
 } from './task-store.js'
 import type { TaskV2 } from './types.js'
@@ -198,14 +198,16 @@ export function contextJsonV2(
   actor: string,
   brief: boolean,
 ) {
-  const events = taskEventsV2(store, task.id)
+  const eventLog = taskEventLogV2(store, task.id)
+  const events = eventLog.events
   const group = groupContext(store, task)
   return {
     ...jsonEnvelopeV2(),
     current: currentTaskIdV2(store, actor) === task.id,
     task: brief ? briefTask(task) : task,
     recent_events: brief ? events.slice(-5) : events,
-    history_incomplete: taskHistoryIncompleteV2(store, task.id),
+    history_incomplete: taskHistoryIncompleteV2(store, task.id, events),
+    ...(eventLog.warnings.length > 0 ? { warnings: eventLog.warnings } : {}),
     ...(group ? { group } : {}),
   }
 }
@@ -246,7 +248,12 @@ export function contextHumanV2(
   actor: string,
 ) {
   const current = currentTaskIdV2(store, actor) === task.id
-  const historyIncomplete = taskHistoryIncompleteV2(store, task.id)
+  const eventLog = taskEventLogV2(store, task.id)
+  const historyIncomplete = taskHistoryIncompleteV2(
+    store,
+    task.id,
+    eventLog.events,
+  )
   const group = groupContext(store, task)
   const lines = [
     `Task: ${task.id}`,
@@ -264,6 +271,7 @@ export function contextHumanV2(
     `Open questions: ${task.plan.open_questions.join(' | ') || '-'}`,
     `Artifacts: ${task.artifacts.map((item) => `${item.kind}:${item.path}`).join(' | ') || '-'}`,
     `History incomplete: ${historyIncomplete ? 'yes' : 'no'}`,
+    ...eventLog.warnings.map((warning) => `Warning: ${warning}`),
   ]
   if (task.blocked) {
     lines.push(`Blocked: ${task.blocked.reason}`)
