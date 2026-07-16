@@ -1,16 +1,16 @@
-# Actor、primary writer、claim 与 takeover（最终契约草案节）
+# Actor、primary writer、claim 与 takeover
 
 Source-Task: 20260714084358411-重审-latch-最终任务与知识上下文设计-51d5e1
 
-Decision-Status: design-accepted
+Decision-Status: approved
 
-Document-Status: draft (Actor chapter base for final PRD; not product-approved)
+Document-Status: current component of `2026-07-15-latch-final-product-contract.md`
 
 Date: 2026-07-15
 
-Revision: 2
+Revision: 3
 
-Revised: 2026-07-15 — C 审阅修正：提交点非事务、legacy 仅字段缺失、use 写死、批量 claim 逐 task。
+Released: 2026-07-16 — 全面 current 发布。
 
 依据：handoff revision 28 及此前已锁定决定。本节供并入最终 PRD，**不**替代现行已批准的 v2 全文，直至最终 PRD 批准并废止冲突条款。
 
@@ -247,6 +247,7 @@ open task 且已存在 `primary_writer`，且调用方 `A !== primary_writer`。
 | 相同 | 继续 | 直接写；无 takeover 事件 |
 | 不同 | 明确「接手 task X」「把 task X 切到当前对话」等 | **直接** takeover，不二次确认 |
 | 不同 | 仅「继续 task X」 | 先只读恢复 context；告知当前 `primary_writer`；**询问一次**是否转到当前会话；用户明确同意后再 takeover |
+| 不同 | 新对话、fork、交接或对话快满 | 先只读恢复 context；新 session 必须获得明确 takeover 授权；plan approval 不替代该授权 |
 | 任意 | 仅查看状态 | 不 takeover |
 
 ### 7.3 语义
@@ -260,6 +261,8 @@ open task 且已存在 `primary_writer`，且调用方 `A !== primary_writer`。
 - **不**构成 implementation approval；
 - 旧 writer 此后对该 task 的写入失败；
 - 输出必须提示：旧会话可能仍修改共享 worktree；Latch 只能拒绝其对 task 的写入。
+
+fork 或新对话均视为新 session。正常顺序交接中，旧 writer 停止写入后再完成 takeover，不构成并行工作，`provenance` 保持 `clean`；只有用户明确接受重叠并行时才写入 `mixed`。同一用户消息可同时明确授权 takeover 与当前 plan approval，但必须先完成 takeover、重新读取 revision，再执行 `approve`。
 
 ### 7.4 命令要求与提交点
 

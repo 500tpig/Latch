@@ -1,16 +1,16 @@
-# Group 最小集（最终契约草案节）
+# Group 最小集
 
 Source-Task: 20260714084358411-重审-latch-最终任务与知识上下文设计-51d5e1
 
-Decision-Status: design-accepted
+Decision-Status: approved
 
-Document-Status: draft (Group chapter base for final PRD; not product-approved)
+Document-Status: current component of `2026-07-15-latch-final-product-contract.md`
 
 Date: 2026-07-15
 
-Revision: 1
+Revision: 2
 
-Accepted: 2026-07-15 — design-accepted (user proceed; not product approve).
+Released: 2026-07-16 — 全面 current 发布。
 
 依据：handoff 已锁定「group 只读聚合」；与 Actor、Light 设计-accepted 底稿配套。本节供并入最终 PRD，**不**替代现行已批准 v2 全文，直至最终 PRD 批准。
 

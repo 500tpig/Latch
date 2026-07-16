@@ -13,6 +13,14 @@ const currentDocs = [
   'docs/HANDBOOK.md',
   'docs/DESIGN.md',
   'docs/AI_INSTALL.md',
+  'docs/prd/2026-07-15-latch-final-product-contract.md',
+  'docs/prd/2026-07-15-latch-workflow-triggers-draft.md',
+  'docs/prd/2026-07-15-latch-actor-writer-affinity-draft.md',
+  'docs/prd/2026-07-15-latch-light-proof-package-draft.md',
+  'docs/prd/2026-07-15-latch-group-minimal-draft.md',
+  'docs/prd/2026-07-15-latch-knowledge-freshness-draft.md',
+  'docs/prd/2026-07-15-latch-context-benchmark-draft.md',
+  'docs/prd/2026-07-15-latch-migration-cli-draft.md',
   'docs/ARTIFACTS.md',
   'docs/SCENARIOS.md',
   'docs/ADOPTER_SYNC.md',
@@ -64,6 +72,39 @@ test('docs index relative markdown links resolve', () => {
     if (/^[a-z]+:/i.test(target) || target.startsWith('#')) continue
     assert.equal(existsSync(resolve(dirname(indexPath), target)), true, target)
   }
+})
+
+test('current contract and instruction surface use the final A/B/C rules', () => {
+  const index = text('docs/INDEX.md')
+  const handBook = text('docs/HANDBOOK.md')
+  const agents = text('AGENTS.md')
+  const skill = text('skills/latch/SKILL.md')
+  assert.match(index, /2026-07-15-latch-final-product-contract\.md/)
+  assert.doesNotMatch(index, /Latch v2 PRD\]\(prd\/2026-07-10-latch-v2\.md\)[\s\S]*唯一产品契约/)
+  for (const content of [handBook, agents, skill]) {
+    assert.match(content, /A[：:].*grill/i)
+    assert.match(content, /B[：:].*light/i)
+    assert.match(content, /C[：:].*standard/i)
+  }
+})
+
+test('cross-session handoff requires takeover separate from implementation approval', () => {
+  const handBook = text('docs/HANDBOOK.md')
+  const actor = text('docs/prd/2026-07-15-latch-actor-writer-affinity-draft.md')
+  const skill = text('skills/latch/SKILL.md')
+  for (const content of [handBook, actor, skill]) {
+    assert.match(content, /新对话|new conversation/)
+    assert.match(content, /takeover/)
+    assert.match(content, /implementation approval|implementation approval|实施批准/)
+    assert.match(content, /provenance.*clean|`provenance: clean`/)
+  }
+  assert.match(skill, /task-id/)
+  assert.match(skill, /phase\/revision/)
+  assert.match(skill, /old-writer/)
+  assert.match(skill, /Unfinished work/)
+  assert.match(skill, /Worktree status/)
+  assert.match(skill, /old session must stop writing/)
+  assert.match(skill, /takeover first[\s\S]*approve/)
 })
 
 test('skill scripts manage links without copied docs snapshots', () => {

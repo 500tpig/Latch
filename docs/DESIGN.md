@@ -1,8 +1,14 @@
-# Latch v2 设计边界
+# Latch 设计边界
 
 ## 定位
 
 Latch 是个人 macOS 开发环境中的本地任务状态记录器。它帮助 AI 保存明确 task 的当前计划、实施批准、验证和 review 状态，不替代项目管理系统或 Git。
+
+当前产品契约见 [Latch 最终产品契约](prd/2026-07-15-latch-final-product-contract.md)。
+
+## 触发规则
+
+对会导致仓库写入或明确改变可观察行为的请求，先使用触发章 A/B/C 判定表：A 停在 grill；B 创建或续接 light task 并以请求授权；C 创建或续接 standard task，展示 plan 后等待明确 approve。纯问答、只读探索、无写入意图或明确要求「不用 Latch」的请求不建 task。
 
 ## 当前事实
 
@@ -14,6 +20,7 @@ Latch 是个人 macOS 开发环境中的本地任务状态记录器。它帮助 
 - schema 3 新 task 写入根 `provenance: clean`；历史 task 缺失该字段时按 `clean` 读取，只有明确的重叠并行或隔离恢复才显式修改。
 - light request 与 retrospective task 可在 `checkpoint` 时原子写入 work basis，不需要创建后再拼接生命周期状态。
 - schema 3 task 可通过带完整 backup 的 `downgrade-v2` 投影回可写 schema 2。
+- `docs/INDEX.md` 指向唯一 current 产品契约；七个分章按主题覆盖历史 v2 基线。
 
 ## 关键取舍
 

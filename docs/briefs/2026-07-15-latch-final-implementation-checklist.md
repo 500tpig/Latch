@@ -2,10 +2,10 @@
 
 Source-Task: 20260714084358411-重审-latch-最终任务与知识上下文设计-51d5e1
 
-状态：由 design-accepted 最终契约候选（task 约 revision 44 及随后确认）按迁移章 §7.3 **C1–C8** 派生。  
-**不是**产品设计文档；**不是**实施 approve。
+状态：2026-07-16 已完成 C1–C8 并发布全面 current。
+本文件记录实施证据，不是 current 产品契约。
 
-契约入口：`docs/prd/2026-07-15-latch-final-product-contract-draft.md`  
+契约入口：`docs/prd/2026-07-15-latch-final-product-contract.md`
 发布边界权威：`docs/prd/2026-07-15-latch-migration-cli-draft.md` §7
 
 ## 总原则
@@ -16,66 +16,66 @@ Source-Task: 20260714084358411-重审-latch-最终任务与知识上下文设计
 
 ## C1 — S0 Actor
 
-- [ ] session actor fail closed（`tool:session:id`；default 不可写）
-- [ ] `primary_writer`；新 task 必写
-- [ ] legacy_unclaimed + 继续指定 task → claim
-- [ ] 非对称 takeover
-- [ ] R2 相关：schema 3 写入门闸（与 S6 衔接）
-- [ ] 验收样本：本设计 task 类 `claude:default` 历史 → claim 路径
-- [ ] 文档/ skill 段落：仅 Actor 范围（若部分生效）
+- [x] session actor fail closed（`tool:session:id`；default 不可写）
+- [x] `primary_writer`；新 task 必写
+- [x] legacy_unclaimed + 继续指定 task → claim
+- [x] 非对称 takeover
+- [x] R2 相关：schema 3 写入门闸（与 S6 衔接）
+- [x] 验收样本：本设计 task 类 `claude:default` 历史 → claim 路径
+- [x] 文档/skill 段落：Actor 范围
 
 ## C2 — S1 Light 证明包
 
-- [ ] `profile` light/standard
-- [ ] `work_basis`（authorization | retrospective）
-- [ ] 证明包门禁；light 禁 `--no-verify`
-- [ ] submit → review 必停；明确归档才 done
-- [ ] `knowledge_impact` submit 输入 / done 校验
-- [ ] plan/work revision 失效与 double binding
-- [ ] legacy submission patch impact
-- [ ] 触发判定表 skill 规则可与本 slice 同发（S2）
+- [x] `profile` light/standard
+- [x] `work_basis`（authorization | retrospective）
+- [x] 证明包门禁；light 禁 `--no-verify`
+- [x] submit → review 必停；明确归档才 done
+- [x] `knowledge_impact` submit 输入 / done 校验
+- [x] plan/work revision 失效与 double binding
+- [x] legacy submission patch impact
+- [x] 触发判定表 skill 规则已随 C8 发布
 
 ## C3 — S3 Group
 
-- [ ] 可选 `group_id`
-- [ ] `list --group`、兄弟只读摘要
-- [ ] 无 group 门禁/状态机
+- [x] 可选 `group_id`
+- [x] `list --group`、兄弟只读摘要
+- [x] 无 group 门禁/状态机
 
 ## C4 — S4 知识 freshness
 
-- [ ] frontmatter：`covers`、`last_fingerprint`、algo
-- [ ] fingerprint 计算与 stale 行为
-- [ ] 基线更新时机（禁止仅因读取更新）
-- [ ] 与 impact=updated / artifact 联调
+- [x] frontmatter：`covers`、`last_fingerprint`、algo
+- [x] fingerprint 计算与 stale 行为
+- [x] 基线更新时机（禁止仅因读取更新）
+- [x] 与 impact=updated / artifact 联调
 
 ## C5 — S5 Context + benchmark
 
-- [ ] context pack 24000 code points 硬顶与 meta
-- [ ] orientation 累计扩读
-- [ ] `benchmark context` diagnostic + 最小 fixture
-- [ ] freshness 标注接入 pack
+- [x] context pack 24000 code points 硬顶与 meta
+- [x] orientation 累计扩读
+- [x] `benchmark context` diagnostic + 最小 fixture
+- [x] freshness 标注接入 pack
 
 ## C6 — S6 迁移与回退
 
-- [ ] schema 2→3 升级路径
-- [ ] v3 事件写入门闸
-- [ ] legacy patch / claim 迁移命令
-- [ ] **`downgrade-v2` R2**（backup + 字段映射 + events 1..n）
-- [ ] 失败不删 `.latch`
+- [x] schema 2→3 升级路径
+- [x] v3 事件写入门闸
+- [x] legacy patch / claim 迁移命令
+- [x] **`downgrade-v2` R2**（backup + 字段映射 + events 1..n）
+- [x] 失败不删 `.latch`
 
 ## C7 — 文档全面 current（仅当 C1–C6 已交付）
 
-- [ ] 最终 PRD 定稿路径写入 INDEX 为 current
-- [ ] v2 PRD 降为历史
-- [ ] HANDBOOK 对齐
-- [ ] DESIGN 必要段对齐
+- [x] 最终 PRD 定稿路径写入 INDEX 为 current
+- [x] v2 PRD 降为历史
+- [x] HANDBOOK 对齐
+- [x] DESIGN 必要段对齐
 
 ## C8 — 指令面（与 C7 同发）
 
-- [ ] `AGENTS.md`（取消「仅显式 Latch」若代码已自动建 light）
-- [ ] `skills/latch/SKILL.md`
-- [ ] `docs/AI_INSTALL.md`（命令面与触发规则）
-- [ ] 项目侧规则若有冲突一并改
+- [x] `AGENTS.md`（启用 A/B/C 触发规则）
+- [x] `skills/latch/SKILL.md`
+- [x] `docs/AI_INSTALL.md`（命令面与触发规则）
+- [x] 项目侧规则已统一
 
 ## 建议实施 task 切分（示例，非设计）
 

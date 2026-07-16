@@ -1,21 +1,18 @@
-# Light profile、authorization、证明包与 review（最终契约草案节）
+# Light profile、authorization、证明包与 review
 
 Source-Task: 20260714084358411-重审-latch-最终任务与知识上下文设计-51d5e1
 
-Decision-Status: design-accepted
+Decision-Status: approved
 
-Document-Status: draft (Light/proof chapter base for final PRD; not product-approved)
+Document-Status: current component of `2026-07-15-latch-final-product-contract.md`
 
 Date: 2026-07-15
 
-Revision: 5
+Revision: 6
 
-Accepted: 2026-07-15 — design-accepted as final-PRD chapter base (not product approve).
+Released: 2026-07-16 — 全面 current 发布。
 
-Revised: 2026-07-15 — B 再修压缩丢失项：retrospective rebind 固定 work_revision 规则；standard→light 降级限制与 profile_changed.reason；blocked 允许 plan/abandon；knowledge_impact.updated 非空硬门禁。
-
-依据：handoff 与 Actor 草案节。**判定表 B / A / C 的权威定义见** `docs/prd/2026-07-15-latch-workflow-triggers-draft.md`（不在本章重复展开）。
-**不**替代现行已批准 v2 全文，直至最终 PRD 批准。
+判定表 B、A、C 的权威定义见 `docs/prd/2026-07-15-latch-workflow-triggers-draft.md`，本章不重复展开。
 
 **不重开：** light 禁 `--no-verify`（对 light）；事前 authorization 不因单独 work_revision↑ 失效（retrospective 除外，见 §4）；无 deferred_wave；impact 为 submit 输入；artifact 单真源；profile 变更抬 plan_revision；review/blocked 矩阵主干；checkpoint 只原子 task.json；已有事前授权走 approve；Core 不做 NLP。
 

@@ -1,14 +1,16 @@
-# Context pack 与 benchmark（最终契约草案节）
+# Context pack 与 benchmark
 
 Source-Task: 20260714084358411-重审-latch-最终任务与知识上下文设计-51d5e1
 
-Decision-Status: draft (candidate r2 — P1 countable budget + reproducible benchmark)
+Decision-Status: approved
 
-Document-Status: draft
+Document-Status: current component of `2026-07-15-latch-final-product-contract.md`
 
 Date: 2026-07-15
 
-Revision: 2
+Revision: 3
+
+Released: 2026-07-16 — 全面 current 发布。
 
 ## 1. 目的与边界
 

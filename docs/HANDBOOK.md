@@ -1,6 +1,18 @@
-# Latch v2 使用手册
+# Latch 使用手册
 
-Latch v2 记录显式创建的本地 coding task。每张 task 保存 plan、批准、工作轮次、验证、submission 和 archive outcome。
+Latch 记录本地 coding task。每张 task 保存 plan、批准、工作轮次、验证、submission 和 archive outcome。
+
+当前产品契约见 [Latch 最终产品契约](prd/2026-07-15-latch-final-product-contract.md)。
+
+## 任务触发
+
+触发章的 A/B/C 判定表决定是否创建或续接 task：
+
+- A：目标、成功标准、范围、根因或高风险改法不明确时，停在 grill，不实施；
+- B：改法和范围明确、低风险、`open_questions` 为空且不扩 scope 时，创建或续接 light task，`source: user_request` 作为授权；
+- C：需要方案确认、多 gate 或存在高风险面时，创建或续接 standard task，展示 plan 后等待明确 approve。
+
+纯问答、只读探索和无写入意图的请求不建 task。用户明确要求「不用 Latch」时，本轮也不建 task。
 
 ## 基本流程
 
@@ -138,9 +150,21 @@ latch downgrade-v2 \
 
 所有 task 更新需要 `--expect-revision`。task 使用独立短锁；需要组合锁时顺序固定为 `task -> state`。Latch 不跟踪 task 的文件归属，验证命令针对整个 worktree；需要代码隔离时由用户使用外部 Git worktree，Latch 不负责创建或合并它。
 
-## 最终契约部分实现边界
+### 顺序跨会话交接
 
-C1–C6 已部分实现。C1–C3 的 session writer、Light 证明包与 Group 最小集已接入真实 schema 3 task；Light request/retrospective 可通过真实 `checkpoint` 原子创建，task 根 provenance 可显式维护；C4 提供独立于 task schema 的 Git 知识文档 freshness 只读检查；C5 提供受预算 Context pack 与 benchmark diagnostic；C6 提供 legacy claim/patch 升级与 R2 回退。
+fork 或新对话都会产生新的 session actor。即使继续同一 workspace 和同一 task，新 session 也必须取得明确的 takeover 授权；仅包含 plan approval 的交接提示词不能绕过 `primary_writer` 门禁。
+
+交接提示词应包含 task ID、当前 phase/revision、旧 `primary_writer`、未完成的批准项和 gate、`git status --short` 摘要及共享 worktree 风险。用户须明确说明旧 session 停止写入该 task，并授权新 session 执行：
+
+```bash
+latch takeover <task-id> --expect-revision <revision> --reason "用户明确授权交接"
+```
+
+takeover 不改变 phase、plan approval 或 gate，也不构成 implementation approval。若同一用户消息同时明确授权 takeover 和当前 plan，则先 takeover，重新读取 revision 后再 `approve`；否则在 takeover 后等待单独批准。正常顺序交接保持 `provenance: clean`，只有明确允许重叠并行时才写入 `mixed`。
+
+## 最终契约能力
+
+C1–C8 已在当前发布中交付。C1–C3 的 session writer、Light 证明包与 Group 最小集已接入真实 schema 3 task；Light request/retrospective 可通过真实 `checkpoint` 原子创建，task 根 provenance 可显式维护；C4 提供独立于 task schema 的 Git 知识文档 freshness 只读检查；C5 提供受预算 Context pack 与 benchmark diagnostic；C6 提供 legacy claim/patch 升级与 R2 回退；C7/C8 提供 current 产品契约与 A/B/C 指令面。
 
 Group 只聚合 task，不增加 group phase、revision、锁或完成门禁。schema 3 task 可使用 `save --group` 或 `save --clear-group` 修改单张 task；`list --group [--include-archive]` 返回精确匹配的成员与派生计数，`context` 只附带受限的 sibling 摘要。Group 变更不会修改 plan、work basis、verification 或 submission。
 
@@ -169,4 +193,4 @@ latch benchmark context --case-file case.json --run-file run.json \
 
 schema 3 event 文件允许可选的首行 `events_meta`；未知 v3 event 会被跳过并以 `warnings` 返回，schema 2 reader 仍对未知 event fail closed。schema 3 的 `min_cli_version` 为 `0.2.0`。
 
-全面 current 切换仍未发布；`docs/INDEX.md`、显式 Latch 入口和本手册其余 v2 基础契约保持不变。
+最终产品契约已全面 current；v2 中未被最终分章覆盖的条款继续作为历史基线有效。

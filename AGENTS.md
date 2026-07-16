@@ -2,7 +2,13 @@
 
 ## Latch 入口
 
-只有请求明确提到 Latch 时，才创建或继续 task。分析建议、普通问答和小修不自动进入 Latch。
+对会导致仓库写入或明确改变可观察行为的请求，先按 A/B/C 判定是否创建或续接 task：
+
+- A：目标、成功标准、范围、根因或高风险改法不明确时，停在 grill，不实施；
+- B：改法和范围明确、低风险、`open_questions` 为空且不扩 scope 时，创建或续接 light task，`source: user_request` 作为授权；
+- C：需要方案确认、多 gate 或存在高风险面时，创建或续接 standard task，展示 plan 后等待明确 approve。
+
+纯问答、只读探索、无写入意图或明确要求「不用 Latch」时不建 task。显式 Latch 请求直接进入同一判定表，不是唯一入口。
 
 开始前按顺序执行：
 

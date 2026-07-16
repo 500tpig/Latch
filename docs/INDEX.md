@@ -34,11 +34,11 @@ Latch、Latch-Board、appearance-sec 和 monitoring 的当前兼容状态。
 
 ## 当前产品契约
 
-### [Latch v2 PRD](prd/2026-07-10-latch-v2.md)
+### [Latch 最终产品契约](prd/2026-07-15-latch-final-product-contract.md)
 
-- 状态：`approved`，Revision 2；
-- Source-Task：`202607090959-根治-latch-漏触发与重复修补`；
-- 用途：v2 用户协议、生命周期、schema、并发、发布和验收的唯一产品契约。
+- 状态：`approved`，Revision 4；
+- Source-Task：`20260714084358411-重审-latch-最终任务与知识上下文设计-51d5e1`；
+- 用途：Latch 唯一 current 产品契约；包含触发、Actor、Light、Group、knowledge、Context 与 R2 回退。
 
 ### [Latch v2 分窗口实施计划](briefs/2026-07-10-latch-v2-implementation-slices.md)
 
@@ -57,7 +57,9 @@ Latch、Latch-Board、appearance-sec 和 monitoring 的当前兼容状态。
 
 ## 历史资料
 
-`docs/briefs/` 和 `docs/prd/` 中未列为当前契约的文件只用于追溯。历史资料可以保留旧命令和旧设计事实，但不能作为当前使用说明。
+- [Latch v2 PRD](prd/2026-07-10-latch-v2.md)是最终契约的历史基线，不再是 current 产品契约。
+- [最终契约草案入口](prd/2026-07-15-latch-final-product-contract-draft.md)保留为历史跳转页。
+- `docs/briefs/` 和 `docs/prd/` 中未列为 current 契约的文件只用于追溯。历史资料可以保留旧命令和旧设计事实，但不能作为当前使用说明。
 
 ## 维护规则
 
