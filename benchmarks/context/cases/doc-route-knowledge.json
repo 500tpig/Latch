@@ -1,0 +1,14 @@
+{
+  "id": "doc-route-knowledge",
+  "title": "知识 freshness 文档路由",
+  "kind": "doc_route",
+  "prompt": "确认 stale 知识进入 context pack 时应遵循的契约。",
+  "gold_critical": [
+    "docs/prd/2026-07-15-latch-knowledge-freshness-draft.md",
+    "docs/prd/2026-07-15-latch-context-benchmark-draft.md"
+  ],
+  "baseline_broad_entry": [
+    "docs/INDEX.md"
+  ],
+  "max_tool_steps_main": 8
+}

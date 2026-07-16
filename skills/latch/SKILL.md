@@ -48,6 +48,15 @@ Schema 3 fixture authorization uses `--authorization-file`; retrospective input 
 - Update `last_fingerprint` and provenance only as part of an explicitly authorized knowledge document edit; reading, context generation, submit, and done never update the baseline.
 - Freshness is not a submit, done, group, or archive gate in the partial release; existing Light proof rules remain the lifecycle contract.
 
+## C5 context pack rules (partial release)
+
+- Use `context pack --input-file <path>` only when a bounded orientation pack materially reduces repeated reading; ordinary small reads do not need a pack.
+- Select task, knowledge, map, excerpt, and expand sources in the request file; Core validates, reads, orders, labels, and truncates them but does not choose sources semantically.
+- Reuse the returned orientation id and counters only for the same user intent and task; drop them when implementation starts, evidence is sufficient, the task changes, or the user changes intent.
+- Treat the 24000 pack limit, 8000 expand batch limit, and 48000 orientation expand limit as code-point budgets for the pack helper, not as limits on the whole conversation.
+- Never present stale, baseline-missing, errored, or retired knowledge as fresh; use the pack freshness label and expand into source files when current evidence is required.
+- Use `benchmark context` for reproducible diagnostics from supplied case/run files; it does not execute search tools and does not become a lifecycle gate.
+
 ## Create and approve
 
 Create a task only with explicit authorization and a complete plan file:

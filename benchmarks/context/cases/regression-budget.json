@@ -1,0 +1,14 @@
+{
+  "id": "regression-budget",
+  "title": "Context pack 字符预算回归",
+  "kind": "regression",
+  "prompt": "定位 astral Unicode 导致 char_count 与最终输出不一致的回归。",
+  "gold_critical": [
+    "src/core/context-pack.ts",
+    "tests/context-pack.test.mjs"
+  ],
+  "baseline_broad_entry": [
+    "src/core/context-pack.ts"
+  ],
+  "max_tool_steps_main": 8
+}

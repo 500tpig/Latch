@@ -7,6 +7,17 @@ import {
   isWritableActor,
 } from './core/actor.js'
 import {
+  evaluateContextBenchmark,
+  parseContextBenchCase,
+  parseContextBenchRun,
+} from './core/context-benchmark.js'
+import {
+  buildContextPack,
+  loadContextPackSections,
+  parseContextPackRequest,
+  type ContextPackSectionInput,
+} from './core/context-pack.js'
+import {
   checkKnowledgeDocument,
   checkTaskKnowledgeDocuments,
   fingerprintKnowledgeDocument,
@@ -60,7 +71,9 @@ Commands:
   use <task-id>
   list [--group <id> [--include-archive]] [--json] [--brief]
   context [task-id] [--json] [--brief]
+  context pack --input-file <path>
   knowledge <fingerprint|check> [options]
+  benchmark context [options]
   claim <task-id> --expect-revision <revision> [--reason <text>]
   takeover <task-id> --expect-revision <revision> --reason <text>
   save <task-id> --expect-revision <revision> [changes]
@@ -79,8 +92,11 @@ const commandUsage: Record<string, string> = {
   list:
     'Usage: latch list [--group <id> [--include-archive]] [--json] [--brief]',
   context: 'Usage: latch context [task-id] [--json] [--brief]',
+  'context-pack': 'Usage: latch context pack --input-file <path> [--json]',
   knowledge:
     'Usage: latch knowledge fingerprint --path <path> [--json]\n       latch knowledge check (--path <path> | --task <task-id>) [--json]',
+  benchmark:
+    'Usage: latch benchmark context --case-file <path> --run-file <path> [--baseline-run-file <path>] [--json]',
   claim:
     'Usage: latch claim <task-id> --expect-revision <revision> [--reason <text>] [--json]',
   takeover:
@@ -334,6 +350,55 @@ function runContext(args: string[], cwd: string, actor: string) {
   process.stdout.write(`${contextHumanV2(store, task, actor)}\n`)
 }
 
+function runContextPack(args: string[], cwd: string, actor: string) {
+  const parsed = parseCommand(args, {
+    ...commonOptions(),
+    'input-file': { type: 'string' },
+  })
+  if (parsed.values.help)
+    return process.stdout.write(`${commandUsage['context-pack']}\n`)
+  if (parsed.positionals.length > 0)
+    fail('invalid_arguments', commandUsage['context-pack'])
+  const request = parseContextPackRequest(
+    readInputFile<unknown>(cwd, parsed.values['input-file'], '--input-file'),
+  )
+
+  let workspaceRoot: string
+  let effectiveRequest = request
+  const automaticSections: ContextPackSectionInput[] = []
+  if (request.task_id) {
+    const store = openTaskStoreV2(cwd)
+    const task = readTaskV2(store, request.task_id)
+    const context = contextJsonV2(store, task, actor, true)
+    workspaceRoot = store.paths.workspaceRoot
+    effectiveRequest = {
+      ...request,
+      task_id: task.id,
+      ...(request.orientation
+        ? { orientation: { ...request.orientation, task_id: task.id } }
+        : {}),
+    }
+    automaticSections.push({
+      kind: 'task',
+      content: JSON.stringify(context.task, null, 2),
+    })
+    if ('group' in context)
+      automaticSections.push({
+        kind: 'sibling',
+        content: JSON.stringify(context.group, null, 2),
+      })
+  } else {
+    workspaceRoot = discoverWorkspaceRoot(cwd, { forInit: true })
+  }
+
+  const requestedSections = loadContextPackSections(workspaceRoot, effectiveRequest)
+  const result = buildContextPack(effectiveRequest, [
+    ...automaticSections,
+    ...requestedSections,
+  ])
+  process.stdout.write(result.serialized)
+}
+
 function knowledgeCheckHuman(result: KnowledgeCheckResult) {
   return [
     `Knowledge: ${result.path}`,
@@ -399,6 +464,50 @@ function runKnowledge(args: string[], cwd: string) {
   process.stdout.write([
     `Task: ${result.task_id}`,
     ...result.documents.map(knowledgeCheckHuman),
+  ].join('\n') + '\n')
+}
+
+function runBenchmark(args: string[], cwd: string) {
+  const subject = args[0]
+  if (!subject || subject === '--help' || subject === '-h')
+    return process.stdout.write(`${commandUsage.benchmark}\n`)
+  if (subject !== 'context')
+    fail('invalid_arguments', `Unknown benchmark command: ${subject}\n${commandUsage.benchmark}`)
+  const parsed = parseCommand(args.slice(1), {
+    ...commonOptions(),
+    'case-file': { type: 'string' },
+    'run-file': { type: 'string' },
+    'baseline-run-file': { type: 'string' },
+  })
+  if (parsed.values.help)
+    return process.stdout.write(`${commandUsage.benchmark}\n`)
+  if (parsed.positionals.length > 0)
+    fail('invalid_arguments', commandUsage.benchmark)
+  const benchmarkCase = parseContextBenchCase(
+    readInputFile<unknown>(cwd, parsed.values['case-file'], '--case-file'),
+  )
+  const run = parseContextBenchRun(
+    readInputFile<unknown>(cwd, parsed.values['run-file'], '--run-file'),
+  )
+  const baseline = parsed.values['baseline-run-file']
+    ? parseContextBenchRun(
+        readInputFile<unknown>(
+          cwd,
+          parsed.values['baseline-run-file'],
+          '--baseline-run-file',
+        ),
+      )
+    : undefined
+  const result = evaluateContextBenchmark(benchmarkCase, run, baseline)
+  if (parsed.values.json)
+    return json({ ...jsonEnvelopeV2(), benchmark: result })
+  process.stdout.write([
+    `Benchmark: ${result.case_id}`,
+    `Main: ${result.pass_main ? 'pass' : 'fail'}`,
+    `Failures: ${result.failures.join(', ') || '-'}`,
+    ...(result.token_goal_evaluated
+      ? [`Token goal: ${result.token_goal_miss ? 'miss' : 'pass'}`]
+      : ['Token goal: not evaluated']),
   ].join('\n') + '\n')
 }
 
@@ -949,9 +1058,12 @@ function run(argv: string[], cwd: string) {
     case 'list':
       return runList(args, cwd, actor)
     case 'context':
+      if (args[0] === 'pack') return runContextPack(args.slice(1), cwd, actor)
       return runContext(args, cwd, actor)
     case 'knowledge':
       return runKnowledge(args, cwd)
+    case 'benchmark':
+      return runBenchmark(args, cwd)
     case 'claim':
       return runClaim(args, cwd, actor)
     case 'takeover':

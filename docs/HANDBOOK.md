@@ -104,7 +104,7 @@ latch abandon <task-id> --expect-revision 5 --reason "用户取消"
 
 ## 最终契约部分实现边界
 
-C1–C4 已部分实现。C1–C3 在临时 fixture 中提供 session writer、Light 证明包与 Group 最小集的 schema 3 读取、校验和生命周期行为；C4 提供独立于 task schema 的 Git 知识文档 freshness 只读检查。
+C1–C5 已部分实现。C1–C3 在临时 fixture 中提供 session writer、Light 证明包与 Group 最小集的 schema 3 读取、校验和生命周期行为；C4 提供独立于 task schema 的 Git 知识文档 freshness 只读检查；C5 提供受预算 Context pack 与 benchmark diagnostic。
 
 Group 只聚合 task，不增加 group phase、revision、锁或完成门禁。schema 3 fixture 可使用 `save --group` 或 `save --clear-group` 修改单张 task；`list --group [--include-archive]` 返回精确匹配的成员与派生计数，`context` 只附带受限的 sibling 摘要。Group 变更不会修改 plan、work basis、verification 或 submission。
 
@@ -118,4 +118,17 @@ latch knowledge check --task <task-id> --json
 
 `fingerprint` 只计算 `sha256-v1`；`check --path` 返回 `fresh`、`stale`、`baseline_missing`、`error` 或 `retired`；`check --task` 只检查当前 submission 中 `knowledge_impact.updated` 引用的 artifact。三种调用都不写知识文档、task、events 或 state。baseline 只能由已授权的普通文档编辑更新，freshness 结果不增加 submit、done 或 group 门禁。
 
-默认 `latch checkpoint` 仍创建 schema 2 task，不接受 `--group`。真实 `.latch` 不写 schema 3 或 v3-only event。C5 Context pack、schema 2→3 迁移、R2 `downgrade-v2` 和全面 current 切换仍未发布；本手册其余命令继续以 v2 为准。
+Context pack 与 benchmark 使用结构化 JSON 输入：
+
+```bash
+latch context pack --input-file context-request.json
+latch benchmark context --case-file case.json --run-file run.json --json
+latch benchmark context --case-file case.json --run-file run.json \
+  --baseline-run-file broad.json --json
+```
+
+`context-request.json` 可包含 `task_id`、`knowledge_paths`、map/excerpt/expand `sources` 和上次返回的 orientation 计数。CLI 按 task、knowledge、map、sibling、excerpt、expand 排序，默认限制 task 4000、知识/地图/兄弟累计 6000、单包 24000、扩读单批 8000、同 orientation 累计 48000 Unicode code points；`meta.char_count` 统计最终 JSON 和尾部换行。orientation 只由调用方回传，不写 `.latch`；换 task、开始实施或结束 orientation 时丢弃旧计数。
+
+`benchmark context` 只校验 case/run 并计算主成功和 30% 次目标，不执行检索、CodeGraph 或模型判断，也不成为 task gate。
+
+默认 `latch checkpoint` 仍创建 schema 2 task，不接受 `--group`。真实 `.latch` 不写 schema 3 或 v3-only event。schema 2→3 迁移、R2 `downgrade-v2` 和全面 current 切换仍未发布；本手册其余命令继续以 v2 为准。

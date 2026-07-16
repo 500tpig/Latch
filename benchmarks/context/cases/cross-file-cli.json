@@ -1,0 +1,17 @@
+{
+  "id": "cross-file-cli",
+  "title": "Context pack CLI 跨文件入口",
+  "kind": "cross_file",
+  "prompt": "修改 context pack CLI 时定位参数路由与预算实现。",
+  "gold_critical": [
+    "src/cli.ts",
+    "src/core/context-pack.ts"
+  ],
+  "gold_optional": [
+    "tests/context-pack.test.mjs"
+  ],
+  "baseline_broad_entry": [
+    "src/cli.ts"
+  ],
+  "max_tool_steps_main": 8
+}
