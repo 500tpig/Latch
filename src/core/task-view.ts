@@ -28,6 +28,7 @@ function taskSummary(task: TaskV2, brief: boolean, grouped = false) {
       title: task.title,
       phase: task.phase,
       revision: task.revision,
+      provenance: task.provenance ?? 'clean',
       ...(grouped
         ? {
             profile: task.profile ?? 'standard',
@@ -49,6 +50,7 @@ function taskSummary(task: TaskV2, brief: boolean, grouped = false) {
     plan_revision: task.plan_revision,
     work_revision: task.work_revision,
     profile: task.profile ?? 'standard',
+    provenance: task.provenance ?? 'clean',
     ...(task.group_id !== undefined ? { group_id: task.group_id } : {}),
     ...(grouped
       ? {
@@ -141,6 +143,7 @@ function briefTask(task: TaskV2) {
     plan_revision: task.plan_revision,
     work_revision: task.work_revision,
     profile: task.profile ?? 'standard',
+    provenance: task.provenance ?? 'clean',
     ...(task.group_id !== undefined ? { group_id: task.group_id } : {}),
     goal: task.plan.goal,
     scope: task.plan.scope,

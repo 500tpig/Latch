@@ -46,6 +46,8 @@ test('formal CLI completes approval, gate, review correction, resubmit, and done
     const archived = JSON.parse(readFileSync(join(cwd, '.latch', 'archive', month, id, 'task.json'), 'utf8'))
     assert.equal(archived.closure.changes, 'second')
     assert.equal(archived.work_revision, 2)
+    assert.equal(archived.provenance, 'clean')
+    assert.equal('provenance' in archived.closure, false)
   } finally { rmSync(cwd, { recursive: true, force: true }) }
 })
 

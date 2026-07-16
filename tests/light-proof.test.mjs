@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
@@ -149,6 +150,85 @@ test.afterEach(() => {
     rmSync(directory, { recursive: true, force: true })
 })
 
+test('checkpoint CLI atomically creates request and retrospective work basis', () => {
+  const cwd = temporaryDirectory()
+  assert.equal(run(cwd, ['init']).status, 0)
+  const planFile = writeJson(cwd, plan(), 'plan')
+
+  const authorizationFile = writeJson(cwd, authorization(), 'authorization')
+  const request = run(cwd, [
+    'checkpoint', 'request task', '--plan-file', planFile,
+    '--authorization-file', authorizationFile, '--json',
+  ])
+  assert.equal(request.status, 0, request.stderr)
+  const requestTask = readTask(cwd, JSON.parse(request.stdout).task_id)
+  assert.equal(requestTask.schema_version, 3)
+  assert.equal(requestTask.profile, 'light')
+  assert.equal(requestTask.provenance, 'clean')
+  assert.equal(requestTask.phase, 'dev')
+  assert.equal(requestTask.work_revision, 1)
+  assert.equal(requestTask.work_basis.source, 'user_request')
+  assert.equal(requestTask.primary_writer, actor)
+  assert.deepEqual(
+    readTaskEventsV3(taskDirectory(cwd, requestTask.id)).map((event) => event.type),
+    ['task_created', 'implementation_authorized', 'work_started'],
+  )
+
+  const retrospectiveFile = writeJson(cwd, retrospective(), 'retrospective')
+  const standard = run(cwd, [
+    'checkpoint', 'standard retrospective', '--plan-file', planFile,
+    '--retrospective-file', retrospectiveFile, '--json',
+  ])
+  assert.equal(standard.status, 0, standard.stderr)
+  const standardTask = readTask(cwd, JSON.parse(standard.stdout).task_id)
+  assert.equal(standardTask.profile, 'standard')
+  assert.equal(standardTask.phase, 'dev')
+  assert.equal(standardTask.work_revision, 1)
+  assert.equal(standardTask.work_basis.kind, 'retrospective_record')
+
+  const light = run(cwd, [
+    'checkpoint', 'light retrospective', '--plan-file', planFile,
+    '--profile', 'light', '--retrospective-file', retrospectiveFile, '--json',
+  ])
+  assert.equal(light.status, 0, light.stderr)
+  const lightTask = readTask(cwd, JSON.parse(light.stdout).task_id)
+  assert.equal(lightTask.profile, 'light')
+  assert.equal(lightTask.work_basis.kind, 'retrospective_record')
+})
+
+test('checkpoint rejects invalid basis options before task or state writes', () => {
+  const cwd = temporaryDirectory()
+  assert.equal(run(cwd, ['init']).status, 0)
+  const statePath = join(cwd, '.latch', 'state.json')
+  const stateBefore = readFileSync(statePath, 'utf8')
+  const planFile = writeJson(cwd, plan(), 'plan')
+  const authorizationFile = writeJson(cwd, authorization(), 'authorization')
+  const wrongSourceFile = writeJson(
+    cwd,
+    authorization('user_approve'),
+    'wrong-source',
+  )
+  const retrospectiveFile = writeJson(cwd, retrospective(), 'retrospective')
+  const openPlanFile = writeJson(
+    cwd,
+    plan({ open_questions: ['需要确认'] }),
+    'open-plan',
+  )
+  const nullFile = writeJson(cwd, null, 'null')
+
+  const cases = [
+    ['checkpoint', 'wrong source', '--plan-file', planFile, '--authorization-file', wrongSourceFile],
+    ['checkpoint', 'combined', '--plan-file', planFile, '--authorization-file', authorizationFile, '--retrospective-file', retrospectiveFile],
+    ['checkpoint', 'open questions', '--plan-file', openPlanFile, '--authorization-file', authorizationFile],
+    ['checkpoint', 'invalid profile', '--plan-file', planFile, '--profile', 'tiny'],
+    ['checkpoint', 'null basis', '--plan-file', planFile, '--authorization-file', nullFile],
+  ]
+  for (const args of cases) assert.notEqual(run(cwd, args).status, 0, args[1])
+
+  assert.deepEqual(readdirSync(join(cwd, '.latch', 'tasks')), [])
+  assert.equal(readFileSync(statePath, 'utf8'), stateBefore)
+})
+
 test('light request authorization is atomic and submit stops in review', () => {
   const cwd = temporaryDirectory()
   const task = createV3(cwd, {
@@ -158,6 +238,7 @@ test('light request authorization is atomic and submit stops in review', () => {
 
   assert.equal(task.schema_version, 3)
   assert.equal(task.profile, 'light')
+  assert.equal(task.provenance, 'clean')
   assert.equal(task.phase, 'dev')
   assert.equal(task.work_revision, 1)
   assert.equal(task.work_basis.kind, 'implementation_authorization')

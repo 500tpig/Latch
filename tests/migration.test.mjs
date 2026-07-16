@@ -146,6 +146,7 @@ test('claim promotes a real v2 review task before legacy impact patch', () => {
   const promoted = readTask(cwd, legacy.id)
   assert.equal(promoted.schema_version, 3)
   assert.equal(promoted.profile, 'standard')
+  assert.equal(promoted.provenance, 'clean')
   assert.equal(promoted.primary_writer, actor)
   assert.equal(promoted.phase, 'review')
   assert.equal(promoted.submission.changes, 'legacy changes')
@@ -235,7 +236,7 @@ test('downgrade-v2 backs up and projects open and archived tasks', () => {
   const current = readTask(cwd, task.id)
   current.phase = 'review'
   current.revision = 5
-  current.provenance = { kind: 'mixed' }
+  current.provenance = 'mixed'
   current.submission = {
     plan_revision: 1,
     work_revision: 1,

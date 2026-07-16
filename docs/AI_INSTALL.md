@@ -21,7 +21,9 @@ pnpm list --global --depth -1
 pnpm skill:check
 ```
 
-`latch --help` 应显示 `claim`、`patch-submission-knowledge-impact` 和 `downgrade-v2`。接入状态与来源 commit 见
+`latch --help` 应显示 `claim`、`patch-submission-knowledge-impact` 和 `downgrade-v2`；
+`latch checkpoint --help` 应显示 `--profile`、`--authorization-file` 和
+`--retrospective-file`，`latch save --help` 应显示 `--provenance`。接入状态与来源 commit 见
 [接入状态](ADOPTER_SYNC.md)。
 
 ## 构建 CLI
@@ -77,7 +79,10 @@ pnpm skill:link
 latch init
 ```
 
-初始化后的 `checkpoint` 创建 schema 3 standard task。既有 schema 2 task 不批量改写；明确继续具体 task 后，由 `claim` 完成升级。
+初始化后的普通 `checkpoint` 创建 schema 3 standard task，并写入
+`provenance: clean`。light request 使用 `--profile light --authorization-file`，
+retrospective 创建使用 `--retrospective-file`。既有 schema 2/3 task 不批量改写；
+缺失 provenance 时按 `clean` 读取，明确继续具体 schema 2 task 后由 `claim` 完成升级。
 
 v2 不迁移 v1。已有 `.latch` 时，先将原目录备份到 repo 外，记录来源和
 checksum，确认恢复方法，再移走旧目录并执行 `latch init`。备份位置记录在

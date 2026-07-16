@@ -45,6 +45,7 @@ import type {
   TaskEventTypeV2,
   TaskPlan,
   TaskProfile,
+  TaskProvenance,
   TaskV2,
   WorkBasis,
   WorkBasisInput,
@@ -392,6 +393,12 @@ function assertTaskV2(value: unknown, path: string): asserts value is TaskV2 {
     if (value.profile !== 'light' && value.profile !== 'standard')
       throw new Error(`Invalid profile in ${path}.`)
   }
+  if (Object.hasOwn(value, 'provenance')) {
+    if (value.schema_version !== V3_SCHEMA_VERSION)
+      throw new Error(`Invalid provenance in ${path}: schema_version 3 is required.`)
+    if (value.provenance !== 'clean' && value.provenance !== 'mixed')
+      throw new Error(`Invalid provenance in ${path}.`)
+  }
   if (Object.hasOwn(value, 'group_id')) {
     if (value.schema_version !== V3_SCHEMA_VERSION)
       throw new Error(`Invalid group_id in ${path}: schema_version 3 is required.`)
@@ -706,6 +713,7 @@ function readTaskFromDirectory(
     throw new Error(`Task id does not match its directory in ${path}.`)
   if (value.workspace_root !== store.paths.workspaceRoot)
     throw new Error(`Task workspace_root does not match ${store.paths.workspaceRoot}: ${path}.`)
+  value.provenance ??= 'clean'
   return value
 }
 
@@ -911,6 +919,9 @@ function createTask(
     phase: workBasis ? 'dev' : 'plan',
     ...(schemaVersion === V3_SCHEMA_VERSION ? { primary_writer: actor } : {}),
     ...(profile ? { profile } : {}),
+    ...(schemaVersion === V3_SCHEMA_VERSION
+      ? { provenance: 'clean' as TaskProvenance }
+      : {}),
     ...(groupId !== undefined ? { group_id: groupId } : {}),
     ...(workBasis ? { work_basis: workBasis } : {}),
     revision: 1,
@@ -1253,6 +1264,7 @@ export function claimTaskV3(
       } else if (!task.profile) {
         task.profile = 'standard'
       }
+      task.provenance ??= 'clean'
       task.primary_writer = options.actor
     },
     allowPrimaryWriterChange: true,

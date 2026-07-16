@@ -43,6 +43,8 @@ export type TaskArtifact = {
 
 export type TaskProfile = 'light' | 'standard'
 
+export type TaskProvenance = 'clean' | 'mixed'
+
 export type ImplementationAuthorization = {
   kind: 'implementation_authorization'
   plan_revision: number
@@ -114,6 +116,7 @@ export type TaskV2 = {
   outcome?: TaskOutcome
   primary_writer?: string
   profile?: TaskProfile
+  provenance?: TaskProvenance
   group_id?: string
   work_basis?: WorkBasis
   revision: number

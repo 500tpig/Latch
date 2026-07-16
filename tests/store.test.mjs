@@ -27,6 +27,7 @@ import {
   selectCurrentTaskV2,
   taskHistoryIncompleteV2,
   updateTaskV2,
+  updateTaskV3,
   withStateLockV2,
   withTaskLockV2,
 } from '../dist/core/task-store.js'
@@ -89,6 +90,35 @@ function uniquePrefix(target, ids) {
 test.afterEach(() => {
   for (const directory of temporaryDirectories.splice(0))
     rmSync(directory, { recursive: true, force: true })
+})
+
+test('provenance defaults on new and historical tasks without rewriting legacy files', () => {
+  const cwd = temporaryDirectory()
+  const store = initTaskStoreV2(cwd)
+  const current = create(store)
+  assert.equal(current.provenance, 'clean')
+
+  const path = join(taskDirectory(store, current.id), 'task.json')
+  const historical = JSON.parse(readFileSync(path, 'utf8'))
+  delete historical.provenance
+  writeFileSync(path, `${JSON.stringify(historical, null, 2)}\n`)
+  assert.equal(readTaskV2(store, current.id).provenance, 'clean')
+  assert.equal('provenance' in JSON.parse(readFileSync(path, 'utf8')), false)
+
+  const legacy = createV2(store, 'legacy provenance')
+  assert.equal(readTaskV2(store, legacy.id).provenance, 'clean')
+  assert.throws(
+    () => updateTaskV3(store, legacy.id, {
+      expectRevision: 1,
+      actor: 'codex:session:a',
+      events: [{
+        type: 'decision_recorded',
+        fields: { plan_revision: 1, conclusion: 'set mixed' },
+      }],
+      update(task) { task.provenance = 'mixed' },
+    }),
+    /Schema 3 update requires schema_version 3/,
+  )
 })
 
 test('schema v2 使用毫秒时间和随机后缀，重复标题不覆盖且不创建 notes', () => {
@@ -373,6 +403,23 @@ test('无效 schema 或结构化 event 在持久化前失败', () => {
         },
       }),
     /Invalid blocked.reason/,
+  )
+  assert.equal(readFileSync(taskPath, 'utf8'), beforeInvalidEvent.task)
+
+  assert.throws(
+    () =>
+      updateTaskV3(store, task.id, {
+        expectRevision: 1,
+        actor: 'codex:session:a',
+        events: [{
+          type: 'decision_recorded',
+          fields: { plan_revision: 1, conclusion: 'invalid provenance' },
+        }],
+        update(next) {
+          next.provenance = 'dirty'
+        },
+      }),
+    /Invalid provenance/,
   )
   assert.equal(readFileSync(taskPath, 'utf8'), beforeInvalidEvent.task)
 })

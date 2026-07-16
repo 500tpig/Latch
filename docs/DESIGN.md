@@ -11,6 +11,8 @@ Latch 是个人 macOS 开发环境中的本地任务状态记录器。它帮助 
 - `state.json` 只保存各 actor 的 current task；
 - 项目正式文档通过 artifact 关联，并从 `docs/INDEX.md` 发现。
 - 新 task 使用 schema 3 保存 `primary_writer` 和 `profile`；既有 schema 2 task 经显式 `claim` 单独升级。
+- schema 3 新 task 写入根 `provenance: clean`；历史 task 缺失该字段时按 `clean` 读取，只有明确的重叠并行或隔离恢复才显式修改。
+- light request 与 retrospective task 可在 `checkpoint` 时原子写入 work basis，不需要创建后再拼接生命周期状态。
 - schema 3 task 可通过带完整 backup 的 `downgrade-v2` 投影回可写 schema 2。
 
 ## 关键取舍
@@ -20,6 +22,7 @@ Latch 是个人 macOS 开发环境中的本地任务状态记录器。它帮助 
 - plan 和 work revision 使旧结果明确失效；
 - 不同 task 可以在同一 workspace 独立推进；共享 worktree 风险通过 warning 提示；
 - 原子写和短锁保护当前事实，不引入通用事务框架；
+- provenance 只保存在 task 根，不复制到 submission 或 closure；
 - archive 使用目录 rename 作为提交点。
 - R2 回退先备份整个 task 目录，再重写 event，最后以 `task.json` 作为格式切换提交点。
 

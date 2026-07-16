@@ -103,6 +103,14 @@ test('top-level and command help have no side effects', () => {
     assert.match(result.stdout, /Usage: latch/)
     assert.equal(existsSync(join(cwd, '.latch')), false)
   }
+
+  const checkpointHelp = run(temporaryDirectory(), ['checkpoint', '--help'])
+  assert.match(checkpointHelp.stdout, /--profile <light\|standard>/)
+  assert.match(checkpointHelp.stdout, /--authorization-file/)
+  assert.match(checkpointHelp.stdout, /--retrospective-file/)
+  const saveHelp = run(temporaryDirectory(), ['save', '--help'])
+  assert.match(saveHelp.stdout, /--provenance <clean\|mixed>/)
+  assert.match(saveHelp.stdout, /--provenance-reason/)
 })
 
 test('unknown command and flag fail before creating .latch', () => {
@@ -178,7 +186,11 @@ test('checkpoint is create-only, requires a full plan, and returns warnings', ()
   assert.deepEqual(firstData.warnings, [])
   assert.notEqual(firstData.task_id, secondData.task_id)
   assert.equal(taskIds(cwd).length, 2)
-  assert.deepEqual(readTask(cwd, firstData.task_id).artifacts, [
+  const firstTask = readTask(cwd, firstData.task_id)
+  assert.equal(firstTask.schema_version, 3)
+  assert.equal(firstTask.profile, 'standard')
+  assert.equal(firstTask.provenance, 'clean')
+  assert.deepEqual(firstTask.artifacts, [
     { kind: 'brief', path: 'docs/brief.md' },
   ])
 })
@@ -254,14 +266,17 @@ test('list and context expose stable full and brief JSON', () => {
   assert.equal(fullList.current_task_id, created.task_id)
   assert.equal(fullList.tasks[0].plan_revision, 1)
   assert.equal(fullList.tasks[0].work_revision, 0)
+  assert.equal(fullList.tasks[0].provenance, 'clean')
 
   const briefList = JSON.parse(run(cwd, ['list', '--json', '--brief']).stdout)
   assert.equal(briefList.tasks[0].revision, 1)
+  assert.equal(briefList.tasks[0].provenance, 'clean')
   assert.equal('plan_revision' in briefList.tasks[0], false)
 
   const fullContext = JSON.parse(run(cwd, ['context', '--json']).stdout)
   assert.equal(fullContext.current, true)
   assert.equal(fullContext.task.id, created.task_id)
+  assert.equal(fullContext.task.provenance, 'clean')
   assert.equal(fullContext.task.plan.approach[0], '使用 node:util.parseArgs')
   assert.equal(fullContext.history_incomplete, false)
   assert.deepEqual(fullContext.recent_events.map((event) => event.type), [
@@ -272,6 +287,7 @@ test('list and context expose stable full and brief JSON', () => {
     run(cwd, ['context', created.task_id, '--json', '--brief']).stdout,
   )
   assert.equal(briefContext.task.goal, '实现 v2 CLI')
+  assert.equal(briefContext.task.provenance, 'clean')
   assert.equal('plan' in briefContext.task, false)
   assert.deepEqual(briefContext.task.verification_plan, [
     {
@@ -508,6 +524,58 @@ test('save JSON exposes event write warnings without reporting a false failure',
   assert.equal(output.warnings.length, 1)
   assert.match(output.warnings[0], /event was not recorded/)
   assert.equal(readTask(cwd, created.task_id).revision, 2)
+})
+
+test('save changes provenance as a standalone root fact', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const created = checkpoint(cwd)
+  const before = readTask(cwd, created.task_id)
+
+  const mixed = run(cwd, [
+    'save', created.task_id, '--expect-revision', '1',
+    '--provenance', 'mixed', '--provenance-reason', '用户允许重叠并行', '--json',
+  ])
+  assert.equal(mixed.status, 0, mixed.stderr)
+  let current = readTask(cwd, created.task_id)
+  assert.equal(current.provenance, 'mixed')
+  assert.equal(current.revision, 2)
+  assert.equal(current.phase, before.phase)
+  assert.equal(current.plan_revision, before.plan_revision)
+  assert.equal(current.work_revision, before.work_revision)
+  assert.deepEqual(current.verification, before.verification)
+
+  const directory = join(cwd, '.latch', 'tasks', created.task_id)
+  const events = readFileSync(join(directory, 'events.jsonl'), 'utf8')
+    .trim().split('\n').map(JSON.parse)
+  assert.equal(events.at(-1).type, 'decision_recorded')
+  assert.match(events.at(-1).conclusion, /provenance clean -> mixed/)
+
+  for (const args of [
+    ['save', created.task_id, '--expect-revision', '2', '--provenance', 'mixed', '--provenance-reason', 'no-op'],
+    ['save', created.task_id, '--expect-revision', '2', '--provenance', 'other', '--provenance-reason', 'invalid'],
+    ['save', created.task_id, '--expect-revision', '2', '--provenance', 'clean'],
+    ['save', created.task_id, '--expect-revision', '2', '--provenance-reason', 'missing value'],
+    ['save', created.task_id, '--expect-revision', '2', '--provenance', 'clean', '--provenance-reason', 'combined', '--decision', 'not standalone'],
+  ])
+    assert.notEqual(run(cwd, args).status, 0)
+  assert.equal(readTask(cwd, created.task_id).provenance, 'mixed')
+
+  const wrongWriter = run(cwd, [
+    'save', created.task_id, '--expect-revision', '2',
+    '--provenance', 'clean', '--provenance-reason', 'wrong writer',
+  ], { actor: 'codex:session:other' })
+  assert.notEqual(wrongWriter.status, 0)
+  assert.match(wrongWriter.stderr, /Writer mismatch/)
+
+  const clean = run(cwd, [
+    'save', created.task_id, '--expect-revision', '2',
+    '--provenance', 'clean', '--provenance-reason', '隔离已经恢复', '--json',
+  ])
+  assert.equal(clean.status, 0, clean.stderr)
+  current = readTask(cwd, created.task_id)
+  assert.equal(current.provenance, 'clean')
+  assert.equal(current.revision, 3)
 })
 
 test('save can remove artifacts and explicitly unblock', () => {

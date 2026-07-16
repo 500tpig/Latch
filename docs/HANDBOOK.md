@@ -26,12 +26,21 @@ v2 不迁移或覆盖 v1 `.latch`。
 
 ```bash
 latch checkpoint "任务标题" --plan-file plan.json
+latch checkpoint "低风险任务" --plan-file plan.json \
+  --profile light --authorization-file authorization.json
+latch checkpoint "事后记录" --plan-file plan.json \
+  --retrospective-file retrospective.json
 latch use <task-id>
 latch list --json --brief
 latch context [task-id] --json --brief
 ```
 
 `checkpoint` 必须读取完整 plan 文件。同标题 task 不覆盖。`use` 只修改当前 actor 的索引。
+
+无新增参数时，`checkpoint` 创建 standard plan task。`--authorization-file` 只接受
+`source: user_request`，并原子创建 light task、写入 work basis、进入 dev 且将
+`work_revision` 设为 1。`--retrospective-file` 默认创建 standard retrospective
+task；需要 light 证明规则时显式增加 `--profile light`。两种 basis 文件不能组合。
 
 从 CLI 版本 `0.2.0` 开始，`checkpoint` 创建 schema 3 standard task，并将当前 canonical session actor 写入 `primary_writer`。既有 schema 2 task 保持可读，但普通写入会按 `legacy_unclaimed` 拒绝；明确继续该 task 后，使用 `claim` 完成单 task 升级：
 
@@ -48,9 +57,15 @@ latch save <task-id> --expect-revision 3 --plan-file plan.json
 latch save <task-id> --expect-revision 4 --decision "采用本地 JSON"
 latch save <task-id> --expect-revision 5 --block-reason "等待接口" --waiting-for "后端确认"
 latch save <task-id> --expect-revision 6 --unblock
+latch save <task-id> --expect-revision 7 \
+  --provenance mixed --provenance-reason "用户允许重叠并行"
 ```
 
 plan 任一持久化值变化都会增加 `plan_revision`，phase 回到 plan，并使旧批准、gate 和 submission 失效。
+
+schema 3 新 task 的根 `provenance` 默认为 `clean`。只有明确允许路径重叠并行时才写
+`mixed`；隔离恢复后，使用同一命令显式写回 `clean`。provenance 更新必须单独执行，
+只增加 task revision，并用现有 decision event 记录 reason。
 
 ### 批准实施
 
@@ -125,7 +140,7 @@ latch downgrade-v2 \
 
 ## 最终契约部分实现边界
 
-C1–C6 已部分实现。C1–C3 的 session writer、Light 证明包与 Group 最小集已接入真实 schema 3 task；C4 提供独立于 task schema 的 Git 知识文档 freshness 只读检查；C5 提供受预算 Context pack 与 benchmark diagnostic；C6 提供 legacy claim/patch 升级与 R2 回退。
+C1–C6 已部分实现。C1–C3 的 session writer、Light 证明包与 Group 最小集已接入真实 schema 3 task；Light request/retrospective 可通过真实 `checkpoint` 原子创建，task 根 provenance 可显式维护；C4 提供独立于 task schema 的 Git 知识文档 freshness 只读检查；C5 提供受预算 Context pack 与 benchmark diagnostic；C6 提供 legacy claim/patch 升级与 R2 回退。
 
 Group 只聚合 task，不增加 group phase、revision、锁或完成门禁。schema 3 task 可使用 `save --group` 或 `save --clear-group` 修改单张 task；`list --group [--include-archive]` 返回精确匹配的成员与派生计数，`context` 只附带受限的 sibling 摘要。Group 变更不会修改 plan、work basis、verification 或 submission。
 

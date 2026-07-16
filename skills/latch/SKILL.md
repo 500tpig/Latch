@@ -27,10 +27,19 @@ The explicit Latch entry rule remains active until the final contract and instru
 - Grill and keep the task in `plan` when the goal, success criteria, scope, product choice, root cause, or high-risk change is unclear; record only questions that block implementation in `open_questions`.
 - Use light request authorization only when the change, scope, success criteria, and low-risk implementation are all concrete, `open_questions` is empty, and no extra scope is inferred.
 - Use `source: user_request` for a complete low-risk request, `source: user_delta` for a precise low-risk addition to the current plan, and `source: user_approve` after a displayed standard plan receives explicit approval.
+- For a complete low-risk request, create the light task atomically with `checkpoint --profile light --authorization-file`; the authorization file must use `source: user_request`.
+- Use `checkpoint --retrospective-file` only for honest after-the-fact recording with no matching open task; it defaults to standard, and `--profile light` keeps the gate-only proof rule.
 - Use standard plan and explicit approval when implementation requires design choice, migration, authentication, public API changes, destructive data handling, or multiple disputed gates.
 - Stop and return to `plan` when implementation reveals missing information or scope expansion; do not stretch an earlier authorization to cover it.
 
 Schema 3 authorization uses `--authorization-file`; retrospective input uses `--retrospective-file`; submit and legacy patch use `--knowledge-impact-file`. A schema 2 task must be explicitly claimed before these commands can modify it.
+
+## S2 provenance rules (partial release)
+
+- Treat missing task provenance as `clean`; new schema 3 tasks write `provenance: clean`.
+- Set provenance to `mixed` only after the user explicitly accepts overlapping parallel work, using standalone `save --provenance mixed --provenance-reason <text>`.
+- Reset provenance to `clean` only after the user explicitly confirms isolation has been restored; phase changes, submit, done, and takeover never reset it automatically.
+- Provenance is a task-root current fact shown by list/context and copied by archive; never add a second authoritative value to submission or closure.
 
 ## C3 group rules (partial release)
 
@@ -72,6 +81,20 @@ Create a task only with explicit authorization and a complete plan file:
 
 ```bash
 latch checkpoint "Task title" --plan-file plan.json
+```
+
+For a complete low-risk request that satisfies the C2 decision rules:
+
+```bash
+latch checkpoint "Task title" --plan-file plan.json \
+  --profile light --authorization-file authorization.json
+```
+
+For an honest retrospective record with no matching open task:
+
+```bash
+latch checkpoint "Task title" --plan-file plan.json \
+  --retrospective-file retrospective.json
 ```
 
 Show the plan before implementation. Run `approve` only after explicit implementation authorization:

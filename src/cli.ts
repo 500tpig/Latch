@@ -52,6 +52,7 @@ import type {
   TaskArtifact,
   TaskPlan,
   TaskProfile,
+  TaskProvenance,
 } from './core/types.js'
 import {
   abandonTaskV2,
@@ -68,7 +69,7 @@ const usage = `Usage: latch <command> [options]
 
 Commands:
   init
-  checkpoint <title> --plan-file <path>
+  checkpoint <title> --plan-file <path> [--profile <light|standard>] [--authorization-file <path> | --retrospective-file <path>]
   use <task-id>
   list [--group <id> [--include-archive]] [--json] [--brief]
   context [task-id] [--json] [--brief]
@@ -89,7 +90,7 @@ Commands:
 const commandUsage: Record<string, string> = {
   init: 'Usage: latch init [--json]',
   checkpoint:
-    'Usage: latch checkpoint <title> --plan-file <path> [--artifact <kind>:<path>] [--json]',
+    'Usage: latch checkpoint <title> --plan-file <path> [--profile <light|standard>] [--authorization-file <path> | --retrospective-file <path>] [--artifact <kind>:<path>] [--json]',
   use: 'Usage: latch use <task-id> [--json]',
   list:
     'Usage: latch list [--group <id> [--include-archive]] [--json] [--brief]',
@@ -104,7 +105,7 @@ const commandUsage: Record<string, string> = {
   takeover:
     'Usage: latch takeover <task-id> --expect-revision <revision> --reason <text> [--json]',
   save:
-    'Usage: latch save <task-id> --expect-revision <revision> [--plan-file <path>] [--feedback <text>] [--decision <text>] [--artifact <kind>:<path>] [--remove-artifact <kind>:<path>] [--block-reason <text> --waiting-for <text> | --unblock] [--profile <light|standard> --profile-reason <text> [--user-requested-narrowing] | --group <id> | --clear-group] [--json]',
+    'Usage: latch save <task-id> --expect-revision <revision> [--plan-file <path>] [--feedback <text>] [--decision <text>] [--artifact <kind>:<path>] [--remove-artifact <kind>:<path>] [--block-reason <text> --waiting-for <text> | --unblock] [--profile <light|standard> --profile-reason <text> [--user-requested-narrowing] | --provenance <clean|mixed> --provenance-reason <text> | --group <id> | --clear-group] [--json]',
   approve:
     'Usage: latch approve <task-id> --expect-revision <revision> [--reason <text> | --authorization-file <path> | --retrospective-file <path>] [--feedback <text>] [--json]',
   verify:
@@ -174,6 +175,13 @@ function groupId(raw: string | undefined) {
   } catch (error) {
     fail('invalid_arguments', error instanceof Error ? error.message : String(error))
   }
+}
+
+function taskProvenance(raw: string | undefined) {
+  if (raw === undefined) return undefined
+  if (raw !== 'clean' && raw !== 'mixed')
+    fail('invalid_arguments', '--provenance must be clean or mixed.')
+  return raw as TaskProvenance
 }
 
 function artifact(raw: string): TaskArtifact {
@@ -270,20 +278,58 @@ function runCheckpoint(args: string[], cwd: string, actor: string) {
   const parsed = parseCommand(args, {
     ...commonOptions(),
     'plan-file': { type: 'string' },
+    profile: { type: 'string' },
+    'authorization-file': { type: 'string' },
+    'retrospective-file': { type: 'string' },
     artifact: { type: 'string', multiple: true },
   })
   if (parsed.values.help) return process.stdout.write(`${commandUsage.checkpoint}\n`)
   requirePositionals('checkpoint', parsed.positionals, 1)
-  const store = openTaskStoreV2(cwd)
+  if (parsed.values.profile !== undefined &&
+      parsed.values.profile !== 'light' &&
+      parsed.values.profile !== 'standard')
+    fail('invalid_arguments', '--profile must be light or standard.')
+  if (parsed.values['authorization-file'] && parsed.values['retrospective-file'])
+    fail(
+      'invalid_arguments',
+      '--authorization-file and --retrospective-file cannot be combined.',
+    )
+  const hasAuthorization = parsed.values['authorization-file'] !== undefined
+  const hasRetrospective = parsed.values['retrospective-file'] !== undefined
   const plan = readPlan(cwd, parsed.values['plan-file'])
   const artifacts = (parsed.values.artifact ?? []).map(artifact)
+  const authorization = parsed.values['authorization-file']
+    ? readInputFile<ImplementationAuthorizationInput>(
+        cwd,
+        parsed.values['authorization-file'],
+        '--authorization-file',
+      )
+    : undefined
+  const retrospective = parsed.values['retrospective-file']
+    ? readInputFile<RetrospectiveRecordInput>(
+        cwd,
+        parsed.values['retrospective-file'],
+        '--retrospective-file',
+      )
+    : undefined
+  if (hasAuthorization && authorization?.source !== 'user_request')
+    fail('invalid_arguments', 'Checkpoint authorization source must be user_request.')
+  if (hasAuthorization && parsed.values.profile === 'standard')
+    fail('invalid_arguments', 'Checkpoint request authorization requires profile light.')
+  const profile = hasAuthorization
+    ? 'light'
+    : (parsed.values.profile ?? 'standard') as TaskProfile
+  const store = openTaskStoreV2(cwd)
   const result = createTaskV3(
     store,
     {
       title: parsed.positionals[0],
       plan,
       artifacts,
-      profile: 'standard',
+      profile,
+      ...(hasAuthorization || hasRetrospective
+        ? { workBasis: hasAuthorization ? authorization! : retrospective! }
+        : {}),
     },
     actor,
   )
@@ -588,6 +634,8 @@ function runSave(args: string[], cwd: string, actor: string) {
     profile: { type: 'string' },
     'profile-reason': { type: 'string' },
     'user-requested-narrowing': { type: 'boolean' },
+    provenance: { type: 'string' },
+    'provenance-reason': { type: 'string' },
     group: { type: 'string' },
     'clear-group': { type: 'boolean' },
   })
@@ -607,6 +655,57 @@ function runSave(args: string[], cwd: string, actor: string) {
 
   const selectedGroup = groupId(parsed.values.group)
   const clearGroup = Boolean(parsed.values['clear-group'])
+  const selectedProvenance = taskProvenance(parsed.values.provenance)
+  if (selectedProvenance !== undefined) {
+    if (!parsed.values['provenance-reason'])
+      fail('invalid_arguments', '--provenance-reason is required with --provenance.')
+    const combined = Boolean(
+      parsed.values['plan-file'] ||
+      parsed.values.feedback ||
+      parsed.values.decision ||
+      parsed.values.question ||
+      parsed.values.answer ||
+      parsed.values.artifact?.length ||
+      parsed.values['remove-artifact']?.length ||
+      hasBlock ||
+      parsed.values.unblock ||
+      parsed.values.profile ||
+      parsed.values['profile-reason'] ||
+      parsed.values['user-requested-narrowing'] ||
+      selectedGroup !== undefined ||
+      clearGroup,
+    )
+    if (combined)
+      fail('invalid_arguments', '--provenance must be saved as a standalone change.')
+    const store = openTaskStoreV2(cwd)
+    const current = readTaskV2(store, parsed.positionals[0])
+    const previousProvenance = current.provenance ?? 'clean'
+    if (previousProvenance === selectedProvenance)
+      fail('invalid_arguments', 'save did not change provenance.')
+    const reason = parsed.values['provenance-reason']
+    const result = updateTaskV3(store, current.id, {
+      expectRevision,
+      actor,
+      events: [{
+        type: 'decision_recorded',
+        fields: {
+          plan_revision: current.plan_revision,
+          conclusion: `provenance ${previousProvenance} -> ${selectedProvenance}: ${reason}`,
+        },
+      }],
+      update(task) {
+        task.provenance = selectedProvenance
+      },
+    })
+    if (parsed.values.json)
+      return json(mutationJson(result.task, result.warnings, expectRevision))
+    process.stdout.write(
+      `Changed ${result.task.id} provenance to ${selectedProvenance}.\n`,
+    )
+    return printWarnings(result.warnings)
+  }
+  if (parsed.values['provenance-reason'])
+    fail('invalid_arguments', '--provenance-reason requires --provenance.')
   if (selectedGroup !== undefined && clearGroup)
     fail('invalid_arguments', '--group and --clear-group cannot be combined.')
   if (selectedGroup !== undefined || clearGroup) {
@@ -622,7 +721,9 @@ function runSave(args: string[], cwd: string, actor: string) {
       parsed.values.unblock ||
       parsed.values.profile ||
       parsed.values['profile-reason'] ||
-      parsed.values['user-requested-narrowing'],
+      parsed.values['user-requested-narrowing'] ||
+      parsed.values.provenance ||
+      parsed.values['provenance-reason'],
     )
     if (combined)
       fail('invalid_arguments', '--group must be saved as a standalone change.')
@@ -668,7 +769,9 @@ function runSave(args: string[], cwd: string, actor: string) {
       parsed.values.artifact?.length ||
       parsed.values['remove-artifact']?.length ||
       hasBlock ||
-      parsed.values.unblock,
+      parsed.values.unblock ||
+      parsed.values.provenance ||
+      parsed.values['provenance-reason'],
     )
     if (combined)
       fail('invalid_arguments', '--profile must be saved as a standalone change.')
