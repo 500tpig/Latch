@@ -44,13 +44,22 @@ writer affinity 是**防误写的协作门禁**，不是认证机制。
 ### 2.1 环境变量
 
 - 写路径与依赖 current 的读路径以进程环境中的 actor 为准。
-- 调用方应设置：
+- 宿主 adapter 或 skill 应在启动 Latch 前设置：
 
 ```text
 LATCH_ACTOR=<canonical-actor>
 ```
 
-- 仅当平台能提供稳定会话 opaque id 时，Core 或 adapter 可将平台变量合成为 canonical actor（例如由线程 id 映射）。不得合成为可写的客户端级退化 id。
+- 用户不得手工猜测或 export 该值来取得写权限。
+
+### 2.1.1 通用 adapter 边界
+
+- Core 只消费 `LATCH_ACTOR` 并校验 canonical 形态；新宿主接入不得通过新增厂商环境变量检测分支实现。
+- adapter 只有在能从宿主运行时或协议获得稳定、每会话唯一的 opaque id 时，才可注入 `<tool>:session:<opaque-id>`。
+- adapter 无法获得该 id 时不得注入退化 actor；该宿主只能执行 `list` 和带明确 task id 的 `context`。
+- 不得以 `default`、随机 UUID、PID、机器名、工作目录或用户输入构造 opaque id。
+- 已存在的运行时兼容映射不构成新宿主的接入模板；新集成应复用本节的 adapter 契约，而不是扩展 Core 的厂商识别。
+- 当前发行的 CLI 将 Codex adapter 置于 Core 之前：仅当 `LATCH_ACTOR` 未声明且 Codex 提供稳定 `CODEX_THREAD_ID` 时，adapter 注入 `codex:session:<thread-id>`；显式空 `LATCH_ACTOR` 仍保持不可写。
 
 ### 2.2 Canonical 形态
 
@@ -93,7 +102,7 @@ LATCH_ACTOR=<canonical-actor>
 
 ```text
 Actor not writable: claude:default.
-Set LATCH_ACTOR=<tool>:session:<opaque-id> and retry.
+The host adapter must provide LATCH_ACTOR=<tool>:session:<opaque-id>.
 ```
 
 ```text

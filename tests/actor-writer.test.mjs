@@ -20,6 +20,7 @@ import {
   readTaskEventsV3,
 } from '../dist/core/notes-events.js'
 import { actorId, isWritableActor } from '../dist/core/actor.js'
+import { injectHostActor } from '../dist/host-adapter.js'
 
 const cli = join(process.cwd(), 'dist/cli.js')
 const writerA = 'codex:session:writer-a'
@@ -38,6 +39,14 @@ function run(cwd, args, actor = writerA) {
     cwd,
     encoding: 'utf8',
     env: { ...process.env, LATCH_ACTOR: actor },
+  })
+}
+
+function runWithEnvironment(cwd, args, environment) {
+  return spawnSync(process.execPath, [cli, ...args], {
+    cwd,
+    encoding: 'utf8',
+    env: environment,
   })
 }
 
@@ -95,7 +104,7 @@ test.afterEach(() => {
     rmSync(directory, { recursive: true, force: true })
 })
 
-test('canonical actor parsing uses a session-scoped Codex thread id', () => {
+test('host adapter injects Codex actor without expanding Core host detection', () => {
   assert.equal(isWritableActor('codex:session:thread-1'), true)
   assert.equal(isWritableActor('codex:session:DEFAULT'), false)
   assert.equal(isWritableActor('codex:default:thread-1'), false)
@@ -106,15 +115,52 @@ test('canonical actor parsing uses a session-scoped Codex thread id', () => {
   try {
     delete process.env.LATCH_ACTOR
     process.env.CODEX_THREAD_ID = 'thread-1'
+    assert.equal(actorId(), 'unknown:default')
+    injectHostActor()
     assert.equal(actorId(), 'codex:session:thread-1')
     process.env.LATCH_ACTOR = ''
+    injectHostActor()
     assert.equal(actorId(), '')
+    process.env.LATCH_ACTOR = 'adapter:session:session-1'
+    injectHostActor()
+    assert.equal(actorId(), 'adapter:session:session-1')
+
+    delete process.env.LATCH_ACTOR
+    delete process.env.CODEX_THREAD_ID
+    injectHostActor()
+    assert.equal(actorId(), 'unknown:default')
+    assert.equal(isWritableActor(actorId()), false)
   } finally {
     if (latchActor === undefined) delete process.env.LATCH_ACTOR
     else process.env.LATCH_ACTOR = latchActor
     if (threadId === undefined) delete process.env.CODEX_THREAD_ID
     else process.env.CODEX_THREAD_ID = threadId
   }
+})
+
+test('Codex adapter enables checkpoint only with a stable thread id', () => {
+  const cwd = temporaryDirectory()
+  const environment = { ...process.env, CODEX_THREAD_ID: 'codex-thread-1' }
+  delete environment.LATCH_ACTOR
+  assert.equal(runWithEnvironment(cwd, ['init'], environment).status, 0)
+  writePlan(cwd)
+
+  const created = runWithEnvironment(
+    cwd,
+    ['checkpoint', 'Codex task', '--plan-file', 'plan.json', '--json'],
+    environment,
+  )
+  assert.equal(created.status, 0, created.stderr)
+  const task = readTask(cwd, JSON.parse(created.stdout).task_id)
+  assert.equal(task.primary_writer, 'codex:session:codex-thread-1')
+
+  const explicitlyEmpty = runWithEnvironment(
+    cwd,
+    ['checkpoint', 'Rejected task', '--plan-file', 'plan.json'],
+    { ...environment, LATCH_ACTOR: '' },
+  )
+  assert.notEqual(explicitlyEmpty.status, 0)
+  assert.match(explicitlyEmpty.stderr, /Actor not writable: \(empty\)/)
 })
 
 test('invalid actors cannot write or use current while explicit reads remain available', () => {
@@ -129,7 +175,7 @@ test('invalid actors cannot write or use current while explicit reads remain ava
   )
   assert.notEqual(rejected.status, 0)
   assert.match(rejected.stderr, /Actor not writable: claude:default/)
-  assert.match(rejected.stderr, /LATCH_ACTOR=<tool>:session:<opaque-id>/)
+  assert.match(rejected.stderr, /host adapter must provide LATCH_ACTOR/i)
 
   const task = createV3(cwd)
   assert.equal(run(cwd, ['list', '--json'], '').status, 0)

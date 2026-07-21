@@ -15,6 +15,14 @@ Use the trigger rules below for repository-write or observable-behavior requests
 4. Read task artifacts, then `docs/INDEX.md`, then 1–3 directly relevant project documents.
 5. Preserve unrelated worktree changes.
 
+## Session actor adapter
+
+- Core only accepts a canonical `LATCH_ACTOR`; new hosts must not add vendor-specific environment detection to Core.
+- A host adapter may inject `<tool>:session:<opaque-id>` only after obtaining a stable, session-unique id from that host runtime or protocol.
+- Do not tell a user to guess or export `LATCH_ACTOR`, and do not derive it from `default`, a random UUID, PID, machine name, working directory, or user input.
+- Without an adapter-provided canonical actor, keep the host read-only: use `latch list` or `latch context <task-id>` only.
+- The distributed Codex adapter is an existing compatibility path: when `LATCH_ACTOR` is absent and Codex supplies stable `CODEX_THREAD_ID`, it injects `codex:session:<thread-id>` before Core reads the actor; an explicit empty `LATCH_ACTOR` remains fail closed.
+
 ## Cross-session Handoff
 
 Treat a request to move to a new conversation, a fork, a full-context handoff, or a conversation nearing its limit as a cross-session handoff. A fork and a new conversation both have a new session actor, even when they share the same workspace.

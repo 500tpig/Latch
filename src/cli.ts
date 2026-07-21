@@ -6,6 +6,7 @@ import {
   assertWritableActor,
   isWritableActor,
 } from './core/actor.js'
+import { injectHostActor } from './host-adapter.js'
 import {
   evaluateContextBenchmark,
   parseContextBenchCase,
@@ -1191,6 +1192,7 @@ function run(argv: string[], cwd: string) {
     return
   }
   const args = argv.slice(1)
+  injectHostActor()
   const actor = actorId()
   if (
     actorRequiredCommands.has(command) &&
