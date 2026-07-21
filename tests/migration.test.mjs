@@ -24,6 +24,7 @@ import {
   readTaskEventLogV3,
   readTaskEventsV2,
 } from '../dist/core/notes-events.js'
+import { downgradeTaskEvents } from '../dist/core/migration.js'
 
 const cli = join(process.cwd(), 'dist/cli.js')
 const actor = 'codex:session:migration'
@@ -104,6 +105,23 @@ function downgrade(cwd, task, extra = []) {
 test.afterEach(() => {
   for (const directory of temporaryDirectories.splice(0))
     rmSync(directory, { recursive: true, force: true })
+})
+
+test('downgrade projects non-implementation feedback to a v2-safe event', () => {
+  const event = {
+    type: 'review_feedback',
+    task_id: 'task',
+    actor,
+    revision: 4,
+    created_at: new Date().toISOString(),
+    plan_revision: 1,
+    work_revision: 1,
+    classification: 'non_implementation_correction',
+    summary: '文档表述修正',
+  }
+  const [downgraded] = downgradeTaskEvents([event])
+  assert.equal(downgraded.classification, 'evaluative')
+  assert.equal(downgraded.revision, 1)
 })
 
 test('claim promotes a real v2 review task before legacy impact patch', () => {

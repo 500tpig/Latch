@@ -1,5 +1,9 @@
 import { spawnSync } from 'node:child_process'
 import {
+  artifactDeliveryWarnings,
+  untrackedWorktreeWarnings,
+} from './artifact-status.js'
+import {
   archiveTaskV2,
   assertKnowledgeImpact,
   assertTaskWritableV2,
@@ -26,6 +30,7 @@ export type ApproveTaskV2Input = {
   actor: string
   reason?: string
   feedback?: string
+  nonImplementationFeedback?: string
   authorization?: ImplementationAuthorizationInput
   retrospective?: RetrospectiveRecordInput
 }
@@ -123,7 +128,8 @@ export function approveTaskV2(
   const warnings = sharedWorktreeWarnings(store, current.id)
 
   if (current.phase === 'plan') {
-    if (input.feedback) throw new Error('--feedback requires a task in review.')
+    if (input.feedback || input.nonImplementationFeedback !== undefined)
+      throw new Error('Review feedback requires a task in review.')
     const legacyStandardApproval =
       profileOf(current) === 'standard' &&
       input.reason !== undefined &&
@@ -254,6 +260,37 @@ export function approveTaskV2(
   }
 
   if (current.phase === 'review') {
+    if (input.nonImplementationFeedback !== undefined) {
+      if (current.schema_version !== 3)
+        throw new Error(
+          'Non-implementation feedback requires schema_version 3; frozen v2 data was not modified.',
+        )
+      if (input.reason || input.feedback || input.authorization || input.retrospective)
+        throw new Error(
+          'Non-implementation feedback cannot be combined with approval or implementation feedback inputs.',
+        )
+      const summary = requireText(
+        input.nonImplementationFeedback,
+        '--non-implementation-feedback is required.',
+      )
+      const update = {
+        expectRevision: input.expectRevision,
+        actor: input.actor,
+        events: [
+          {
+            type: 'review_feedback' as const,
+            fields: {
+              plan_revision: current.plan_revision,
+              work_revision: current.work_revision,
+              classification: 'non_implementation_correction' as const,
+              summary,
+            },
+          },
+        ],
+        update() {},
+      }
+      return withWarnings(updateTaskV3(store, current.id, update), warnings)
+    }
     if (input.reason) throw new Error('--reason cannot be combined with --feedback.')
     if (input.retrospective)
       throw new Error('Retrospective cannot be started from review.')
@@ -503,7 +540,7 @@ export function submitTaskV2(
     )
   }
   const verified = verificationSummary(current)
-  return updateTaskV2(store, current.id, {
+  return withWarnings(updateTaskV2(store, current.id, {
     expectRevision: input.expectRevision,
     actor: input.actor,
     events: [
@@ -538,7 +575,10 @@ export function submitTaskV2(
       }
       task.phase = 'review'
     },
-  })
+  }), [
+    ...artifactDeliveryWarnings(store.paths.workspaceRoot, current.artifacts),
+    ...untrackedWorktreeWarnings(store.paths.workspaceRoot),
+  ])
 }
 
 export type ChangeTaskProfileV3Input = {

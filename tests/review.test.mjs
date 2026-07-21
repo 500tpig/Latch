@@ -242,6 +242,74 @@ test('work revision change makes prior gates and submission stale', () => {
   assert.notEqual(stale.status, 0)
 })
 
+test('non-implementation correction preserves review proof and submission', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const id = checkpoint(cwd, plan({ verification_plan: [plan().verification_plan[0]] }))
+  approve(cwd, id)
+  assert.equal(verify(cwd, id, 'first').status, 0)
+  assert.equal(submit(cwd, id).status, 0)
+  const before = readTask(cwd, id)
+  const correction = run(cwd, [
+    'approve', id, '--expect-revision', revision(cwd, id),
+    '--non-implementation-feedback', '修正文档表述，代码未变', '--json',
+  ])
+  assert.equal(correction.status, 0, correction.stderr)
+  const after = readTask(cwd, id)
+  assert.equal(after.phase, 'review')
+  assert.equal(after.work_revision, before.work_revision)
+  assert.deepEqual(after.verification, before.verification)
+  assert.deepEqual(after.submission, before.submission)
+  const events = readFileSync(eventsPath(cwd, id), 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line))
+  const feedback = events.findLast((event) => event.type === 'review_feedback')
+  assert.equal(feedback.classification, 'non_implementation_correction')
+  assert.equal(feedback.work_revision, before.work_revision)
+
+  const human = run(cwd, [
+    'approve', id, '--expect-revision', revision(cwd, id),
+    '--non-implementation-feedback', '再次修正文案',
+  ])
+  assert.equal(human.status, 0, human.stderr)
+  assert.match(human.stdout, /Recorded non-implementation feedback/)
+  assert.doesNotMatch(human.stdout, /Approved/)
+})
+
+test('submit warns when an artifact is not tracked by Git', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const id = checkpoint(cwd, plan({ verification_plan: [] }))
+  const attached = run(cwd, [
+    'save', id, '--expect-revision', revision(cwd, id),
+    '--artifact', 'doc:docs/local.md', '--json',
+  ])
+  assert.equal(attached.status, 0, attached.stderr)
+  approve(cwd, id)
+  const result = submit(cwd, id, ['--no-verify', '--reason', '纯文档'])
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(JSON.parse(result.stdout).warnings.join('\n'), /docs\/local\.md is missing/)
+})
+
+test('submit reports every untracked worktree file separately from artifacts', () => {
+  const cwd = temporaryDirectory()
+  spawnSync('git', ['init'], { cwd, encoding: 'utf8' })
+  writeFileSync(join(cwd, '.gitignore'), '.latch/\n')
+  spawnSync('git', ['add', '.gitignore'], { cwd, encoding: 'utf8' })
+  init(cwd)
+  const id = checkpoint(cwd, plan({ verification_plan: [] }))
+  writeFileSync(join(cwd, 'implementation.ts'), 'export const value = 1\n')
+  writeFileSync(join(cwd, 'review-note.md'), 'review\n')
+  approve(cwd, id)
+  const result = submit(cwd, id, ['--no-verify', '--reason', 'fixture'])
+  assert.equal(result.status, 0, result.stderr)
+  const warnings = JSON.parse(result.stdout).warnings.join('\n')
+  assert.match(warnings, /Worktree delivery: implementation\.ts is untracked/)
+  assert.match(warnings, /Worktree delivery: review-note\.md is untracked/)
+  assert.doesNotMatch(warnings, /Artifact delivery: implementation\.ts/)
+})
+
 test('no-verify requires approval, no gates, and a reason', () => {
   const cwd = temporaryDirectory()
   init(cwd)

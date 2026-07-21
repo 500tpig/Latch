@@ -222,7 +222,11 @@ export type ReviewFeedbackEvent = BaseTaskEvent & {
   type: 'review_feedback'
   plan_revision: number
   work_revision: number
-  classification: 'implementation_correction' | 'evaluative' | 'plan_change'
+  classification:
+    | 'implementation_correction'
+    | 'non_implementation_correction'
+    | 'evaluative'
+    | 'plan_change'
   summary: string
 }
 

@@ -73,14 +73,14 @@ Commands:
   checkpoint <title> --plan-file <path> [--profile <light|standard>] [--authorization-file <path> | --retrospective-file <path>]
   use <task-id>
   list [--group <id> [--include-archive]] [--json] [--brief]
-  context [task-id] [--json] [--brief]
+  context [task-id] [--json] [--brief | --status | --since-revision <revision>]
   context pack --input-file <path>
   knowledge <fingerprint|check> [options]
   benchmark context [options]
   claim <task-id> --expect-revision <revision> [--reason <text>]
   takeover <task-id> --expect-revision <revision> --reason <text>
   save <task-id> --expect-revision <revision> [changes]
-  approve <task-id> --expect-revision <revision> [--reason <text> | --authorization-file <path> | --retrospective-file <path>] [--feedback <text>]
+  approve <task-id> --expect-revision <revision> [--reason <text> | --authorization-file <path> | --retrospective-file <path>] [--feedback <text> | --non-implementation-feedback <text>]
   verify <task-id> --expect-revision <revision> --name <name> [--diagnostic] [-- command...]
   submit <task-id> --expect-revision <revision> --changes <text> --unverified <text> [--knowledge-impact-file <path>] [--no-verify --reason <text>]
   patch-submission-knowledge-impact <task-id> --expect-revision <revision> --knowledge-impact-file <path>
@@ -95,7 +95,8 @@ const commandUsage: Record<string, string> = {
   use: 'Usage: latch use <task-id> [--json]',
   list:
     'Usage: latch list [--group <id> [--include-archive]] [--json] [--brief]',
-  context: 'Usage: latch context [task-id] [--json] [--brief]',
+  context:
+    'Usage: latch context [task-id] [--json] [--brief | --status | --since-revision <revision>]',
   'context-pack': 'Usage: latch context pack --input-file <path> [--json]',
   knowledge:
     'Usage: latch knowledge fingerprint --path <path> [--json]\n       latch knowledge check (--path <path> | --task <task-id>) [--json]',
@@ -108,7 +109,7 @@ const commandUsage: Record<string, string> = {
   save:
     'Usage: latch save <task-id> --expect-revision <revision> [--plan-file <path>] [--feedback <text>] [--decision <text>] [--artifact <kind>:<path>] [--remove-artifact <kind>:<path>] [--block-reason <text> --waiting-for <text> | --unblock] [--profile <light|standard> --profile-reason <text> [--user-requested-narrowing] | --provenance <clean|mixed> --provenance-reason <text> | --group <id> | --clear-group] [--json]',
   approve:
-    'Usage: latch approve <task-id> --expect-revision <revision> [--reason <text> | --authorization-file <path> | --retrospective-file <path>] [--feedback <text>] [--json]',
+    'Usage: latch approve <task-id> --expect-revision <revision> [--reason <text> | --authorization-file <path> | --retrospective-file <path>] [--feedback <text> | --non-implementation-feedback <text>] [--json]',
   verify:
     'Usage: latch verify <task-id> --expect-revision <revision> --name <name> [--diagnostic] [-- command...] [--json]',
   submit:
@@ -165,6 +166,12 @@ function requirePositionals(
 function positiveInteger(raw: string | undefined, name: string) {
   if (!raw || !/^\d+$/.test(raw) || Number(raw) < 1)
     fail('invalid_arguments', `${name} must be a positive integer.`)
+  return Number(raw)
+}
+
+function nonNegativeInteger(raw: string | undefined, name: string) {
+  if (raw === undefined || !/^\d+$/.test(raw))
+    fail('invalid_arguments', `${name} must be a non-negative integer.`)
   return Number(raw)
 }
 
@@ -391,10 +398,27 @@ function runContext(args: string[], cwd: string, actor: string) {
   const parsed = parseCommand(args, {
     ...commonOptions(),
     brief: { type: 'boolean' },
+    status: { type: 'boolean' },
+    'since-revision': { type: 'string' },
   })
   if (parsed.values.help) return process.stdout.write(`${commandUsage.context}\n`)
   requirePositionals('context', parsed.positionals, [0, 1])
   validateBrief(parsed.values.json, parsed.values.brief)
+  if (
+    (parsed.values.status || parsed.values['since-revision'] !== undefined) &&
+    !parsed.values.json
+  )
+    fail('invalid_arguments', '--status and --since-revision require --json.')
+  const selectedViews = [
+    Boolean(parsed.values.brief),
+    Boolean(parsed.values.status),
+    parsed.values['since-revision'] !== undefined,
+  ].filter(Boolean).length
+  if (selectedViews > 1)
+    fail(
+      'invalid_arguments',
+      '--brief, --status, and --since-revision are mutually exclusive.',
+    )
   if (!parsed.positionals[0] && !isWritableActor(actor))
     fail(
       'actor_required',
@@ -402,8 +426,21 @@ function runContext(args: string[], cwd: string, actor: string) {
         'Pass an explicit task id or set a session actor.',
     )
   const { store, task } = targetTask(cwd, actor, parsed.positionals[0])
+  const sinceRevision =
+    parsed.values['since-revision'] !== undefined
+      ? nonNegativeInteger(parsed.values['since-revision'], '--since-revision')
+      : undefined
+  if (sinceRevision !== undefined && sinceRevision > task.revision)
+    fail(
+      'invalid_arguments',
+      `--since-revision cannot exceed current task revision ${task.revision}.`,
+    )
   if (parsed.values.json)
-    return json(contextJsonV2(store, task, actor, Boolean(parsed.values.brief)))
+    return json(contextJsonV2(store, task, actor, {
+      brief: Boolean(parsed.values.brief),
+      status: Boolean(parsed.values.status),
+      sinceRevision,
+    }))
   process.stdout.write(`${contextHumanV2(store, task, actor)}\n`)
 }
 
@@ -915,6 +952,7 @@ function runApprove(args: string[], cwd: string, actor: string) {
     'expect-revision': { type: 'string' },
     reason: { type: 'string' },
     feedback: { type: 'string' },
+    'non-implementation-feedback': { type: 'string' },
     'authorization-file': { type: 'string' },
     'retrospective-file': { type: 'string' },
   })
@@ -923,6 +961,17 @@ function runApprove(args: string[], cwd: string, actor: string) {
   requirePositionals('approve', parsed.positionals, 1)
   if (parsed.values.reason && parsed.values.feedback)
     fail('invalid_arguments', '--reason and --feedback cannot be combined.')
+  if (
+    parsed.values['non-implementation-feedback'] !== undefined &&
+    (parsed.values.reason ||
+      parsed.values.feedback ||
+      parsed.values['authorization-file'] ||
+      parsed.values['retrospective-file'])
+  )
+    fail(
+      'invalid_arguments',
+      '--non-implementation-feedback cannot be combined with approval or implementation feedback inputs.',
+    )
   if (parsed.values['authorization-file'] && parsed.values['retrospective-file'])
     fail(
       'invalid_arguments',
@@ -957,14 +1006,18 @@ function runApprove(args: string[], cwd: string, actor: string) {
     actor,
     reason: parsed.values.reason,
     feedback: parsed.values.feedback,
+    nonImplementationFeedback: parsed.values['non-implementation-feedback'],
     authorization,
     retrospective,
   })
   if (parsed.values.json)
     return json(mutationJson(result.task, result.warnings, expectRevision))
+  const action =
+    parsed.values['non-implementation-feedback'] !== undefined
+      ? 'Recorded non-implementation feedback for'
+      : 'Approved'
   process.stdout.write(
-    `Approved ${result.task.id}: revision ${expectRevision} -> ${result.task.revision}
-`,
+    `${action} ${result.task.id}: revision ${expectRevision} -> ${result.task.revision}\n`,
   )
   printWarnings(result.warnings)
 }

@@ -8,9 +8,11 @@ Document-Status: current component of `2026-07-15-latch-final-product-contract.m
 
 Date: 2026-07-15
 
-Revision: 6
+Revision: 7
 
 Released: 2026-07-16 — 全面 current 发布。
+
+Updated: 2026-07-21 — 增加非实现修正与 artifact Git 交付状态。
 
 判定表 B、A、C 的权威定义见 `docs/prd/2026-07-15-latch-workflow-triggers-draft.md`，本章不重复展开。
 
@@ -264,6 +266,7 @@ type Submission = {
 | 意图 | 效果 |
 |---|---|
 | 可执行实现修正 | work_revision+1，phase→dev；submission 失效；若 basis 为 retrospective 则 basis 失效，须新 authorization |
+| 非实现修正 | phase、work_revision、verification、submission 均保持；追加 `review_feedback`，classification=`non_implementation_correction` |
 | plan 或 profile 变化 | plan_revision+1，phase→plan；basis/gate/submission 失效；**不**因此 work_revision+1 |
 | 仅 plan/profile 变且代码未变的 retrospective rebind | 保持 work_revision；新 record 绑新 plan_revision（§4.6） |
 | 纯评价 | 不改 phase / revisions |
@@ -329,6 +332,12 @@ AND knowledge_impact 合法
 ## 11. 事件
 
 `implementation_authorized` | `retrospective_recorded` | `profile_changed` | `submitted` | `submission_knowledge_impact_patched` | `review_feedback` | `done` | `abandoned`
+
+schema 3 的 `review_feedback.classification` 增加 `non_implementation_correction`。Skill 只能在确认实现快照未变化时选择该分类；Core 不读取 diff 或路径语义，只保持当前 proof。代码、配置、生成输入或可能影响 gate 的修改仍使用 `implementation_correction`。R2 downgrade 将该分类投影为 v2 可读的 `evaluative`，完整事件保留在 backup。
+
+### 11.1 Artifact Git 交付状态
+
+reader 为 task artifact 派生 `tracked`、`untracked`、`ignored`、`missing` 或 `unknown`。submit 对非 `tracked` 状态返回 warning，但不拒绝提交。Git 状态不改变 `knowledge_impact` 的 artifact 单真源，也不能把 ignored 文件自动归类为本地知识。
 
 ## 12. 迁移
 

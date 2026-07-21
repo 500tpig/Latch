@@ -11,9 +11,10 @@ Use the trigger rules below for repository-write or observable-behavior requests
 
 1. Run `git status --short`.
 2. Run `latch list --json --brief`.
-3. If the user names a task, run `latch context <task-id> --json --brief`; otherwise read the current task.
-4. Read task artifacts, then `docs/INDEX.md`, then 1–3 directly relevant project documents.
-5. Preserve unrelated worktree changes.
+3. If the user names a task, run `latch context <task-id> --json --status`; otherwise read the current task with `--status`.
+4. Expand with `--brief` or full context when goal, scope, acceptance, pending plan items, or submission evidence is required; use `--since-revision` only with a trusted baseline for that exact task revision.
+5. Read task artifacts, then `docs/INDEX.md`, then 1–3 directly relevant project documents.
+6. Preserve unrelated worktree changes.
 
 ## Session actor adapter
 
@@ -142,6 +143,15 @@ Use review correction only for an executable implementation change that leaves t
 latch approve <task-id> --expect-revision <n> --feedback "Correction summary"
 ```
 
+When review feedback changes only documentation or presentation and the implementation snapshot, configuration, generated inputs, gates, and public behavior are unchanged, record it without invalidating proof:
+
+```bash
+latch approve <task-id> --expect-revision <n> \
+  --non-implementation-feedback "Correction summary"
+```
+
+This keeps phase, `work_revision`, verification, and submission unchanged. If impact is uncertain, use implementation correction instead; never infer safety from a file extension or path alone.
+
 If feedback is evaluative or ambiguous, diagnose first and ask one concrete question without changing task state.
 
 ## Verify and submit
@@ -153,6 +163,8 @@ latch verify <task-id> --expect-revision <n> --name <gate-name>
 ```
 
 Use diagnostic argv only after `--`; it does not satisfy submit gates. Submit only after all current gates pass, or use `--no-verify` for an approved plan without gates and provide a reason.
+
+Report non-`tracked` `artifact_delivery` warnings on context or submit, and report submit's separate untracked-worktree warnings without guessing which files are implementation artifacts. Treat `ignored`, `untracked`, `missing`, and `unknown` as delivery risks, not as automatic local-knowledge classification and not as lifecycle gates.
 
 ## Finish
 

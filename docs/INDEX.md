@@ -36,7 +36,7 @@ Latch、Latch-Board、appearance-sec 和 monitoring 的当前兼容状态。
 
 ### [Latch 最终产品契约](prd/2026-07-15-latch-final-product-contract.md)
 
-- 状态：`approved`，Revision 4；
+- 状态：`approved`，Revision 5；
 - Source-Task：`20260714084358411-重审-latch-最终任务与知识上下文设计-51d5e1`；
 - 用途：Latch 唯一 current 产品契约；包含触发、Actor、Light、Group、knowledge、Context 与 R2 回退。
 

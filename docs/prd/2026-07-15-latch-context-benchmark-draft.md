@@ -8,9 +8,11 @@ Document-Status: current component of `2026-07-15-latch-final-product-contract.m
 
 Date: 2026-07-15
 
-Revision: 3
+Revision: 4
 
 Released: 2026-07-16 — 全面 current 发布。
+
+Updated: 2026-07-21 — 增加 task status 与 revision delta 读取契约。
 
 ## 1. 目的与边界
 
@@ -56,7 +58,21 @@ Released: 2026-07-16 — 全面 current 发布。
 - orientation 关闭时清零；
 - 新 orientation 不得继承上一任务的扩读累计。
 
-## 4. Pack 内容与输出字段
+## 4. Task 读取层级与 Pack 输出
+
+### 4.1 Task 读取层级
+
+CLI 提供三个兼容层级：
+
+- `context --json` 与 `context --json --brief` 保持既有输出；
+- `context --json --status` 只返回 phase、revision、授权、writer、blocked、gate 计数和 `next_action`；
+- `context --json --since-revision <revision>` 返回指定 revision 之后的 event 与当前最小状态，并设置 `requires_baseline: true`。
+
+`--brief`、`--status` 与 `--since-revision` 互斥。delta 只适用于调用方已持有可信 baseline 的情况，不是跨 session 完整恢复入口。`current` 是 actor state 指针；`primary_writer` 与 caller writer status 单独返回。
+
+status 输出应显著小于 brief。回归测试至少比较同一 task 的序列化字符数，确保 status 小于 brief；30% 降幅仍作为 benchmark 次目标，不成为单次 CLI 硬门禁。
+
+### 4.2 Pack 内容与输出字段
 
 必含：
 

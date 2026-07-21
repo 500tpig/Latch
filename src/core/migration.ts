@@ -63,7 +63,15 @@ export function downgradeTaskEvents(events: TaskEvent[]): TaskEvent[] {
       left.index - right.index,
     )
     .map(({ event }, index) => ({
-      ...structuredClone(event),
+      event: structuredClone(event),
       revision: index + 1,
     }))
+    .map(({ event, revision }) => {
+      if (
+        event.type === 'review_feedback' &&
+        event.classification === 'non_implementation_correction'
+      )
+        event.classification = 'evaluative'
+      return { ...event, revision }
+    })
 }

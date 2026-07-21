@@ -60,6 +60,7 @@ function validateTaskEvent(
       throw new Error(`Invalid feedback work_revision in ${path}.`)
     if (
       value.classification !== 'implementation_correction' &&
+      value.classification !== 'non_implementation_correction' &&
       value.classification !== 'evaluative' &&
       value.classification !== 'plan_change'
     )

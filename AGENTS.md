@@ -14,8 +14,9 @@
 
 1. `git status --short`；
 2. `latch list --json --brief`；
-3. 用户点名 task 时执行 `latch context <task-id> --json --brief`，否则读取当前 task；
-4. 从 `docs/INDEX.md` 选择与当前任务直接相关的 1–3 份文档。
+3. 用户点名 task 时先执行 `latch context <task-id> --json --status`，否则读取当前 task 的 status；需要 goal、scope、acceptance、完整 gate 或 submission 时再展开 `--brief` 或完整 context；
+4. 只有已持有同一 task 对应 revision 的可信 baseline 时才使用 `--since-revision`，不得用 delta 代替跨会话完整恢复；
+5. 从 `docs/INDEX.md` 选择与当前任务直接相关的 1–3 份文档。
 
 不得读取其他 Codex 会话或跨会话材料。需要扩大范围时，先说明当前 repo 内证据为何不足。
 

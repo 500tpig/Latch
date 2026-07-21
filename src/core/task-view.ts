@@ -1,4 +1,9 @@
 import type { TaskStoreV2 } from './task-store.js'
+import { isWritableActor } from './actor.js'
+import {
+  artifactDelivery,
+  artifactWarnings,
+} from './artifact-status.js'
 import {
   currentTaskIdV2,
   listGroupTasksV3,
@@ -134,6 +139,103 @@ function briefVerificationPlan(task: TaskV2) {
   })
 }
 
+function authorizationState(task: TaskV2) {
+  if (task.work_basis) {
+    const valid =
+      task.work_basis.plan_revision === task.plan_revision &&
+      (task.work_basis.kind === 'implementation_authorization' ||
+        task.work_basis.work_revision === task.work_revision)
+    return {
+      kind: task.work_basis.kind,
+      status: valid ? 'valid' : 'stale',
+      source:
+        task.work_basis.kind === 'implementation_authorization'
+          ? task.work_basis.source
+          : 'retrospective',
+      reason: task.work_basis.reason,
+    }
+  }
+  if (task.implementation_approval) {
+    return {
+      kind: 'legacy_approval',
+      status:
+        task.implementation_approval.approved_plan_revision === task.plan_revision
+          ? 'valid'
+          : 'stale',
+      source: task.implementation_approval.source,
+      reason: task.implementation_approval.reason,
+    }
+  }
+  return { kind: 'none', status: 'missing' }
+}
+
+function writerState(task: TaskV2, actor: string) {
+  const callerCapability = isWritableActor(actor) ? 'writable' : 'read_only'
+  const taskStatus = task.primary_writer ? 'assigned' : 'legacy_unclaimed'
+  const status =
+    callerCapability === 'read_only'
+      ? 'read_only_actor'
+      : taskStatus === 'legacy_unclaimed'
+        ? 'legacy_unclaimed'
+        : task.primary_writer === actor
+          ? 'primary_writer'
+          : 'writer_mismatch'
+  return {
+    ...(task.primary_writer ? { primary_writer: task.primary_writer } : {}),
+    task_status: taskStatus,
+    caller: actor,
+    caller_capability: callerCapability,
+    status,
+  }
+}
+
+function gateSummary(task: TaskV2) {
+  const statuses = briefVerificationPlan(task)
+    .filter((item) => item.kind === 'gate')
+    .map((item) => item.status)
+  return {
+    total: statuses.length,
+    pending: statuses.filter((status) => status === 'pending').length,
+    stale: statuses.filter((status) => status === 'stale').length,
+    pass: statuses.filter((status) => status === 'pass').length,
+    fail: statuses.filter((status) => status === 'fail').length,
+  }
+}
+
+function nextAction(task: TaskV2, actor: string) {
+  const writer = writerState(task, actor)
+  if (writer.caller_capability === 'read_only') return 'read_only'
+  if (writer.task_status === 'legacy_unclaimed') return 'claim'
+  if (writer.status === 'writer_mismatch') return 'takeover'
+  if (task.blocked) return 'unblock'
+  if (task.phase === 'plan')
+    return task.plan.open_questions.length > 0
+      ? 'resolve_open_questions'
+      : 'approve'
+  if (task.phase === 'review') return 'review_or_archive'
+  const gates = gateSummary(task)
+  return gates.total > 0 && gates.pass !== gates.total ? 'verify' : 'submit'
+}
+
+function statusTask(task: TaskV2, actor: string) {
+  return {
+    id: task.id,
+    title: task.title,
+    phase: task.phase,
+    revision: task.revision,
+    plan_revision: task.plan_revision,
+    work_revision: task.work_revision,
+    profile: task.profile ?? 'standard',
+    provenance: task.provenance ?? 'clean',
+    ...(task.blocked ? { blocked: task.blocked } : {}),
+    authorization: authorizationState(task),
+    writer: writerState(task, actor),
+    gates: gateSummary(task),
+    next_action: nextAction(task, actor),
+    updated_at: task.updated_at,
+  }
+}
+
 function briefTask(task: TaskV2) {
   return {
     id: task.id,
@@ -195,23 +297,60 @@ function groupContext(store: TaskStoreV2, task: TaskV2) {
   }
 }
 
+type ContextJsonOptions = {
+  brief?: boolean
+  status?: boolean
+  sinceRevision?: number
+}
+
 export function contextJsonV2(
   store: TaskStoreV2,
   task: TaskV2,
   actor: string,
-  brief: boolean,
+  input: boolean | ContextJsonOptions,
 ) {
+  const options = typeof input === 'boolean' ? { brief: input } : input
   const eventLog = taskEventLogV2(store, task.id)
   const events = eventLog.events
   const group = groupContext(store, task)
+  const delivery = artifactDelivery(store.paths.workspaceRoot, task.artifacts)
+  const deliveryWarnings = artifactWarnings(delivery)
+  const current = currentTaskIdV2(store, actor) === task.id
+  if (options.sinceRevision !== undefined) {
+    return {
+      ...jsonEnvelopeV2(),
+      view: 'delta',
+      current,
+      task: statusTask(task, actor),
+      from_revision: options.sinceRevision,
+      to_revision: task.revision,
+      requires_baseline: true,
+      events: events.filter((event) => event.revision > options.sinceRevision!),
+      history_incomplete: taskHistoryIncompleteV2(store, task.id, events),
+      artifact_delivery: delivery,
+      ...([...eventLog.warnings, ...deliveryWarnings].length > 0
+        ? { warnings: [...eventLog.warnings, ...deliveryWarnings] }
+        : {}),
+    }
+  }
   return {
     ...jsonEnvelopeV2(),
-    current: currentTaskIdV2(store, actor) === task.id,
-    task: brief ? briefTask(task) : task,
-    recent_events: brief ? events.slice(-5) : events,
+    view: options.status ? 'status' : options.brief ? 'brief' : 'full',
+    current,
+    task: options.status
+      ? statusTask(task, actor)
+      : options.brief
+        ? briefTask(task)
+        : task,
+    ...(!options.status
+      ? { recent_events: options.brief ? events.slice(-5) : events }
+      : {}),
     history_incomplete: taskHistoryIncompleteV2(store, task.id, events),
-    ...(eventLog.warnings.length > 0 ? { warnings: eventLog.warnings } : {}),
-    ...(group ? { group } : {}),
+    artifact_delivery: delivery,
+    ...([...eventLog.warnings, ...deliveryWarnings].length > 0
+      ? { warnings: [...eventLog.warnings, ...deliveryWarnings] }
+      : {}),
+    ...(!options.status && group ? { group } : {}),
   }
 }
 

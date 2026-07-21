@@ -111,6 +111,9 @@ test('top-level and command help have no side effects', () => {
   const saveHelp = run(temporaryDirectory(), ['save', '--help'])
   assert.match(saveHelp.stdout, /--provenance <clean\|mixed>/)
   assert.match(saveHelp.stdout, /--provenance-reason/)
+  const contextHelp = run(temporaryDirectory(), ['context', '--help'])
+  assert.match(contextHelp.stdout, /--status/)
+  assert.match(contextHelp.stdout, /--since-revision/)
 })
 
 test('unknown command and flag fail before creating .latch', () => {
@@ -298,6 +301,179 @@ test('list and context expose stable full and brief JSON', () => {
     },
   ])
   assert.equal(briefContext.recent_events.length, 1)
+
+  const statusContext = JSON.parse(
+    run(cwd, ['context', created.task_id, '--json', '--status']).stdout,
+  )
+  assert.equal(statusContext.view, 'status')
+  assert.equal(statusContext.task.writer.status, 'primary_writer')
+  assert.equal(statusContext.task.authorization.status, 'missing')
+  assert.equal(statusContext.task.next_action, 'approve')
+  assert.equal('goal' in statusContext.task, false)
+  assert.ok(JSON.stringify(statusContext).length < JSON.stringify(briefContext).length)
+
+  const saved = run(cwd, [
+    'save', created.task_id, '--expect-revision', '1',
+    '--decision', '记录增量', '--json',
+  ])
+  assert.equal(saved.status, 0, saved.stderr)
+  const delta = JSON.parse(
+    run(cwd, [
+      'context', created.task_id, '--json', '--since-revision', '1',
+    ]).stdout,
+  )
+  assert.equal(delta.view, 'delta')
+  assert.equal(delta.from_revision, 1)
+  assert.equal(delta.to_revision, 2)
+  assert.equal(delta.requires_baseline, true)
+  assert.deepEqual(delta.events.map((event) => event.type), ['decision_recorded'])
+})
+
+test('status keeps task writer state and caller capability independent', () => {
+  function statusFor(mutator, actor = 'codex:session:test-session') {
+    const cwd = temporaryDirectory()
+    init(cwd)
+    const created = checkpoint(cwd)
+    const task = readTask(cwd, created.task_id)
+    mutator(task)
+    writeFileSync(taskPath(cwd, task.id), `${JSON.stringify(task, null, 2)}\n`)
+    const result = run(cwd, ['context', task.id, '--json', '--status'], { actor })
+    assert.equal(result.status, 0, result.stderr)
+    return JSON.parse(result.stdout).task
+  }
+
+  const readOnlyLegacy = statusFor((task) => {
+    delete task.primary_writer
+    task.schema_version = 2
+    delete task.profile
+    delete task.provenance
+    task.blocked = { reason: '等待', waiting_for: '用户', blocked_at: task.updated_at }
+  }, '')
+  assert.equal(readOnlyLegacy.writer.task_status, 'legacy_unclaimed')
+  assert.equal(readOnlyLegacy.writer.caller_capability, 'read_only')
+  assert.equal(readOnlyLegacy.writer.status, 'read_only_actor')
+  assert.equal(readOnlyLegacy.next_action, 'read_only')
+
+  const writableLegacy = statusFor((task) => {
+    delete task.primary_writer
+    task.blocked = { reason: '等待', waiting_for: '用户', blocked_at: task.updated_at }
+  })
+  assert.equal(writableLegacy.writer.task_status, 'legacy_unclaimed')
+  assert.equal(writableLegacy.writer.caller_capability, 'writable')
+  assert.equal(writableLegacy.next_action, 'claim')
+
+  const mismatch = statusFor((task) => {
+    task.blocked = { reason: '等待', waiting_for: '用户', blocked_at: task.updated_at }
+  }, 'codex:session:other')
+  assert.equal(mismatch.writer.status, 'writer_mismatch')
+  assert.equal(mismatch.next_action, 'takeover')
+
+  const blockedPrimary = statusFor((task) => {
+    task.blocked = { reason: '等待', waiting_for: '用户', blocked_at: task.updated_at }
+  })
+  assert.equal(blockedPrimary.writer.status, 'primary_writer')
+  assert.equal(blockedPrimary.next_action, 'unblock')
+})
+
+test('status derives phase, gate, and authorization actions after writer checks', () => {
+  function statusFor(mutator) {
+    const cwd = temporaryDirectory()
+    init(cwd)
+    const created = checkpoint(cwd)
+    const task = readTask(cwd, created.task_id)
+    mutator(task)
+    writeFileSync(taskPath(cwd, task.id), `${JSON.stringify(task, null, 2)}\n`)
+    const result = run(cwd, ['context', task.id, '--json', '--status'])
+    assert.equal(result.status, 0, result.stderr)
+    return JSON.parse(result.stdout).task
+  }
+
+  assert.equal(statusFor((task) => {
+    task.plan.open_questions = ['需要确认']
+  }).next_action, 'resolve_open_questions')
+  assert.equal(statusFor(() => {}).next_action, 'approve')
+
+  const pending = statusFor((task) => {
+    task.phase = 'dev'
+    task.implementation_approval = {
+      approved_plan_revision: task.plan_revision,
+      approved_at: task.updated_at,
+      source: 'user',
+      reason: '已批准',
+    }
+  })
+  assert.equal(pending.authorization.status, 'valid')
+  assert.equal(pending.next_action, 'verify')
+
+  const stale = statusFor((task) => {
+    task.phase = 'check'
+    task.plan_revision = 2
+    task.implementation_approval = {
+      approved_plan_revision: 1,
+      approved_at: task.updated_at,
+      source: 'user',
+      reason: '旧批准',
+    }
+  })
+  assert.equal(stale.authorization.status, 'stale')
+  assert.equal(stale.next_action, 'verify')
+
+  const ready = statusFor((task) => {
+    task.phase = 'check'
+    task.verification.gate.tests = {
+      name: 'tests',
+      kind: 'gate',
+      command: ['pnpm', 'test'],
+      status: 'pass',
+      exit_code: 0,
+      work_revision: task.work_revision,
+      created_at: task.updated_at,
+    }
+  })
+  assert.equal(ready.authorization.status, 'missing')
+  assert.equal(ready.next_action, 'submit')
+
+  assert.equal(statusFor((task) => {
+    task.phase = 'review'
+  }).next_action, 'review_or_archive')
+})
+
+test('context reports artifact Git delivery without treating ignored files as local knowledge', () => {
+  const cwd = temporaryDirectory()
+  spawnSync('git', ['init'], { cwd, encoding: 'utf8' })
+  writeFileSync(join(cwd, '.gitignore'), 'ignored.md\n')
+  writeFileSync(join(cwd, 'tracked.md'), 'tracked\n')
+  writeFileSync(join(cwd, 'untracked.md'), 'untracked\n')
+  writeFileSync(join(cwd, 'ignored.md'), 'ignored\n')
+  spawnSync('git', ['add', '.gitignore', 'tracked.md'], { cwd, encoding: 'utf8' })
+  init(cwd)
+  const planFile = writePlan(cwd)
+  const created = run(cwd, [
+    'checkpoint', 'Artifact delivery', '--plan-file', planFile,
+    '--artifact', 'doc:tracked.md',
+    '--artifact', 'doc:untracked.md',
+    '--artifact', 'doc:ignored.md',
+    '--artifact', 'doc:missing.md',
+    '--json',
+  ])
+  assert.equal(created.status, 0, created.stderr)
+  const id = JSON.parse(created.stdout).task_id
+  const context = JSON.parse(
+    run(cwd, ['context', id, '--json', '--status']).stdout,
+  )
+  assert.deepEqual(
+    Object.fromEntries(
+      context.artifact_delivery.map((artifact) => [artifact.path, artifact.git_status]),
+    ),
+    {
+      'tracked.md': 'tracked',
+      'untracked.md': 'untracked',
+      'ignored.md': 'ignored',
+      'missing.md': 'missing',
+    },
+  )
+  assert.match(context.warnings.join('\n'), /ignored\.md is ignored/)
+  assert.doesNotMatch(context.warnings.join('\n'), /local knowledge/)
 })
 
 test('brief context summarizes planned verification states', () => {
@@ -386,6 +562,10 @@ test('brief requires JSON and read commands do not initialize storage', () => {
   const context = run(readRoot, ['context', '--json'])
   assert.notEqual(context.status, 0)
   assert.equal(existsSync(join(readRoot, '.latch')), false)
+
+  const status = run(temporaryDirectory(), ['context', '--status'])
+  assert.notEqual(status.status, 0)
+  assert.match(status.stderr, /require --json/)
 })
 
 test('save updates a plan, increments revisions, and invalidates approval and verification', () => {
