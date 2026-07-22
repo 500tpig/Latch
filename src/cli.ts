@@ -71,7 +71,7 @@ const usage = `Usage: latch <command> [options]
 
 Commands:
   init
-  checkpoint <title> --plan-file <path> [--profile <light|standard>] [--authorization-file <path> | --retrospective-file <path>]
+  checkpoint <title> --plan-file <path> [--profile <light|standard>] [--authorize-request <reason> [--scope-summary <summary>] [--scope-path <path>...] | --authorization-file <path> | --retrospective-file <path>]
   use <task-id>
   list [--group <id> [--include-archive]] [--json] [--brief]
   context [task-id] [--json] [--brief | --status | --since-revision <revision>] [--history <timeline|events|both>]
@@ -83,7 +83,7 @@ Commands:
   save <task-id> --expect-revision <revision> [changes]
   approve <task-id> --expect-revision <revision> [--reason <text> | --authorization-file <path> | --retrospective-file <path>] [--feedback <text> | --non-implementation-feedback <text>]
   verify <task-id> --expect-revision <revision> --name <name> [--diagnostic] [-- command...]
-  submit <task-id> --expect-revision <revision> --changes <text> --unverified <text> [--knowledge-impact-file <path>] [--no-verify --reason <text>]
+  submit <task-id> --expect-revision <revision> --changes <text> --unverified <text> [--knowledge-impact-none <reason> | --knowledge-impact-file <path>] [--no-verify --reason <text>]
   patch-submission-knowledge-impact <task-id> --expect-revision <revision> --knowledge-impact-file <path> [--reason <text>]
   downgrade-v2 --task <task-id> --expect-revision <revision> --confirm-data-loss
   done <task-id> --expect-revision <revision> --followup <text>
@@ -92,7 +92,7 @@ Commands:
 const commandUsage: Record<string, string> = {
   init: 'Usage: latch init [--json]',
   checkpoint:
-    'Usage: latch checkpoint <title> --plan-file <path> [--profile <light|standard>] [--authorization-file <path> | --retrospective-file <path>] [--artifact <kind>:<path>] [--json]',
+    'Usage: latch checkpoint <title> --plan-file <path> [--profile <light|standard>] [--authorize-request <reason> [--scope-summary <summary>] [--scope-path <path>...] | --authorization-file <path> | --retrospective-file <path>] [--artifact <kind>:<path>] [--json]',
   use: 'Usage: latch use <task-id> [--json]',
   list:
     'Usage: latch list [--group <id> [--include-archive]] [--json] [--brief]',
@@ -114,7 +114,7 @@ const commandUsage: Record<string, string> = {
   verify:
     'Usage: latch verify <task-id> --expect-revision <revision> --name <name> [--diagnostic] [-- command...] [--json]',
   submit:
-    'Usage: latch submit <task-id> --expect-revision <revision> --changes <text> --unverified <text> [--knowledge-impact-file <path>] [--no-verify --reason <text>] [--json]',
+    'Usage: latch submit <task-id> --expect-revision <revision> --changes <text> --unverified <text> [--knowledge-impact-none <reason> | --knowledge-impact-file <path>] [--no-verify --reason <text>] [--json]',
   'patch-submission-knowledge-impact':
     'Usage: latch patch-submission-knowledge-impact <task-id> --expect-revision <revision> --knowledge-impact-file <path> [--reason <text>] [--json]',
   'downgrade-v2':
@@ -288,6 +288,9 @@ function runCheckpoint(args: string[], cwd: string, actor: string) {
     ...commonOptions(),
     'plan-file': { type: 'string' },
     profile: { type: 'string' },
+    'authorize-request': { type: 'string' },
+    'scope-summary': { type: 'string' },
+    'scope-path': { type: 'string', multiple: true },
     'authorization-file': { type: 'string' },
     'retrospective-file': { type: 'string' },
     artifact: { type: 'string', multiple: true },
@@ -298,16 +301,42 @@ function runCheckpoint(args: string[], cwd: string, actor: string) {
       parsed.values.profile !== 'light' &&
       parsed.values.profile !== 'standard')
     fail('invalid_arguments', '--profile must be light or standard.')
-  if (parsed.values['authorization-file'] && parsed.values['retrospective-file'])
+  const hasInlineAuthorization = parsed.values['authorize-request'] !== undefined
+  const hasAuthorizationFile = parsed.values['authorization-file'] !== undefined
+  const hasRetrospective = parsed.values['retrospective-file'] !== undefined
+  if (
+    Number(hasInlineAuthorization) + Number(hasAuthorizationFile) + Number(hasRetrospective) > 1
+  )
     fail(
       'invalid_arguments',
-      '--authorization-file and --retrospective-file cannot be combined.',
+      '--authorize-request, --authorization-file, and --retrospective-file cannot be combined.',
     )
-  const hasAuthorization = parsed.values['authorization-file'] !== undefined
-  const hasRetrospective = parsed.values['retrospective-file'] !== undefined
+  if (
+    !hasInlineAuthorization &&
+    (parsed.values['scope-summary'] !== undefined || parsed.values['scope-path'] !== undefined)
+  )
+    fail(
+      'invalid_arguments',
+      '--scope-summary and --scope-path require --authorize-request.',
+    )
+  if (hasInlineAuthorization && !parsed.values['authorize-request']?.trim())
+    fail('invalid_arguments', '--authorize-request must be non-empty.')
+  if (
+    hasInlineAuthorization &&
+    parsed.values['scope-summary'] !== undefined &&
+    !parsed.values['scope-summary'].trim()
+  )
+    fail('invalid_arguments', '--scope-summary must be non-empty when provided.')
+  if (
+    hasInlineAuthorization &&
+    (parsed.values['scope-path'] ?? []).some((path) => !path.trim())
+  )
+    fail('invalid_arguments', '--scope-path entries must be non-empty.')
+  if (hasInlineAuthorization && parsed.values.profile === 'standard')
+    fail('invalid_arguments', 'Checkpoint request authorization requires profile light.')
   const plan = readPlan(cwd, parsed.values['plan-file'])
   const artifacts = (parsed.values.artifact ?? []).map(artifact)
-  const authorization = parsed.values['authorization-file']
+  const authorization = hasAuthorizationFile
     ? readInputFile<ImplementationAuthorizationInput>(
         cwd,
         parsed.values['authorization-file'],
@@ -321,11 +350,28 @@ function runCheckpoint(args: string[], cwd: string, actor: string) {
         '--retrospective-file',
       )
     : undefined
-  if (hasAuthorization && authorization?.source !== 'user_request')
-    fail('invalid_arguments', 'Checkpoint authorization source must be user_request.')
-  if (hasAuthorization && parsed.values.profile === 'standard')
+  if (hasAuthorizationFile && authorization?.source !== 'user_request')
+    fail(
+      'invalid_arguments',
+      'Invalid checkpoint authorization: work_basis.source must be user_request; expected implementation_authorization with work_basis.kind, work_basis.source, work_basis.reason, and work_basis.scope.summary.',
+    )
+  if (hasAuthorizationFile && parsed.values.profile === 'standard')
     fail('invalid_arguments', 'Checkpoint request authorization requires profile light.')
-  const profile = hasAuthorization
+  const inlineAuthorization: ImplementationAuthorizationInput | undefined =
+    hasInlineAuthorization
+      ? {
+          kind: 'implementation_authorization',
+          source: 'user_request',
+          reason: parsed.values['authorize-request']!.trim(),
+          scope: {
+            summary: (parsed.values['scope-summary'] ?? parsed.values['authorize-request'])!.trim(),
+            ...(parsed.values['scope-path']?.length
+              ? { paths: parsed.values['scope-path'].map((path) => path.trim()) }
+              : {}),
+          },
+        }
+      : undefined
+  const profile = hasInlineAuthorization || hasAuthorizationFile
     ? 'light'
     : (parsed.values.profile ?? 'standard') as TaskProfile
   const store = openTaskStoreV2(cwd)
@@ -336,8 +382,14 @@ function runCheckpoint(args: string[], cwd: string, actor: string) {
       plan,
       artifacts,
       profile,
-      ...(hasAuthorization || hasRetrospective
-        ? { workBasis: hasAuthorization ? authorization! : retrospective! }
+      ...(hasInlineAuthorization || hasAuthorizationFile || hasRetrospective
+        ? {
+            workBasis: hasInlineAuthorization
+              ? inlineAuthorization!
+              : hasAuthorizationFile
+                ? authorization!
+                : retrospective!,
+          }
         : {}),
     },
     actor,
@@ -1085,6 +1137,7 @@ function runSubmit(args: string[], cwd: string, actor: string) {
     'no-verify': { type: 'boolean' },
     reason: { type: 'string' },
     'knowledge-impact-file': { type: 'string' },
+    'knowledge-impact-none': { type: 'string' },
   })
   if (parsed.values.help) return process.stdout.write(`${commandUsage.submit}\n`)
   requirePositionals('submit', parsed.positionals, 1)
@@ -1095,13 +1148,28 @@ function runSubmit(args: string[], cwd: string, actor: string) {
   if (!parsed.values.changes) fail('invalid_arguments', '--changes is required.')
   if (parsed.values.unverified === undefined)
     fail('invalid_arguments', '--unverified is required.')
+  if (
+    parsed.values['knowledge-impact-file'] !== undefined &&
+    parsed.values['knowledge-impact-none'] !== undefined
+  )
+    fail(
+      'invalid_arguments',
+      '--knowledge-impact-file and --knowledge-impact-none cannot be combined.',
+    )
+  if (
+    parsed.values['knowledge-impact-none'] !== undefined &&
+    !parsed.values['knowledge-impact-none'].trim()
+  )
+    fail('invalid_arguments', '--knowledge-impact-none must be non-empty.')
   const knowledgeImpact = parsed.values['knowledge-impact-file']
     ? readInputFile<KnowledgeImpact>(
         cwd,
         parsed.values['knowledge-impact-file'],
         '--knowledge-impact-file',
       )
-    : undefined
+    : parsed.values['knowledge-impact-none'] !== undefined
+      ? { kind: 'none' as const, reason: parsed.values['knowledge-impact-none'].trim() }
+      : undefined
   const store = openTaskStoreV2(cwd)
   const result = submitTaskV2(store, parsed.positionals[0], {
     expectRevision,
@@ -1225,6 +1293,7 @@ function runDone(args: string[], cwd: string, actor: string) {
     return json({
       ...mutationJson(result.task, result.warnings, expectRevision),
       outcome: result.task.outcome,
+      archived: true,
     })
   process.stdout.write(`Archived ${result.task.id} as done.\n`)
   printWarnings(result.warnings)
@@ -1253,6 +1322,7 @@ function runAbandon(args: string[], cwd: string, actor: string) {
     return json({
       ...mutationJson(result.task, result.warnings, expectRevision),
       outcome: result.task.outcome,
+      archived: true,
     })
   process.stdout.write(`Archived ${result.task.id} as abandoned.\n`)
   printWarnings(result.warnings)

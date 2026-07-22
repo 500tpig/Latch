@@ -127,6 +127,26 @@ test('canonical skill keeps normal lifecycle safety rules in the main file', () 
   assert.match(skill, /Never perform Git add, commit, push, branch, reset, checkout, or clean/)
 })
 
+test('inline Light shortcuts stay consistent across instructions and current docs', () => {
+  const skill = text('skills/latch/SKILL.md')
+  const knowledge = text('skills/latch/references/knowledge-and-context.md')
+  const migration = text('skills/latch/references/migration.md')
+  const install = text('docs/AI_INSTALL.md')
+  const handBook = text('docs/HANDBOOK.md')
+
+  for (const content of [skill, migration, install, handBook]) {
+    assert.match(content, /--authorize-request/)
+    assert.match(content, /--scope-summary/)
+    assert.match(content, /--scope-path/)
+  }
+  for (const content of [skill, knowledge, install, handBook]) {
+    assert.match(content, /--knowledge-impact-none/)
+    assert.match(content, /--knowledge-impact-file/)
+  }
+  assert.match(knowledge, /patch-submission-knowledge-impact[\s\S]*--knowledge-impact-file/)
+  assert.match(migration, /--authorization-file[\s\S]*complex authorization/)
+})
+
 test('startup reads context and project docs only when conditions require them', () => {
   const skill = text('skills/latch/SKILL.md')
   const agents = text('AGENTS.md')

@@ -12,7 +12,7 @@ Revision: 5
 
 Released: 2026-07-16 — C1–C8 已交付；本文件是唯一 current 产品契约入口。
 
-Updated: 2026-07-21 — 增加低 token 状态读取、reader 投影、artifact Git 提示、非实现修正和用户可读过程记录。
+Updated: 2026-07-22 — 增加 Light inline 输入、共享 worktree warning 分层和 archive JSON 标记。
 
 ## 0. 地位
 
@@ -67,6 +67,8 @@ task（唯一可写生命周期）、events、primary_writer、group_id、模块
 11. revision delta 依赖调用方已有 baseline；不能作为完整恢复入口。
 12. 非实现修正只有在实现快照未变时保持原 proof；Core 不根据路径或自然语言自动判断影响。
 13. 默认过程记录面向任务使用者，展示发生了什么、影响和下一步；原始 event 与 schema 字段只作为详情和调试入口。
+14. inline Light 请求授权与 `none` knowledge impact 仅是 CLI 输入快捷路径，写入既有 work basis、submission、proof、revision 和 event 结构。
+15. `done --json` 与 `abandon --json` 返回 `archived: true`；`phase` 保持归档前的最后开放 phase，`outcome` 保持既有语义。
 
 ## 6. 触发与授权
 

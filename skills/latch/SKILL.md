@@ -63,7 +63,7 @@ Create a standard task with:
 latch checkpoint "Task title" --plan-file plan.json
 ```
 
-Create a complete low-risk task atomically with `--profile light --authorization-file`; the authorization file must use `source: user_request`. Use `--retrospective-file` only for the retrospective case defined above.
+Create a complete low-risk task atomically with `--authorize-request <reason>` and optional `--scope-summary` / repeated `--scope-path`; this writes `source: user_request` and creates a light task. Use `--authorization-file` for complex scope structure, and `--retrospective-file` only for the retrospective case defined above.
 
 Approve only after displaying the current plan and receiving explicit authorization:
 
@@ -82,7 +82,7 @@ latch approve <task-id> --expect-revision <n> --reason "User approved the curren
 
 - Run every named gate from the approved plan with `latch verify <task-id> --expect-revision <n> --name <gate-name> --json`.
 - Use diagnostic argv only after `--`; diagnostic results never satisfy submit gates.
-- Submit only after all current named gates pass, or use `--no-verify` with a reason for an approved plan without gates.
+- Submit only after all current named gates pass, or use `--no-verify` with a reason for an approved plan without gates; prefer `--knowledge-impact-none <reason>` for a concrete no-impact record and retain `--knowledge-impact-file` for `updated` impacts.
 - Read the knowledge reference before preparing `knowledge_impact`. Report non-`tracked` artifact delivery and untracked-worktree warnings without inventing artifact ownership; treat them as delivery risks, not automatic lifecycle failures.
 - Submit the current work revision to `review` and wait for user acceptance; do not run `done` automatically.
 

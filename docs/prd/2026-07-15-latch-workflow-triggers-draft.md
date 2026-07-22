@@ -188,6 +188,11 @@ provenance: 'clean' | 'mixed'   // 必填于 schema v3 新写入；旧 v2 读缺
 
 Core 不解析 git diff 以推断 mixed。
 
+approve 会检查全部其他活动 task。只要存在 `dev` 或 `check` task，始终保留共享
+worktree warning；只有 `review` task 且 Git worktree clean 时不提示。review task
+存在但 worktree 非 clean、或 Git status 无法获取时，继续返回可行动的非阻断 warning。
+该判断不尝试把 Git 路径归属给具体 task，也不写入新的 lifecycle 真源。
+
 ### 7.3 与 primary_writer
 
 - **同一时刻**仅 `primary_writer` 可写该 task（Actor）；

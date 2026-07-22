@@ -21,8 +21,10 @@ pnpm skill:check
 ```
 
 `latch --help` 应显示 `claim`、`patch-submission-knowledge-impact` 和 `downgrade-v2`；
-`latch checkpoint --help` 应显示 `--profile`、`--authorization-file` 和
-`--retrospective-file`，`latch save --help` 应显示 `--provenance`。接入状态与来源 commit 见
+`latch checkpoint --help` 应显示 `--profile`、`--authorize-request`、
+`--scope-summary`、`--scope-path`、`--authorization-file` 和
+`--retrospective-file`；`latch submit --help` 应显示 `--knowledge-impact-none`；
+`latch save --help` 应显示 `--provenance`。接入状态与来源 commit 见
 [接入状态](ADOPTER_SYNC.md)。
 
 ## 构建 CLI
@@ -79,8 +81,11 @@ latch init
 ```
 
 初始化后的普通 `checkpoint` 创建 schema 3 standard task，并写入
-`provenance: clean`。light request 使用 `--profile light --authorization-file`，
-retrospective 创建使用 `--retrospective-file`。既有 schema 2/3 task 不批量改写；
+`provenance: clean`。普通 light request 使用 `--authorize-request <reason>`，可选
+`--scope-summary` 和重复的 `--scope-path`；复杂 authorization 继续使用
+`--profile light --authorization-file`。提交无知识影响时使用
+`--knowledge-impact-none <reason>`，`updated` impact 继续使用
+`--knowledge-impact-file`。retrospective 创建使用 `--retrospective-file`。既有 schema 2/3 task 不批量改写；
 缺失 provenance 时按 `clean` 读取，明确继续具体 schema 2 task 后由 `claim` 完成升级。
 
 v2 不迁移 v1。已有 `.latch` 时，先将原目录备份到 repo 外，记录来源和

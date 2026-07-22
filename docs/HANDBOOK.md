@@ -47,6 +47,9 @@ v2 不迁移或覆盖 v1 `.latch`。
 ```bash
 latch checkpoint "任务标题" --plan-file plan.json
 latch checkpoint "低风险任务" --plan-file plan.json \
+  --authorize-request "用户请求完成明确修正" \
+  --scope-path src/cli.ts
+latch checkpoint "低风险任务" --plan-file plan.json \
   --profile light --authorization-file authorization.json
 latch checkpoint "事后记录" --plan-file plan.json \
   --retrospective-file retrospective.json
@@ -63,6 +66,12 @@ latch context [task-id] --json --since-revision <revision>
 `source: user_request`，并原子创建 light task、写入 work basis、进入 dev 且将
 `work_revision` 设为 1。`--retrospective-file` 默认创建 standard retrospective
 task；需要 light 证明规则时显式增加 `--profile light`。两种 basis 文件不能组合。
+
+明确且低风险的请求可使用 `--authorize-request <reason>` 省去 authorization JSON
+文件。该选项固定写入 `source: user_request` 并创建 light task；`--scope-summary`
+可覆盖默认的 reason，重复的 `--scope-path` 写入 scope paths。inline 参数仅能与
+`profile: light` 一起使用，并且不能与 `--authorization-file` 或
+`--retrospective-file` 组合。复杂 scope、notes 或非请求授权继续使用文件方式。
 
 从 CLI 版本 `0.2.0` 开始，`checkpoint` 创建 schema 3 standard task，并将当前 canonical session actor 写入 `primary_writer`。既有 schema 2 task 保持可读，但普通写入会按 `legacy_unclaimed` 拒绝；明确继续该 task 后，使用 `claim` 完成单 task 升级：
 
@@ -131,8 +140,21 @@ latch verify <task-id> --expect-revision 9 --diagnostic --name exploratory -- pn
 latch submit <task-id> --expect-revision 10 \
   --changes "完成实现" \
   --unverified "未做浏览器验收" \
+  --knowledge-impact-none "未修改长期知识"
+```
+
+也可继续使用结构化文件记录 `updated` 或复杂 impact：
+
+```bash
+latch submit <task-id> --expect-revision 10 \
+  --changes "完成实现" \
+  --unverified "未做浏览器验收" \
   --knowledge-impact-file impact.json
 ```
+
+`--knowledge-impact-none <reason>` 只构造 `{ kind: "none", reason }`，必须提供
+非空 reason，且不能与 `--knowledge-impact-file` 组合。`updated` 仍必须通过文件
+提供 artifact refs。
 
 无可执行 gate 的任务使用：
 
@@ -174,6 +196,9 @@ latch abandon <task-id> --expect-revision 5 --reason "用户取消"
 ```
 
 `done` 只接受 review 中当前 work revision 的有效 submission。`abandon` 必须提供原因。AI 只有获得明确用户授权后才能执行这两个命令。
+
+两条命令的 JSON 响应都保留既有 `outcome` 与最后开放 phase，并增加
+`archived: true` 以明确目录已归档；不把 `done` 或 `abandoned` 加入 phase 枚举。
 
 ### Schema 3 回退
 

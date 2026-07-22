@@ -9,8 +9,8 @@ Read this reference for knowledge freshness, `knowledge_impact`, Context packs, 
 - Treat `stale`, `baseline_missing`, and `error` as review-needed evidence, never as current source facts.
 - Update `last_fingerprint` and provenance only as part of an explicitly authorized knowledge document edit; reading, context generation, submit, and done never update the baseline.
 - Keep freshness outside submit, done, group, and archive gates; preserve existing Light proof rules.
-- Prepare schema 3 submission knowledge impact through `--knowledge-impact-file`. Use `none` only with a concrete reason, and use `updated` only for actual referenced knowledge artifacts.
-- In review, reuse `patch-submission-knowledge-impact` to backfill a missing impact or correct an existing one. Corrections require a concrete `--reason` and are only appropriate when implementation, configuration, generated inputs, gate objects, and public behavior are unchanged; otherwise use implementation feedback and create a new work revision.
+- For schema 3 submission, prefer `--knowledge-impact-none <reason>` for a concrete `none` record. Use `--knowledge-impact-file` for `updated` and other structured impacts with artifact references.
+- In review, reuse `patch-submission-knowledge-impact --knowledge-impact-file <path>` to backfill a missing impact or correct an existing one. Corrections require a concrete `--reason` and are only appropriate when implementation, configuration, generated inputs, gate objects, and public behavior are unchanged; otherwise use implementation feedback and create a new work revision.
 
 ## Context packs
 

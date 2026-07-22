@@ -216,7 +216,8 @@ test('checkpoint rejects missing or invalid plan without creating task', () => {
     invalidPlan,
   ])
   assert.notEqual(invalid.status, 0)
-  assert.match(invalid.stderr, /Invalid plan.scope/)
+  assert.match(invalid.stderr, /Missing required plan fields/)
+  assert.match(invalid.stderr, /plan\.scope/)
   assert.deepEqual(taskIds(cwd), [])
 })
 

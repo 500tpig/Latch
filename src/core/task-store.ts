@@ -176,35 +176,62 @@ function assertRelativePath(value: string, field: string, path: string) {
 }
 
 function assertWorkBasis(value: unknown, path: string): asserts value is WorkBasis {
-  if (!isRecord(value)) throw new Error(`Invalid work_basis in ${path}.`)
-  requireInteger(value.plan_revision, 'work_basis.plan_revision', path, 1)
-  requireString(value.reason, 'work_basis.reason', path)
+  if (!isRecord(value))
+    throw new Error(
+      `Invalid work_basis in ${path}: expected an object with kind, source, reason, and scope.summary.`,
+    )
+  const errors: string[] = []
+  if (
+    typeof value.plan_revision !== 'number' ||
+    !Number.isInteger(value.plan_revision) ||
+    value.plan_revision < 1
+  )
+    errors.push('work_basis.plan_revision must be a positive integer')
+  if (typeof value.reason !== 'string' || value.reason.trim() === '')
+    errors.push('work_basis.reason must be a non-empty string')
   if (value.kind === 'implementation_authorization') {
-    requireString(value.authorized_at, 'work_basis.authorized_at', path)
+    if (typeof value.authorized_at !== 'string' || value.authorized_at.trim() === '')
+      errors.push('work_basis.authorized_at must be a non-empty string')
     if (
       value.source !== 'user_request' &&
       value.source !== 'user_approve' &&
       value.source !== 'user_delta'
     )
-      throw new Error(`Invalid work_basis.source in ${path}.`)
-    if (!isRecord(value.scope))
-      throw new Error(`Invalid work_basis.scope in ${path}.`)
-    requireString(value.scope.summary, 'work_basis.scope.summary', path)
-    if (value.scope.paths !== undefined)
-      requireStringArray(value.scope.paths, 'work_basis.scope.paths', path)
-    if (value.scope.notes !== undefined)
-      requireString(value.scope.notes, 'work_basis.scope.notes', path)
-    return
-  }
-  if (value.kind === 'retrospective_record') {
-    requireString(value.recorded_at, 'work_basis.recorded_at', path)
+      errors.push('work_basis.source must be user_request, user_approve, or user_delta')
+    if (!isRecord(value.scope)) {
+      errors.push('work_basis.scope must be an object with scope.summary')
+    } else {
+      if (typeof value.scope.summary !== 'string' || value.scope.summary.trim() === '')
+        errors.push('work_basis.scope.summary must be a non-empty string')
+      if (
+        value.scope.paths !== undefined &&
+        (!Array.isArray(value.scope.paths) || value.scope.paths.some((entry) => typeof entry !== 'string'))
+      )
+        errors.push('work_basis.scope.paths must be an array of strings')
+      if (
+        value.scope.notes !== undefined &&
+        (typeof value.scope.notes !== 'string' || value.scope.notes.trim() === '')
+      )
+        errors.push('work_basis.scope.notes must be a non-empty string')
+    }
+  } else if (value.kind === 'retrospective_record') {
+    if (typeof value.recorded_at !== 'string' || value.recorded_at.trim() === '')
+      errors.push('work_basis.recorded_at must be a non-empty string')
     if (value.implemented_before_task !== true)
-      throw new Error(`Invalid work_basis.implemented_before_task in ${path}.`)
-    requireString(value.scope_summary, 'work_basis.scope_summary', path)
-    requireInteger(value.work_revision, 'work_basis.work_revision', path, 1)
-    return
+      errors.push('work_basis.implemented_before_task must be true')
+    if (typeof value.scope_summary !== 'string' || value.scope_summary.trim() === '')
+      errors.push('work_basis.scope_summary must be a non-empty string')
+    if (
+      typeof value.work_revision !== 'number' ||
+      !Number.isInteger(value.work_revision) ||
+      value.work_revision < 1
+    )
+      errors.push('work_basis.work_revision must be a positive integer')
+  } else {
+    errors.push('work_basis.kind must be implementation_authorization or retrospective_record')
   }
-  throw new Error(`Invalid work_basis.kind in ${path}.`)
+  if (errors.length > 0)
+    throw new Error(`Invalid work_basis in ${path}: ${errors.join('; ')}.`)
 }
 
 export function materializeWorkBasisV3(
@@ -248,7 +275,9 @@ export function materializeWorkBasisV3(
       work_revision: workRevision,
     }
   } else {
-    throw new Error('Invalid work_basis input.')
+    throw new Error(
+      'Invalid work_basis input: expected kind, source, reason, and scope.summary for implementation_authorization.',
+    )
   }
   assertWorkBasis(basis, 'work basis input')
   return basis
@@ -289,6 +318,24 @@ export function assertKnowledgeImpact(
 
 function assertTaskPlan(plan: unknown, path: string): asserts plan is TaskPlan {
   if (!isRecord(plan)) throw new Error(`Invalid plan in ${path}.`)
+  const requiredFields = [
+    'goal',
+    'scope',
+    'acceptance',
+    'approach',
+    'api_assumptions',
+    'permission_assumptions',
+    'data_assumptions',
+    'user_flow',
+    'out_of_scope',
+    'verification_plan',
+    'open_questions',
+  ]
+  const missingFields = requiredFields.filter((field) => plan[field] === undefined)
+  if (missingFields.length > 0)
+    throw new Error(
+      `Missing required plan fields in ${path}: ${missingFields.map((field) => `plan.${field}`).join(', ')}.`,
+    )
   requireString(plan.goal, 'plan.goal', path)
   for (const field of [
     'scope',

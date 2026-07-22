@@ -236,6 +236,8 @@ test('active tasks allow approve and return a shared worktree warning', () => {
     const approved = approve(cwd, second)
     assert.equal(approved.status, 0, approved.stderr)
     assert.match(JSON.parse(approved.stdout).warnings[0], /Shared worktree/)
+    if (phase === 'review')
+      assert.match(JSON.parse(approved.stdout).warnings[0], /could not be determined/)
     assert.equal(readTask(cwd, first.task_id).phase, phase)
 
     writeTask(cwd, first.task_id, (task) => {
@@ -249,6 +251,71 @@ test('active tasks allow approve and return a shared worktree warning', () => {
     assert.match(JSON.parse(blockedApproved.stdout).warnings[0], /Shared worktree/)
     assert.equal(readTask(cwd, first.task_id).phase, phase)
   }
+})
+
+test('clean Git worktree suppresses warning when every other active task is in review', () => {
+  const cwd = temporaryDirectory()
+  writeFileSync(join(cwd, '.gitignore'), '.latch/\nplan-*.json\n')
+  assert.equal(run(cwd, ['init']).status, 0)
+  const initialized = spawnSync(
+    'git',
+    ['init', cwd],
+    { encoding: 'utf8' },
+  )
+  assert.equal(initialized.status, 0, initialized.stderr)
+  const committed = spawnSync(
+    'git',
+    [
+      '-C', cwd,
+      '-c', 'user.name=Latch Test',
+      '-c', 'user.email=latch@example.test',
+      'add', '.gitignore',
+    ],
+    { encoding: 'utf8' },
+  )
+  assert.equal(committed.status, 0, committed.stderr)
+  const commit = spawnSync(
+    'git',
+    [
+      '-C', cwd,
+      '-c', 'user.name=Latch Test',
+      '-c', 'user.email=latch@example.test',
+      'commit', '-m', 'fixture',
+    ],
+    { encoding: 'utf8' },
+  )
+  assert.equal(commit.status, 0, commit.stderr)
+
+  const review = checkpoint(cwd, 'review task')
+  writeTask(cwd, review.task_id, (task) => {
+    task.phase = 'review'
+  })
+  const next = checkpoint(cwd, 'next task')
+  const approved = approve(cwd, next)
+  assert.equal(approved.status, 0, approved.stderr)
+  assert.deepEqual(JSON.parse(approved.stdout).warnings, [])
+
+  writeTask(cwd, next.task_id, (task) => {
+    task.phase = 'review'
+  })
+  writeFileSync(join(cwd, 'dirty.txt'), 'dirty\n')
+  const dirtyTarget = checkpoint(cwd, 'dirty review target')
+  const dirty = approve(cwd, dirtyTarget)
+  assert.equal(dirty.status, 0, dirty.stderr)
+  assert.match(JSON.parse(dirty.stdout).warnings[0], /Git worktree is not clean/)
+
+  writeTask(cwd, dirtyTarget.task_id, (task) => {
+    task.phase = 'review'
+  })
+
+  const dev = checkpoint(cwd, 'dev task')
+  writeTask(cwd, dev.task_id, (task) => {
+    task.phase = 'dev'
+  })
+  const afterDev = checkpoint(cwd, 'after dev')
+  const warned = approve(cwd, afterDev)
+  assert.equal(warned.status, 0, warned.stderr)
+  assert.match(JSON.parse(warned.stdout).warnings[0], /phase dev/)
 })
 
 test('archived done and abandoned tasks do not produce a shared worktree warning', () => {

@@ -13,7 +13,7 @@ import {
   readTaskV2,
   updateTaskV2,
   updateTaskV3,
-  worktreeOccupantV2,
+  listTasksV2,
 } from './task-store.js'
 import type { TaskStoreV2, TaskWriteResultV2 } from './task-store.js'
 import type {
@@ -42,10 +42,27 @@ function requireText(value: string | undefined, message: string): string {
 }
 
 function sharedWorktreeWarnings(store: TaskStoreV2, taskId: string): string[] {
-  const occupant = worktreeOccupantV2(store, taskId)
-  if (!occupant) return []
+  const active = listTasksV2(store).filter((task) => task.id !== taskId)
+  const devOrCheck = active.find(
+    (task) => task.phase === 'dev' || task.phase === 'check',
+  )
+  if (devOrCheck)
+    return [
+      `Shared worktree: task ${devOrCheck.id} is also active in phase ${devOrCheck.phase}; verify changes against the whole worktree or use a separate Git worktree.`,
+    ]
+  const review = active.find((task) => task.phase === 'review')
+  if (!review) return []
+  const status = spawnSync(
+    'git',
+    ['-C', store.paths.workspaceRoot, 'status', '--porcelain'],
+    { encoding: 'utf8' },
+  )
+  if (status.status === 0 && !status.stdout.trim()) return []
+  const reason = status.status === 0
+    ? 'the Git worktree is not clean'
+    : 'Git status could not be determined'
   return [
-    `Shared worktree: task ${occupant.id} is also active in phase ${occupant.phase}; verify changes against the whole worktree or use a separate Git worktree.`,
+    `Shared worktree: task ${review.id} is active in phase review and ${reason}; verify changes against the whole worktree or use a separate Git worktree.`,
   ]
 }
 

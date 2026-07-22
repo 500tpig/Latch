@@ -12,7 +12,7 @@ Revision: 7
 
 Released: 2026-07-16 — 全面 current 发布。
 
-Updated: 2026-07-21 — 增加非实现修正与 artifact Git 交付状态。
+Updated: 2026-07-22 — 增加 inline Light 请求授权与 `none` knowledge impact 快捷路径。
 
 判定表 B、A、C 的权威定义见 `docs/prd/2026-07-15-latch-workflow-triggers-draft.md`，本章不重复展开。
 
@@ -153,6 +153,12 @@ type WorkBasis =
 `task.json` 原子提交含：plan、`profile: light`、`work_basis`（authorization）、`phase: dev`、`work_revision: 1`、primary_writer 等。  
 无 `--expect-revision`。events/state 随后；失败不回滚 task.json（warning）。
 
+CLI 可用 `--authorize-request <reason>` 创建同一结构，不需要 authorization 文件。
+`--scope-summary` 可覆盖 scope summary，重复 `--scope-path` 写入 paths；未提供
+summary 时使用 reason，未提供 path 时不写 `paths`。该快捷路径固定
+`source: user_request`，仅创建 light task，且与 `--authorization-file`、
+`--retrospective-file` 严格互斥。
+
 #### B. 新建 retrospective task（事后建档专用创建）
 
 仅当：**尚无该工作的 open task**，且用户明确要求事后记录已完成实现（Skill 确认，不得把「继续开发」洗成 retrospective）。
@@ -241,6 +247,10 @@ Core 硬门禁：
 无 `document_paths` / 无 `deferred_wave`。
 
 时序：submit 输入 → 写入 submission；done 只读校验。
+
+`latch submit --knowledge-impact-none <reason>` 可构造 `none` impact；空 reason 或
+与 `--knowledge-impact-file` 组合均被拒绝。`updated` 和其他结构化输入继续使用
+`--knowledge-impact-file`。
 
 ```ts
 type Submission = {

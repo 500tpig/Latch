@@ -229,6 +229,73 @@ test('checkpoint rejects invalid basis options before task or state writes', () 
   assert.equal(readFileSync(statePath, 'utf8'), stateBefore)
 })
 
+test('checkpoint accepts inline request authorization and explains invalid plan or basis input', () => {
+  const cwd = temporaryDirectory()
+  assert.equal(run(cwd, ['init']).status, 0)
+  const planFile = writeJson(cwd, plan(), 'plan')
+  const created = run(cwd, [
+    'checkpoint', 'inline request', '--plan-file', planFile,
+    '--authorize-request', '用户请求完成低风险修正',
+    '--scope-summary', '仅修改 CLI 输入',
+    '--scope-path', 'src/cli.ts', '--scope-path', 'tests/light-proof.test.mjs', '--json',
+  ])
+  assert.equal(created.status, 0, created.stderr)
+  const task = readTask(cwd, JSON.parse(created.stdout).task_id)
+  assert.equal(task.profile, 'light')
+  assert.equal(task.phase, 'dev')
+  assert.equal(task.work_basis.source, 'user_request')
+  assert.equal(task.work_basis.reason, '用户请求完成低风险修正')
+  assert.deepEqual(task.work_basis.scope, {
+    summary: '仅修改 CLI 输入',
+    paths: ['src/cli.ts', 'tests/light-proof.test.mjs'],
+  })
+
+  const statePath = join(cwd, '.latch', 'state.json')
+  const stateBefore = readFileSync(statePath, 'utf8')
+  const authorizationFile = writeJson(cwd, authorization(), 'authorization')
+  const invalidCases = [
+    ['checkpoint', 'empty request', '--plan-file', planFile, '--authorize-request', ' '],
+    ['checkpoint', 'standard request', '--plan-file', planFile, '--profile', 'standard', '--authorize-request', '请求'],
+    ['checkpoint', 'isolated summary', '--plan-file', planFile, '--scope-summary', '范围'],
+    ['checkpoint', 'combined request', '--plan-file', planFile, '--authorize-request', '请求', '--authorization-file', authorizationFile],
+  ]
+  for (const args of invalidCases) assert.notEqual(run(cwd, args).status, 0, args[1])
+  assert.equal(readFileSync(statePath, 'utf8'), stateBefore)
+
+  const incompletePlan = writeJson(cwd, { goal: '缺少字段' }, 'incomplete-plan')
+  const missingPlan = run(cwd, [
+    'checkpoint', 'incomplete', '--plan-file', incompletePlan,
+  ])
+  assert.notEqual(missingPlan.status, 0)
+  assert.match(missingPlan.stderr, /plan\.scope/)
+  assert.match(missingPlan.stderr, /plan\.verification_plan/)
+
+  const invalidAuthorization = writeJson(cwd, {
+    kind: 'implementation_authorization',
+  }, 'invalid-authorization')
+  const invalidBasis = run(cwd, [
+    'checkpoint', 'invalid basis', '--plan-file', planFile,
+    '--authorization-file', invalidAuthorization,
+  ])
+  assert.notEqual(invalidBasis.status, 0)
+  assert.match(invalidBasis.stderr, /work_basis\.source/)
+  assert.match(invalidBasis.stderr, /work_basis\.reason/)
+  assert.match(invalidBasis.stderr, /work_basis\.scope/)
+})
+
+test('inline request uses its reason as scope summary when scope options are absent', () => {
+  const cwd = temporaryDirectory()
+  assert.equal(run(cwd, ['init']).status, 0)
+  const task = run(cwd, [
+    'checkpoint', 'reason fallback', '--plan-file', writeJson(cwd, plan(), 'plan'),
+    '--authorize-request', '用户请求完成明确修正', '--json',
+  ])
+  assert.equal(task.status, 0, task.stderr)
+  assert.deepEqual(readTask(cwd, JSON.parse(task.stdout).task_id).work_basis.scope, {
+    summary: '用户请求完成明确修正',
+  })
+})
+
 test('light request authorization is atomic and submit stops in review', () => {
   const cwd = temporaryDirectory()
   const task = createV3(cwd, {
@@ -261,6 +328,37 @@ test('light request authorization is atomic and submit stops in review', () => {
   assert.equal(reviewed.submission.plan_revision, 1)
   assert.equal(reviewed.submission.work_revision, 1)
   assert.deepEqual(reviewed.submission.knowledge_impact, impactNone())
+})
+
+test('submit accepts inline none knowledge impact and rejects ambiguous input', () => {
+  const cwd = temporaryDirectory()
+  const task = createV3(cwd, { workBasis: authorization() })
+  assert.equal(verify(cwd, task.id).status, 0)
+  const impactFile = writeJson(cwd, impactNone(), 'impact')
+  const combined = run(cwd, [
+    'submit', task.id, '--expect-revision', revision(cwd, task.id),
+    '--changes', '完成实现', '--unverified', '',
+    '--knowledge-impact-none', '未修改长期知识',
+    '--knowledge-impact-file', impactFile,
+  ])
+  assert.notEqual(combined.status, 0)
+  assert.match(combined.stderr, /cannot be combined/)
+  const empty = run(cwd, [
+    'submit', task.id, '--expect-revision', revision(cwd, task.id),
+    '--changes', '完成实现', '--unverified', '', '--knowledge-impact-none', ' ',
+  ])
+  assert.notEqual(empty.status, 0)
+  assert.match(empty.stderr, /must be non-empty/)
+
+  const submitted = run(cwd, [
+    'submit', task.id, '--expect-revision', revision(cwd, task.id),
+    '--changes', '完成实现', '--unverified', '',
+    '--knowledge-impact-none', '未修改长期知识', '--json',
+  ])
+  assert.equal(submitted.status, 0, submitted.stderr)
+  assert.deepEqual(readTask(cwd, task.id).submission.knowledge_impact, {
+    kind: 'none', reason: '未修改长期知识',
+  })
 })
 
 test('light rejects no-verify and validates updated artifact references', () => {
@@ -597,6 +695,15 @@ test('done revalidates double binding, knowledge impact, and proof', () => {
   ])
   assert.equal(completed.status, 0, completed.stderr)
   assert.equal(JSON.parse(completed.stdout).outcome, 'done')
+  assert.equal(JSON.parse(completed.stdout).archived, true)
+
+  const abandoned = createV3(cwd)
+  const abandonedResult = run(cwd, [
+    'abandon', abandoned.id, '--expect-revision', revision(cwd, abandoned.id),
+    '--reason', '不再继续', '--json',
+  ])
+  assert.equal(abandonedResult.status, 0, abandonedResult.stderr)
+  assert.equal(JSON.parse(abandonedResult.stdout).archived, true)
 })
 
 test('open questions and blocked state reject C2 implementation progress', () => {
