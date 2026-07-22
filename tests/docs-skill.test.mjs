@@ -5,6 +5,12 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const skillReferences = [
+  'skills/latch/references/session-actors-and-handoff.md',
+  'skills/latch/references/groups.md',
+  'skills/latch/references/knowledge-and-context.md',
+  'skills/latch/references/migration.md',
+]
 const currentDocs = [
   'README.md',
   'AGENTS.md',
@@ -25,6 +31,7 @@ const currentDocs = [
   'docs/SCENARIOS.md',
   'docs/ADOPTER_SYNC.md',
   'skills/latch/SKILL.md',
+  ...skillReferences,
 ]
 
 function text(path) {
@@ -42,6 +49,24 @@ test('canonical skill has valid minimal frontmatter', () => {
     lines.map((line) => line.split(':', 1)[0]).sort(),
     ['description', 'name'],
   )
+})
+
+test('canonical skill stays lean and routes every low-frequency reference', () => {
+  const skill = text('skills/latch/SKILL.md')
+  assert.ok(Buffer.byteLength(skill, 'utf8') <= 9000)
+  for (const path of skillReferences) {
+    assert.equal(existsSync(join(root, path)), true, path)
+    assert.equal(skill.includes(path.replace('skills/latch/', '')), true, path)
+  }
+
+  assert.match(text(skillReferences[0]), /LATCH_ACTOR/)
+  assert.match(text(skillReferences[0]), /handoff prompt/)
+  assert.match(text(skillReferences[1]), /group_id/)
+  assert.match(text(skillReferences[2]), /knowledge fingerprint/)
+  assert.match(text(skillReferences[2]), /context pack/i)
+  assert.match(text(skillReferences[3]), /legacy_unclaimed/)
+  assert.match(text(skillReferences[3]), /claim <task-id>[\s\S]*--expect-revision <n>[\s\S]*--json/)
+  assert.match(text(skillReferences[3]), /downgrade-v2/)
 })
 
 test('canonical skill is the only tracked repo skill source', () => {
@@ -88,23 +113,74 @@ test('current contract and instruction surface use the final A/B/C rules', () =>
   }
 })
 
+test('canonical skill keeps normal lifecycle safety rules in the main file', () => {
+  const skill = text('skills/latch/SKILL.md')
+  assert.match(skill, /pure Q&A/)
+  assert.match(skill, /Show every plan[\s\S]*explicit implementation authorization/)
+  assert.match(skill, /writer mismatch as fail closed/)
+  assert.match(skill, /takeover[\s\S]*never as implementation approval/)
+  assert.match(skill, /implementation correction/)
+  assert.match(skill, /non-implementation-feedback/)
+  assert.match(skill, /every named gate/)
+  assert.match(skill, /Run `done` only after explicit user authorization/)
+  assert.match(skill, /Run `abandon` only after explicit user authorization/)
+  assert.match(skill, /Never perform Git add, commit, push, branch, reset, checkout, or clean/)
+})
+
+test('startup reads context and project docs only when conditions require them', () => {
+  const skill = text('skills/latch/SKILL.md')
+  const agents = text('AGENTS.md')
+  const handBook = text('docs/HANDBOOK.md')
+
+  for (const content of [skill, agents, handBook]) {
+    assert.match(content, /current_task_id/)
+    assert.match(content, /task ID/)
+    assert.match(content, /docs\/INDEX\.md/)
+  }
+  assert.match(skill, /If neither exists, do not call/)
+  assert.match(agents, /两者都没有时，不得调用/)
+  assert.match(handBook, /不含 `current_task_id`[\s\S]*不得调用/)
+  assert.match(skill, /only when the task affects product contracts/)
+  assert.match(agents, /只有任务涉及产品契约/)
+  assert.match(handBook, /简单且证据充分的改动不固定读取项目文档/)
+})
+
+test('continuous mutation flows reuse returned revision without redundant context reads', () => {
+  const skill = text('skills/latch/SKILL.md')
+  const agents = text('AGENTS.md')
+  const handBook = text('docs/HANDBOOK.md')
+
+  for (const content of [skill, agents, handBook]) {
+    assert.match(content, /JSON[\s\S]*`revision`/)
+    assert.match(content, /--expect-revision/)
+    assert.match(content, /revision conflict/)
+    assert.match(content, /user input boundary|用户输入边界/)
+    assert.match(content, /do not reread context|不得只为获取 revision 重读 context/)
+  }
+})
+
 test('cross-session handoff requires takeover separate from implementation approval', () => {
   const handBook = text('docs/HANDBOOK.md')
   const actor = text('docs/prd/2026-07-15-latch-actor-writer-affinity-draft.md')
   const skill = text('skills/latch/SKILL.md')
-  for (const content of [handBook, actor, skill]) {
+  const handoff = text('skills/latch/references/session-actors-and-handoff.md')
+  for (const content of [handBook, actor, handoff]) {
     assert.match(content, /新对话|new conversation/)
     assert.match(content, /takeover/)
     assert.match(content, /implementation approval|implementation approval|实施批准/)
     assert.match(content, /provenance.*clean|`provenance: clean`/)
   }
-  assert.match(skill, /task-id/)
-  assert.match(skill, /phase\/revision/)
-  assert.match(skill, /old-writer/)
-  assert.match(skill, /Unfinished work/)
-  assert.match(skill, /Worktree status/)
-  assert.match(skill, /old session must stop writing/)
-  assert.match(skill, /takeover first[\s\S]*approve/)
+  assert.match(skill, /takeover as ownership transfer only, never as implementation approval/)
+  assert.match(skill, /references\/session-actors-and-handoff\.md/)
+  assert.match(handoff, /task-id/)
+  assert.match(handoff, /phase\/revision/)
+  assert.match(handoff, /old-writer/)
+  assert.match(handoff, /Unfinished work/)
+  assert.match(handoff, /Worktree status/)
+  assert.match(handoff, /old session must stop writing/)
+  assert.match(handoff, /takeover <task-id>[\s\S]*--expect-revision <revision>[\s\S]*--json/)
+  assert.match(handoff, /takeover first[\s\S]*returned JSON `revision`[\s\S]*approve/)
+  assert.match(handoff, /save <task-id>[\s\S]*--expect-revision <n>[\s\S]*--provenance mixed[\s\S]*--json/)
 })
 
 test('skill scripts manage links without copied docs snapshots', () => {

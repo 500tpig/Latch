@@ -14,9 +14,12 @@
 
 1. `git status --short`；
 2. `latch list --json --brief`；
-3. 用户点名 task 时先执行 `latch context <task-id> --json --status`，否则读取当前 task 的 status；需要 goal、scope、acceptance、完整 gate 或 submission 时再展开 `--brief` 或完整 context；
-4. 只有已持有同一 task 对应 revision 的可信 baseline 时才使用 `--since-revision`，不得用 delta 代替跨会话完整恢复；
-5. 从 `docs/INDEX.md` 选择与当前任务直接相关的 1–3 份文档。
+3. 用户点名 task 时执行 `latch context <task-id> --json --status`；未点名时，仅当 list 返回 `current_task_id` 才读取对应 status；两者都没有时，不得调用无 task ID 的 `latch context --json --status`；
+4. 需要 goal、scope、acceptance、完整 gate 或 submission 时再展开 `--brief` 或完整 context；
+5. 只有已持有同一 task 对应 revision 的可信 baseline 时才使用 `--since-revision`，不得用 delta 代替跨会话完整恢复；
+6. 先读取 task artifact；只有任务涉及产品契约、架构、安装、文档行为，或现有证据不足时，才从 `docs/INDEX.md` 选择直接相关文档。
+
+同一连续写入流程中，成功 mutation 的 JSON 返回值已包含下一次所需的 `revision`；直接将其用于下一条命令的 `--expect-revision`，不得只为获取 revision 重读 context。发生 revision conflict、进入新的用户输入边界、warning 需要重新判断或任务语义变化时，再刷新 status；不得自动重试冲突 mutation。
 
 不得读取其他 Codex 会话或跨会话材料。需要扩大范围时，先说明当前 repo 内证据为何不足。
 

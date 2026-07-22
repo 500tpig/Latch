@@ -24,6 +24,14 @@ plan/dev/check/review -> abandoned
 
 blocked 不改变 phase。其他处于 dev、check、review 的 task 不阻止批准；共享 worktree 风险仍会作为 warning 返回。
 
+### Agent 启动读取
+
+Agent 处理请求时，先运行 `git status --short` 和 `latch list --json --brief`。请求已点名 task 时，读取该 task 的 `context --json --status`；未点名时，仅当 list 返回 `current_task_id` 才读取对应 status。
+
+当 list 不含 `current_task_id` 且请求未点名 task 时，不得调用无 task ID 的 `latch context --json --status`。需要 goal、scope、acceptance、完整 gate 或 submission 时，再从 status 展开为 brief 或完整 context。
+
+先读取 task artifact。只有任务涉及产品契约、架构、安装、文档行为，或现有证据不足时，才从 `docs/INDEX.md` 选择直接相关文档；简单且证据充分的改动不固定读取项目文档。
+
 ## 命令
 
 ### 初始化
@@ -164,6 +172,8 @@ latch downgrade-v2 \
 
 所有 task 更新需要 `--expect-revision`。task 使用独立短锁；需要组合锁时顺序固定为 `task -> state`。Latch 不跟踪 task 的文件归属，验证命令针对整个 worktree；需要代码隔离时由用户使用外部 Git worktree，Latch 不负责创建或合并它。
 
+同一连续写入流程中，成功 mutation 的 JSON 返回值包含新的 `revision`。下一条命令直接使用该值作为 `--expect-revision`，不得只为获取 revision 重读 context。发生 revision conflict、进入新的用户输入边界、warning 需要重新判断或任务语义变化时，再刷新 status；冲突 mutation 不得自动重试。
+
 ### 顺序跨会话交接
 
 fork 或新对话都会产生新的 session actor。即使继续同一 workspace 和同一 task，新 session 也必须取得明确的 takeover 授权；仅包含 plan approval 的交接提示词不能绕过 `primary_writer` 门禁。
@@ -171,10 +181,10 @@ fork 或新对话都会产生新的 session actor。即使继续同一 workspace
 交接提示词应包含 task ID、当前 phase/revision、旧 `primary_writer`、未完成的批准项和 gate、`git status --short` 摘要及共享 worktree 风险。用户须明确说明旧 session 停止写入该 task，并授权新 session 执行：
 
 ```bash
-latch takeover <task-id> --expect-revision <revision> --reason "用户明确授权交接"
+latch takeover <task-id> --expect-revision <revision> --reason "用户明确授权交接" --json
 ```
 
-takeover 不改变 phase、plan approval 或 gate，也不构成 implementation approval。若同一用户消息同时明确授权 takeover 和当前 plan，则先 takeover，重新读取 revision 后再 `approve`；否则在 takeover 后等待单独批准。正常顺序交接保持 `provenance: clean`，只有明确允许重叠并行时才写入 `mixed`。
+takeover 不改变 phase、plan approval 或 gate，也不构成 implementation approval。若同一用户消息同时明确授权 takeover 和当前 plan，则先 takeover，再将其 JSON 返回的 `revision` 用于 `approve`；否则在 takeover 后等待单独批准。正常顺序交接保持 `provenance: clean`，只有明确允许重叠并行时才写入 `mixed`。
 
 ## 最终契约能力
 
