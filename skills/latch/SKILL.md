@@ -16,11 +16,19 @@ Apply these rules to repository-write or observable-behavior requests. Do not cr
 5. Read task artifacts first. Read `docs/INDEX.md` and directly relevant project documents only when the task affects product contracts, architecture, installation, documentation behavior, or the available evidence is insufficient.
 6. Preserve unrelated worktree changes.
 
+## Cross-session orientation
+
+- Treat an exact task ID or user-supplied group ID as the normal recovery seed. Do not read other Codex conversations to reconstruct routine task state.
+- For a named planning wave, read the groups reference, run `latch list --group <group-id> --include-archive --json --brief`, then request `context <task-id> --json --status` only for relevant open tasks.
+- Expand at most one relevant task with `--brief --history timeline` when the minimal views cannot answer a named fact. Do not load multiple full contexts or raw event histories for routine orientation.
+- Read-only task or group orientation is not a handoff and needs no claim or takeover. Use the handoff reference only when a new session will continue writing the same open task.
+- Do not create a planning or anchor task solely to preserve chat continuity. Use `group_id` only for a real related wave identified by the user.
+
 ## Read references on demand
 
 Read the complete linked file only when its condition applies:
 
-- Read [session actors and handoff](references/session-actors-and-handoff.md) for actor adapters, missing canonical actors, writer takeover, forks or new conversations, handoff prompts, and provenance changes.
+- Read [session actors and handoff](references/session-actors-and-handoff.md) for actor adapters, missing canonical actors, writer takeover, a new session continuing the same open task, handoff prompts, and provenance changes.
 - Read [groups](references/groups.md) before reading or changing `group_id`, listing group members, or reasoning about sibling task independence.
 - Read [knowledge and context](references/knowledge-and-context.md) for freshness checks, `knowledge_impact`, Context packs, orientation budgets, or context benchmarks.
 - Read [migration](references/migration.md) for schema 2 tasks, `claim`, legacy patching, minimum writer versions, or `downgrade-v2`.
@@ -89,6 +97,7 @@ latch approve <task-id> --expect-revision <n> --reason "User approved the curren
 ## Finish
 
 - Run `done` only after explicit user authorization to complete or archive the named task.
+- When the user authorizes `done`, record a concrete next task or action in `followup`, or state explicitly that there is no follow-up and why. Do not use vague text such as "handle normally."
 - Run `abandon` only after explicit user authorization to cancel the named task.
 - Inspect open tasks before either command and modify only the named task.
 - Never perform Git add, commit, push, branch, reset, checkout, or clean unless separately requested.

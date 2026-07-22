@@ -179,6 +179,33 @@ test('continuous mutation flows reuse returned revision without redundant contex
   }
 })
 
+test('cross-session planning recovery stays artifact-first and bounded', () => {
+  const skill = text('skills/latch/SKILL.md')
+  const agents = text('AGENTS.md')
+  const handoff = text('skills/latch/references/session-actors-and-handoff.md')
+  const groups = text('skills/latch/references/groups.md')
+
+  assert.match(skill, /Do not read other Codex conversations/)
+  assert.match(agents, /常规恢复不得读取其他 Codex 会话/)
+  for (const content of [skill, agents, groups]) {
+    assert.match(
+      content,
+      /list --group <(?:group-)?id> --include-archive --json --brief/,
+    )
+    assert.match(content, /context <task-id> --json --status/)
+  }
+  assert.match(skill, /Do not load multiple full contexts or raw event histories/)
+  assert.match(agents, /不得同时展开多张完整 context 或原始 event/)
+  assert.match(handoff, /Read-only orientation does not authorize claim, takeover/)
+  assert.match(handoff, /Starting a different task.*is not a takeover/)
+  assert.match(skill, /Do not create a planning or anchor task solely/)
+  assert.match(agents, /不得只为保存聊天连续性创建 planning 或 anchor task/)
+  assert.match(skill, /concrete next task or action in `followup`/)
+  assert.match(agents, /`followup` 必须写具体下一张 task、下一项动作/)
+  assert.match(groups, /Group membership does not encode task order/)
+  assert.match(groups, /do not generate an automatic group-level next task/)
+})
+
 test('cross-session handoff requires takeover separate from implementation approval', () => {
   const handBook = text('docs/HANDBOOK.md')
   const actor = text('docs/prd/2026-07-15-latch-actor-writer-affinity-draft.md')

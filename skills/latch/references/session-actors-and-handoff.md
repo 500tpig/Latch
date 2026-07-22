@@ -1,6 +1,6 @@
 # Session actors and handoff
 
-Read this reference for actor adapters, writer mismatch, takeover, forks or new conversations, handoff prompts, and provenance changes.
+Read this reference for actor adapters, writer mismatch, takeover, a new session continuing the same open task, handoff prompts, and provenance changes.
 
 ## Session actor adapter
 
@@ -10,9 +10,15 @@ Read this reference for actor adapters, writer mismatch, takeover, forks or new 
 - Without an adapter-provided canonical actor, remain read-only and use only `latch list` or `latch context <task-id>`.
 - Preserve the distributed Codex compatibility path: when `LATCH_ACTOR` is absent and Codex supplies stable `CODEX_THREAD_ID`, inject `codex:session:<thread-id>` before Core reads the actor; keep an explicit empty `LATCH_ACTOR` fail closed.
 
+## Read-only orientation
+
+- Reading an existing task or group to decide what to do next is read-only orientation, not a task handoff.
+- Recover routine state from the exact task or group artifact; do not read the prior Codex conversation.
+- Read-only orientation does not authorize claim, takeover, plan approval, implementation, or archive.
+
 ## Cross-session handoff
 
-Treat a move to a new conversation, a fork, a full-context handoff, or a conversation nearing its limit as a cross-session handoff. Treat a fork and a new conversation as new session actors even when they share a workspace.
+When a new conversation, fork, or replacement session will continue writing the same open task, treat it as a cross-session handoff. Treat the new conversation or fork as a new session actor even when it shares a workspace. Starting a different task after read-only orientation is not a takeover of the task used as evidence.
 
 Before generating a handoff prompt, read the named task context and `git status --short`. Include this complete template:
 
