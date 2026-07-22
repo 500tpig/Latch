@@ -277,6 +277,32 @@ test('non-implementation correction preserves review proof and submission', () =
   assert.doesNotMatch(human.stdout, /Approved/)
 })
 
+test('context timeline rewrites technical review feedback for user reading', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const id = checkpoint(cwd, plan({ verification_plan: [plan().verification_plan[0]] }))
+  approve(cwd, id)
+  assert.equal(verify(cwd, id, 'first').status, 0)
+  assert.equal(submit(cwd, id).status, 0)
+  const feedback = run(cwd, [
+    'approve', id, '--expect-revision', revision(cwd, id),
+    '--feedback',
+    '纠正 submission knowledge_impact：当前 artifact_refs 是产品文档与 canonical skill，并非带 knowledge frontmatter 的模块知识文档；重新提交时改为 kind=none',
+    '--json',
+  ])
+  assert.equal(feedback.status, 0, feedback.stderr)
+
+  const context = run(cwd, ['context', id, '--json', '--brief'])
+  assert.equal(context.status, 0, context.stderr)
+  const timeline = JSON.parse(context.stdout).timeline
+  const entry = timeline.findLast((item) => item.event_type === 'review_feedback')
+  assert.equal(entry.title, '反馈：修正提交记录')
+  assert.equal(entry.summary, '修正提交记录里的知识影响标记。')
+  assert.match(entry.impact, /重新提交验收/)
+  assert.doesNotMatch(entry.summary, /knowledge_impact|artifact_refs|kind=none|frontmatter/)
+  assert.equal(entry.details.classification, 'implementation_correction')
+})
+
 test('submit warns when an artifact is not tracked by Git', () => {
   const cwd = temporaryDirectory()
   init(cwd)

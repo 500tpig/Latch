@@ -140,6 +140,21 @@ Batch item ≠ group。Group 只标签聚合多 task（Group 章）。
 
 反馈**不**自动 done；不伪造批准史。
 
+### 6.1 用户可读记录
+
+Latch 保存任务事实摘要，不保存完整聊天记录。grill 阶段只记录阻塞问题和关键决定，不记录每轮追问。
+
+AI 写入 `review_feedback`、`decision_recorded`、submission 和 closure 时，默认先分类再总结。用户可见摘要应说明：
+
+- 发生了什么；
+- 为什么需要记录；
+- 对实现、验证或归档有什么影响；
+- 下一步需要做什么。
+
+默认摘要不得直接裸露 `plan_revision`、`work_revision`、`knowledge_impact`、`artifact_refs`、`frontmatter`、`implementation_correction`、`non_implementation_correction` 等内部字段。需要追溯时，通过原始 event 或详情层查看这些字段。
+
+Core 只做确定性投影，不用自然语言判断反馈真实含义。Skill 负责判断反馈分类和摘要表述；若影响不确定，先诊断并询问一个具体问题。
+
 ## 7. Worktree 与并发路径
 
 ### 7.1 规则

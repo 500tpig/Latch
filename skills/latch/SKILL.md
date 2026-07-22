@@ -48,6 +48,15 @@ Do not run takeover from a handoff intent alone. Takeover is not implementation 
 - Wrap each file path, code identifier, configuration key, and command in inline code.
 - Keep each plan item to one sentence; do not add bold text or local links solely for presentation.
 
+## User-readable records
+
+- Latch records task facts, not full chat logs.
+- During grill, record only blocking `open_questions` and short durable decisions; do not save every question, answer, or reasoning step.
+- When writing `review_feedback`, `decision_recorded`, submission, or closure text, classify first and summarize in user-readable Chinese.
+- Default summaries should say what happened, why it matters, what it changes, and the next action.
+- Do not expose internal schema terms in default user-facing text, including `plan_revision`, `work_revision`, `knowledge_impact`, `artifact_refs`, `frontmatter`, `implementation_correction`, and `non_implementation_correction`; keep those in raw events or technical details.
+- If a readable summary needs polishing, use the existing Chinese writing skills rather than copying rules here: use `tech-doc-style-chinese` for technical records and UI copy, and use `qu-ai-wei` only when text explicitly needs de-AI rewriting.
+
 ## Trigger Rules
 
 Classify before implementation:

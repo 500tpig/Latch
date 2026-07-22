@@ -68,6 +68,8 @@ latch claim <task-id> --expect-revision 3 --reason "继续该 task"
 
 context 的 `current` 只表示当前 actor 的 state 指针是否指向该 task。`task.writer.primary_writer` 是 task 主写方，`task.writer.task_status` 表示 task 是否已有 writer，`task.writer.caller_capability` 表示调用方是否可写；兼容字段 `task.writer.status` 继续给出调用方相对 task 的汇总状态。`task.authorization` 统一投影 schema 2 的 `implementation_approval` 与 schema 3 的 `work_basis`，但不改写 task 真源。
 
+`context --json`、`context --json --brief` 和 `context --json --since-revision` 会返回 `timeline`。`timeline` 是从 task 与 event 派生的用户可读过程记录，用于默认展示「发生了什么、影响和下一步」。原始 `recent_events` 或 `events` 继续保留，供调试和兼容 reader 使用。`timeline.details` 可以包含原始事件字段；默认 UI 应先展示摘要，需要排查时再展开详情。
+
 ### 更新计划和状态
 
 ```bash

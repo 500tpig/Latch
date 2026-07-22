@@ -285,6 +285,10 @@ test('list and context expose stable full and brief JSON', () => {
   assert.deepEqual(fullContext.recent_events.map((event) => event.type), [
     'task_created',
   ])
+  assert.deepEqual(fullContext.timeline.map((event) => event.title), [
+    '创建任务',
+  ])
+  assert.equal(fullContext.timeline[0].summary, `创建「${readTask(cwd, created.task_id).title}」。`)
 
   const briefContext = JSON.parse(
     run(cwd, ['context', created.task_id, '--json', '--brief']).stdout,
@@ -301,6 +305,8 @@ test('list and context expose stable full and brief JSON', () => {
     },
   ])
   assert.equal(briefContext.recent_events.length, 1)
+  assert.equal(briefContext.timeline.length, 1)
+  assert.equal(briefContext.timeline[0].details.event_type, 'task_created')
 
   const statusContext = JSON.parse(
     run(cwd, ['context', created.task_id, '--json', '--status']).stdout,
@@ -327,6 +333,8 @@ test('list and context expose stable full and brief JSON', () => {
   assert.equal(delta.to_revision, 2)
   assert.equal(delta.requires_baseline, true)
   assert.deepEqual(delta.events.map((event) => event.type), ['decision_recorded'])
+  assert.deepEqual(delta.timeline.map((event) => event.title), ['记录决定'])
+  assert.equal(delta.timeline[0].summary, '记录增量')
 })
 
 test('status keeps task writer state and caller capability independent', () => {
