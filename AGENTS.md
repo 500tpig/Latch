@@ -15,7 +15,7 @@
 1. `git status --short`；
 2. `latch list --json --brief`；
 3. 用户点名 task 时执行 `latch context <task-id> --json --status`；未点名时，仅当 list 返回 `current_task_id` 才读取对应 status；两者都没有时，不得调用无 task ID 的 `latch context --json --status`；
-4. 需要 goal、scope、acceptance、完整 gate 或 submission 时再展开 `--brief` 或完整 context；
+4. 需要 goal、scope、acceptance、完整 gate、submission 或可读过程时，优先展开 `--brief --history timeline`；只有调试、审计或兼容核对时读取原始 event；
 5. 只有已持有同一 task 对应 revision 的可信 baseline 时才使用 `--since-revision`，不得用 delta 代替跨会话完整恢复；
 6. 先读取 task artifact；只有任务涉及产品契约、架构、安装、文档行为，或现有证据不足时，才从 `docs/INDEX.md` 选择直接相关文档。
 

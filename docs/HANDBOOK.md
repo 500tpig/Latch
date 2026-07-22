@@ -52,7 +52,7 @@ latch checkpoint "事后记录" --plan-file plan.json \
   --retrospective-file retrospective.json
 latch use <task-id>
 latch list --json --brief
-latch context [task-id] --json --brief
+latch context [task-id] --json --brief --history timeline
 latch context [task-id] --json --status
 latch context [task-id] --json --since-revision <revision>
 ```
@@ -76,7 +76,15 @@ latch claim <task-id> --expect-revision 3 --reason "继续该 task"
 
 context 的 `current` 只表示当前 actor 的 state 指针是否指向该 task。`task.writer.primary_writer` 是 task 主写方，`task.writer.task_status` 表示 task 是否已有 writer，`task.writer.caller_capability` 表示调用方是否可写；兼容字段 `task.writer.status` 继续给出调用方相对 task 的汇总状态。`task.authorization` 统一投影 schema 2 的 `implementation_approval` 与 schema 3 的 `work_basis`，但不改写 task 真源。
 
-`context --json`、`context --json --brief` 和 `context --json --since-revision` 会返回 `timeline`。`timeline` 是从 task 与 event 派生的用户可读过程记录，用于默认展示「发生了什么、影响和下一步」。原始 `recent_events` 或 `events` 继续保留，供调试和兼容 reader 使用。`timeline.details` 可以包含原始事件字段；默认 UI 应先展示摘要，需要排查时再展开详情。
+省略 `--history` 时，`context --json`、`context --json --brief` 和 `context --json --since-revision` 保持既有响应：同时返回用户可读 `timeline` 与原始 `recent_events` 或 `events`，timeline item 也保留 `details`。既有 reader 无需改动。
+
+`--history` 只适用于 JSON Context，可取 `timeline`、`events` 或 `both`，并可与 `--brief` 和 `--since-revision` 组合。显式选择会返回 `history_view`：
+
+- `timeline`：只返回 timeline，省略 raw event 与 `timeline.details`，适合作为普通恢复视图；
+- `events`：只返回 raw event，适合调试、审计和兼容性核对；
+- `both`：返回与默认相同的两套历史字段，用 `history_view: "both"` 标明显式选择。
+
+`--status --history`、非 JSON 的 `--history` 和非法枚举值均会被拒绝。selector 只投影响应字段，不修改 task、event 存储或 timeline 文案语义。
 
 ### 更新计划和状态
 

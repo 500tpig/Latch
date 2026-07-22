@@ -114,6 +114,7 @@ test('top-level and command help have no side effects', () => {
   const contextHelp = run(temporaryDirectory(), ['context', '--help'])
   assert.match(contextHelp.stdout, /--status/)
   assert.match(contextHelp.stdout, /--since-revision/)
+  assert.match(contextHelp.stdout, /--history <timeline\|events\|both>/)
 })
 
 test('unknown command and flag fail before creating .latch', () => {
@@ -335,6 +336,111 @@ test('list and context expose stable full and brief JSON', () => {
   assert.deepEqual(delta.events.map((event) => event.type), ['decision_recorded'])
   assert.deepEqual(delta.timeline.map((event) => event.title), ['记录决定'])
   assert.equal(delta.timeline[0].summary, '记录增量')
+})
+
+test('context history selector keeps defaults compatible and projects raw or readable history', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const created = checkpoint(cwd)
+  const detail = '调试详情'.repeat(120)
+  const saved = run(cwd, [
+    'save', created.task_id, '--expect-revision', '1',
+    '--decision', '记录可读历史选择器',
+    '--question', detail,
+    '--answer', detail,
+    '--json',
+  ])
+  assert.equal(saved.status, 0, saved.stderr)
+
+  function assertDefaultMatchesBoth(args) {
+    const standard = JSON.parse(run(cwd, [
+      'context', created.task_id, '--json', ...args,
+    ]).stdout)
+    const explicitBoth = JSON.parse(run(cwd, [
+      'context', created.task_id, '--json', ...args, '--history', 'both',
+    ]).stdout)
+    const { generated_at: standardGeneratedAt, ...standardBody } = standard
+    const {
+      generated_at: explicitGeneratedAt,
+      history_view: historyView,
+      ...explicitBody
+    } = explicitBoth
+    assert.ok(standardGeneratedAt)
+    assert.ok(explicitGeneratedAt)
+    assert.equal(historyView, 'both')
+    assert.deepEqual(explicitBody, standardBody)
+    return standard
+  }
+
+  assertDefaultMatchesBoth([])
+  const defaultBrief = assertDefaultMatchesBoth(['--brief'])
+  assertDefaultMatchesBoth(['--since-revision', '1'])
+
+  const timeline = JSON.parse(
+    run(cwd, [
+      'context', created.task_id, '--json', '--brief', '--history', 'timeline',
+    ]).stdout,
+  )
+  assert.equal(timeline.history_view, 'timeline')
+  assert.equal('recent_events' in timeline, false)
+  assert.equal(timeline.timeline.length, 2)
+  assert.equal('details' in timeline.timeline[0], false)
+  assert.ok(JSON.stringify(timeline).length < JSON.stringify(defaultBrief).length * 0.8)
+
+  const events = JSON.parse(
+    run(cwd, [
+      'context', created.task_id, '--json', '--brief', '--history', 'events',
+    ]).stdout,
+  )
+  assert.equal(events.history_view, 'events')
+  assert.equal('timeline' in events, false)
+  assert.deepEqual(events.recent_events, defaultBrief.recent_events)
+
+  const fullTimeline = JSON.parse(
+    run(cwd, [
+      'context', created.task_id, '--json', '--history', 'timeline',
+    ]).stdout,
+  )
+  assert.equal('recent_events' in fullTimeline, false)
+  assert.equal(fullTimeline.history_view, 'timeline')
+
+  const deltaTimeline = JSON.parse(
+    run(cwd, [
+      'context', created.task_id, '--json', '--since-revision', '1',
+      '--history', 'timeline',
+    ]).stdout,
+  )
+  assert.equal(deltaTimeline.view, 'delta')
+  assert.equal(deltaTimeline.requires_baseline, true)
+  assert.equal('events' in deltaTimeline, false)
+  assert.equal('details' in deltaTimeline.timeline[0], false)
+
+  const deltaEvents = JSON.parse(
+    run(cwd, [
+      'context', created.task_id, '--json', '--since-revision', '1',
+      '--history', 'events',
+    ]).stdout,
+  )
+  assert.equal('timeline' in deltaEvents, false)
+  assert.deepEqual(deltaEvents.events.map((event) => event.type), ['decision_recorded'])
+
+  const statusHistory = run(cwd, [
+    'context', created.task_id, '--json', '--status', '--history', 'timeline',
+  ])
+  assert.notEqual(statusHistory.status, 0)
+  assert.match(statusHistory.stderr, /--history cannot be combined with --status/)
+
+  const humanHistory = run(cwd, [
+    'context', created.task_id, '--history', 'timeline',
+  ])
+  assert.notEqual(humanHistory.status, 0)
+  assert.match(humanHistory.stderr, /--history require --json/)
+
+  const invalidHistory = run(cwd, [
+    'context', created.task_id, '--json', '--history', 'raw',
+  ])
+  assert.notEqual(invalidHistory.status, 0)
+  assert.match(invalidHistory.stderr, /--history must be timeline, events, or both/)
 })
 
 test('status keeps task writer state and caller capability independent', () => {

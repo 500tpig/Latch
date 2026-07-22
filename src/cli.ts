@@ -31,6 +31,7 @@ import {
   jsonEnvelopeV2,
   listHumanV2,
   listJsonV2,
+  type ContextHistoryView,
 } from './core/task-view.js'
 import {
   assertGroupIdV3,
@@ -73,7 +74,7 @@ Commands:
   checkpoint <title> --plan-file <path> [--profile <light|standard>] [--authorization-file <path> | --retrospective-file <path>]
   use <task-id>
   list [--group <id> [--include-archive]] [--json] [--brief]
-  context [task-id] [--json] [--brief | --status | --since-revision <revision>]
+  context [task-id] [--json] [--brief | --status | --since-revision <revision>] [--history <timeline|events|both>]
   context pack --input-file <path>
   knowledge <fingerprint|check> [options]
   benchmark context [options]
@@ -96,7 +97,7 @@ const commandUsage: Record<string, string> = {
   list:
     'Usage: latch list [--group <id> [--include-archive]] [--json] [--brief]',
   context:
-    'Usage: latch context [task-id] [--json] [--brief | --status | --since-revision <revision>]',
+    'Usage: latch context [task-id] [--json] [--brief | --status | --since-revision <revision>] [--history <timeline|events|both>]',
   'context-pack': 'Usage: latch context pack --input-file <path> [--json]',
   knowledge:
     'Usage: latch knowledge fingerprint --path <path> [--json]\n       latch knowledge check (--path <path> | --task <task-id>) [--json]',
@@ -362,6 +363,12 @@ function validateBrief(jsonOutput: boolean | undefined, brief: boolean | undefin
     fail('invalid_arguments', '--brief requires --json.')
 }
 
+function contextHistoryView(raw: string | undefined): ContextHistoryView | undefined {
+  if (raw === undefined) return undefined
+  if (raw === 'timeline' || raw === 'events' || raw === 'both') return raw
+  fail('invalid_arguments', '--history must be timeline, events, or both.')
+}
+
 function runList(args: string[], cwd: string, actor: string) {
   const parsed = parseCommand(args, {
     ...commonOptions(),
@@ -400,15 +407,21 @@ function runContext(args: string[], cwd: string, actor: string) {
     brief: { type: 'boolean' },
     status: { type: 'boolean' },
     'since-revision': { type: 'string' },
+    history: { type: 'string' },
   })
   if (parsed.values.help) return process.stdout.write(`${commandUsage.context}\n`)
   requirePositionals('context', parsed.positionals, [0, 1])
   validateBrief(parsed.values.json, parsed.values.brief)
   if (
-    (parsed.values.status || parsed.values['since-revision'] !== undefined) &&
+    (parsed.values.status ||
+      parsed.values['since-revision'] !== undefined ||
+      parsed.values.history !== undefined) &&
     !parsed.values.json
   )
-    fail('invalid_arguments', '--status and --since-revision require --json.')
+    fail('invalid_arguments', '--status, --since-revision, and --history require --json.')
+  const history = contextHistoryView(parsed.values.history)
+  if (parsed.values.status && history !== undefined)
+    fail('invalid_arguments', '--history cannot be combined with --status.')
   const selectedViews = [
     Boolean(parsed.values.brief),
     Boolean(parsed.values.status),
@@ -440,6 +453,7 @@ function runContext(args: string[], cwd: string, actor: string) {
       brief: Boolean(parsed.values.brief),
       status: Boolean(parsed.values.status),
       sinceRevision,
+      history,
     }))
   process.stdout.write(`${contextHumanV2(store, task, actor)}\n`)
 }

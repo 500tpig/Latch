@@ -12,7 +12,7 @@ Apply these rules to repository-write or observable-behavior requests. Do not cr
 1. Run `git status --short`.
 2. Run `latch list --json --brief`.
 3. If the user names a task, run `latch context <task-id> --json --status`; otherwise, run it for the returned `current_task_id` only when that field exists. If neither exists, do not call `latch context --json --status` without a task ID.
-4. Expand with `--brief` or full context only when goal, scope, acceptance, pending plan items, gates, or submission evidence is needed. Use `--since-revision` only with a trusted baseline for that exact task revision.
+4. Expand with `--brief --history timeline` when goal, scope, acceptance, pending plan items, gates, submission evidence, or readable history is needed; read raw events only for debugging, auditing, or compatibility checks. Use `--since-revision` only with a trusted baseline for that exact task revision.
 5. Read task artifacts first. Read `docs/INDEX.md` and directly relevant project documents only when the task affects product contracts, architecture, installation, documentation behavior, or the available evidence is insufficient.
 6. Preserve unrelated worktree changes.
 

@@ -8,11 +8,11 @@ Document-Status: current component of `2026-07-15-latch-final-product-contract.m
 
 Date: 2026-07-15
 
-Revision: 4
+Revision: 5
 
 Released: 2026-07-16 — 全面 current 发布。
 
-Updated: 2026-07-21 — 增加 task status 与 revision delta 读取契约。
+Updated: 2026-07-22 — 增加可读 timeline 与原始 event 的 history selector。
 
 ## 1. 目的与边界
 
@@ -69,6 +69,14 @@ CLI 提供三个兼容层级：
 - `context --json --since-revision <revision>` 返回指定 revision 之后的 event 与当前最小状态，并设置 `requires_baseline: true`。
 
 `--brief`、`--status` 与 `--since-revision` 互斥。delta 只适用于调用方已持有可信 baseline 的情况，不是跨 session 完整恢复入口。`current` 是 actor state 指针；`primary_writer` 与 caller writer status 单独返回。
+
+JSON Context 可额外使用 `--history <timeline|events|both>`；它不改变上述层级，也不适用于 `--status` 或非 JSON 输出。省略参数时是兼容模式：full、brief 与 delta 继续同时返回 raw event 和带 `details` 的 timeline，且不增加字段。显式选择会增加 `history_view`：
+
+- `timeline` 只返回可读 timeline，并省略 timeline item 的 `details`；
+- `events` 只返回 raw `recent_events` 或 delta `events`；
+- `both` 返回与默认等价的两套历史字段。
+
+selector 只改变响应投影，不修改 task/event 真源、schema version、Context pack 预算或 timeline 文案语义。S8 只读样本在 revision 4 的默认 minified brief JSON 为 5,110 Unicode code points；`--history timeline` 的同输入输出为 3,636，减少 1,474（28.85%），其中包含 `history_view` 标记。该数值仅用于同输入的相对字符比较，不表示模型 token。
 
 status 输出应显著小于 brief。回归测试至少比较同一 task 的序列化字符数，确保 status 小于 brief；30% 降幅仍作为 benchmark 次目标，不成为单次 CLI 硬门禁。
 

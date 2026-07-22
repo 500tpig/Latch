@@ -213,6 +213,8 @@ type TimelineEvent = {
   details: Record<string, unknown>
 }
 
+export type ContextHistoryView = 'timeline' | 'events' | 'both'
+
 function concise(value: string, limit = 160) {
   const compact = value.replace(/\s+/g, ' ').trim()
   if (compact.length <= limit) return compact
@@ -498,8 +500,14 @@ function timelineEvent(task: TaskV2, event: TaskEvent): TimelineEvent {
   }
 }
 
-function timelineEvents(task: TaskV2, events: TaskEvent[]) {
-  return events.map((event) => timelineEvent(task, event))
+function timelineEvents(
+  task: TaskV2,
+  events: TaskEvent[],
+  includeDetails = true,
+) {
+  const timeline = events.map((event) => timelineEvent(task, event))
+  if (includeDetails) return timeline
+  return timeline.map(({ details: _, ...event }) => event)
 }
 
 function nextAction(task: TaskV2, actor: string) {
@@ -601,6 +609,7 @@ type ContextJsonOptions = {
   brief?: boolean
   status?: boolean
   sinceRevision?: number
+  history?: ContextHistoryView
 }
 
 export function contextJsonV2(
@@ -616,6 +625,10 @@ export function contextJsonV2(
   const delivery = artifactDelivery(store.paths.workspaceRoot, task.artifacts)
   const deliveryWarnings = artifactWarnings(delivery)
   const current = currentTaskIdV2(store, actor) === task.id
+  const includeRawEvents = options.history !== 'timeline'
+  const includeTimeline = options.history !== 'events'
+  const includeTimelineDetails = options.history !== 'timeline'
+  const historyView = options.history
   if (options.sinceRevision !== undefined) {
     const deltaEvents = events.filter((event) => event.revision > options.sinceRevision!)
     return {
@@ -626,8 +639,11 @@ export function contextJsonV2(
       from_revision: options.sinceRevision,
       to_revision: task.revision,
       requires_baseline: true,
-      events: deltaEvents,
-      timeline: timelineEvents(task, deltaEvents),
+      ...(includeRawEvents ? { events: deltaEvents } : {}),
+      ...(includeTimeline
+        ? { timeline: timelineEvents(task, deltaEvents, includeTimelineDetails) }
+        : {}),
+      ...(historyView ? { history_view: historyView } : {}),
       history_incomplete: taskHistoryIncompleteV2(store, task.id, events),
       artifact_delivery: delivery,
       ...([...eventLog.warnings, ...deliveryWarnings].length > 0
@@ -644,12 +660,19 @@ export function contextJsonV2(
       : options.brief
         ? briefTask(task)
         : task,
-    ...(!options.status
+    ...(!options.status && includeRawEvents
       ? { recent_events: options.brief ? events.slice(-5) : events }
       : {}),
-    ...(!options.status
-      ? { timeline: timelineEvents(task, options.brief ? events.slice(-5) : events) }
+    ...(!options.status && includeTimeline
+      ? {
+          timeline: timelineEvents(
+            task,
+            options.brief ? events.slice(-5) : events,
+            includeTimelineDetails,
+          ),
+        }
       : {}),
+    ...(!options.status && historyView ? { history_view: historyView } : {}),
     history_incomplete: taskHistoryIncompleteV2(store, task.id, events),
     artifact_delivery: delivery,
     ...([...eventLog.warnings, ...deliveryWarnings].length > 0
