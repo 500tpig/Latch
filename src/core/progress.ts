@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process'
+import { isDeepStrictEqual } from 'node:util'
 import {
   artifactDeliveryWarnings,
   untrackedWorktreeWarnings,
@@ -638,6 +639,7 @@ export type PatchSubmissionKnowledgeImpactV3Input = {
   expectRevision: number
   actor: string
   knowledgeImpact: KnowledgeImpact
+  reason?: string
 }
 
 export function patchSubmissionKnowledgeImpactV3(
@@ -655,8 +657,13 @@ export function patchSubmissionKnowledgeImpactV3(
     throw new Error('Patch denied: task must be in review.')
   const submission = current.submission
   if (!submission) throw new Error('Patch denied: submission is required.')
-  if (submission.knowledge_impact)
-    throw new Error('Patch denied: submission already has knowledge_impact.')
+  const previousImpact = submission.knowledge_impact
+  const correction = previousImpact !== undefined
+  const reason = correction
+    ? requireText(input.reason, 'Patch correction requires a non-empty reason.')
+    : undefined
+  if (correction && isDeepStrictEqual(previousImpact, input.knowledgeImpact))
+    throw new Error('Patch denied: knowledge_impact is unchanged.')
   if (
     submission.plan_revision !== undefined &&
     submission.plan_revision !== current.plan_revision
@@ -677,6 +684,14 @@ export function patchSubmissionKnowledgeImpactV3(
         plan_revision: current.plan_revision,
         work_revision: current.work_revision,
         knowledge_impact_kind: input.knowledgeImpact.kind,
+        operation: correction ? 'correction' : 'backfill',
+        ...(correction
+          ? {
+              reason,
+              previous_knowledge_impact: structuredClone(previousImpact),
+              knowledge_impact: structuredClone(input.knowledgeImpact),
+            }
+          : {}),
       },
     }],
     update(task) {

@@ -27,6 +27,27 @@ function validGroupId(value: unknown) {
   )
 }
 
+type EventKnowledgeImpact = { kind: 'none' | 'updated' }
+
+function validKnowledgeImpact(value: unknown): value is EventKnowledgeImpact {
+  if (!isRecord(value)) return false
+  if (value.kind === 'none')
+    return typeof value.reason === 'string' && value.reason.trim() !== ''
+  if (value.kind !== 'updated' || typeof value.summary !== 'string' || !value.summary.trim())
+    return false
+  return (
+    Array.isArray(value.artifact_refs) &&
+    value.artifact_refs.length > 0 &&
+    value.artifact_refs.every((reference) =>
+      isRecord(reference) &&
+      typeof reference.kind === 'string' &&
+      reference.kind.trim() !== '' &&
+      typeof reference.path === 'string' &&
+      reference.path.trim() !== '',
+    )
+  )
+}
+
 function validateTaskEvent(
   value: unknown,
   path: string,
@@ -135,6 +156,18 @@ function validateTaskEvent(
       throw new Error(`Invalid patch work_revision in ${path}.`)
     if (value.knowledge_impact_kind !== 'none' && value.knowledge_impact_kind !== 'updated')
       throw new Error(`Invalid patch knowledge_impact_kind in ${path}.`)
+    if (value.operation === undefined) return
+    if (value.operation !== 'backfill' && value.operation !== 'correction')
+      throw new Error(`Invalid patch operation in ${path}.`)
+    if (value.operation === 'backfill') return
+    if (typeof value.reason !== 'string' || !value.reason.trim())
+      throw new Error(`Invalid patch correction reason in ${path}.`)
+    if (
+      !validKnowledgeImpact(value.previous_knowledge_impact) ||
+      !validKnowledgeImpact(value.knowledge_impact) ||
+      value.knowledge_impact.kind !== value.knowledge_impact_kind
+    )
+      throw new Error(`Invalid patch correction impact in ${path}.`)
   }
   if (value.type === 'group_changed') {
     if (

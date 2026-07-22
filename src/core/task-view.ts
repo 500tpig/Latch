@@ -424,7 +424,10 @@ function timelineEvent(task: TaskV2, event: TaskEvent): TimelineEvent {
     return {
       ...base,
       title: '修正提交记录',
-      summary: '补齐或修正提交记录里的知识影响标记。',
+      summary:
+        event.operation === 'backfill'
+          ? '已补齐提交记录里的知识影响标记。'
+          : '已修正提交记录里的知识影响标记。',
       impact: '实现和验证结果不因此改变。',
       details: technicalDetails,
     }

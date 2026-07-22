@@ -417,7 +417,7 @@ test('work and plan revisions invalidate proof and basis independently', () => {
   assert.equal(readTask(cwd, task.id).work_revision, 3)
 })
 
-test('standard no-verify and legacy submission patch preserve review facts', () => {
+test('standard no-verify, legacy backfill, and impact correction preserve review proof', () => {
   const noGateRoot = temporaryDirectory()
   const noGateTask = createV3(noGateRoot, {
     profile: 'standard',
@@ -466,14 +466,79 @@ test('standard no-verify and legacy submission patch preserve review facts', () 
     readTaskEventsV3(taskDirectory(cwd, task.id)).at(-1).type,
     'submission_knowledge_impact_patched',
   )
+  const backfill = readTaskEventsV3(taskDirectory(cwd, task.id)).at(-1)
+  assert.equal(backfill.operation, 'backfill')
+  assert.equal('reason' in backfill, false)
 
-  const duplicate = run(cwd, [
+  const correctedImpact = {
+    kind: 'none',
+    reason: '提交时误判为未修改知识；本次修正为准确的无知识影响记录',
+  }
+  const correctedImpactFile = writeJson(cwd, correctedImpact, 'corrected-impact')
+  const missingReason = run(cwd, [
+    'patch-submission-knowledge-impact', task.id,
+    '--expect-revision', revision(cwd, task.id),
+    '--knowledge-impact-file', correctedImpactFile,
+  ])
+  assert.notEqual(missingReason.status, 0)
+  assert.match(missingReason.stderr, /requires a non-empty reason/)
+
+  const unchanged = run(cwd, [
     'patch-submission-knowledge-impact', task.id,
     '--expect-revision', revision(cwd, task.id),
     '--knowledge-impact-file', impactFile,
+    '--reason', '确认现有记录',
   ])
-  assert.notEqual(duplicate.status, 0)
-  assert.match(duplicate.stderr, /already has knowledge_impact/)
+  assert.notEqual(unchanged.status, 0)
+  assert.match(unchanged.stderr, /knowledge_impact is unchanged/)
+
+  const beforeCorrection = readTask(cwd, task.id)
+  const corrected = run(cwd, [
+    'patch-submission-knowledge-impact', task.id,
+    '--expect-revision', revision(cwd, task.id),
+    '--knowledge-impact-file', correctedImpactFile,
+    '--reason', '提交时错误标记为无知识影响，现修正为准确说明',
+    '--json',
+  ])
+  assert.equal(corrected.status, 0, corrected.stderr)
+  assert.equal(JSON.parse(corrected.stdout).revision, beforeCorrection.revision + 1)
+  const afterCorrection = readTask(cwd, task.id)
+  assert.equal(afterCorrection.phase, beforeCorrection.phase)
+  assert.equal(afterCorrection.plan_revision, beforeCorrection.plan_revision)
+  assert.equal(afterCorrection.work_revision, beforeCorrection.work_revision)
+  assert.deepEqual(afterCorrection.work_basis, beforeCorrection.work_basis)
+  assert.deepEqual(afterCorrection.verification, beforeCorrection.verification)
+  assert.deepEqual(
+    {
+      changes: afterCorrection.submission.changes,
+      verified: afterCorrection.submission.verified,
+      unverified: afterCorrection.submission.unverified,
+      submitted_at: afterCorrection.submission.submitted_at,
+      no_verify: afterCorrection.submission.no_verify,
+    },
+    {
+      changes: beforeCorrection.submission.changes,
+      verified: beforeCorrection.submission.verified,
+      unverified: beforeCorrection.submission.unverified,
+      submitted_at: beforeCorrection.submission.submitted_at,
+      no_verify: beforeCorrection.submission.no_verify,
+    },
+  )
+  assert.deepEqual(afterCorrection.submission.knowledge_impact, correctedImpact)
+  const correction = readTaskEventsV3(taskDirectory(cwd, task.id)).at(-1)
+  assert.equal(correction.operation, 'correction')
+  assert.equal(correction.reason, '提交时错误标记为无知识影响，现修正为准确说明')
+  assert.deepEqual(correction.previous_knowledge_impact, impactNone())
+  assert.deepEqual(correction.knowledge_impact, correctedImpact)
+
+  const context = run(cwd, ['context', task.id, '--json', '--brief'])
+  assert.equal(context.status, 0, context.stderr)
+  const timeline = JSON.parse(context.stdout).timeline
+  const entry = timeline.findLast(
+    (item) => item.event_type === 'submission_knowledge_impact_patched',
+  )
+  assert.equal(entry.summary, '已修正提交记录里的知识影响标记。')
+  assert.equal(entry.impact, '实现和验证结果不因此改变。')
 })
 
 test('standard profile can project a current legacy approval', () => {

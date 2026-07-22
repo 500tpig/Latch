@@ -353,7 +353,7 @@ reader 为 task artifact 派生 `tracked`、`untracked`、`ignored`、`missing` 
 - 可作为 standard 的 work_basis 投影，支撑 verify/submit（含 no-verify 分支）；
 - 不伪造 scope.summary；plan 变后失效，须新 `approve`。
 
-### 12.3 legacy patch：补 impact（兼容真实 v2 submission）
+### 12.3 submission patch：补齐或修正 impact（兼容真实 v2 submission）
 
 现行 v2 `submission` **没有** `plan_revision` 字段。patch 必须服务真实数据。
 
@@ -363,24 +363,25 @@ reader 为 task artifact 派生 `tracked`、`untracked`、`ignored`、`missing` 
 
 - phase === `review`；非 blocked；
 - 存在 submission；
-- submission **缺少合法 `knowledge_impact`**；
+- submission 缺少 `knowledge_impact` 时走 legacy 补齐；已有合法 `knowledge_impact` 时允许原地修正；
+- 覆盖已有值必须提供非空 reason；相同 impact 拒绝，不产生 revision；
 - 允许 submission **同时缺少** `plan_revision` 字段（legacy）；
 - 若 submission **带有** `plan_revision`，则必须 `=== task.plan_revision`；若**缺失**，则在 patch 时写入 **当前** `task.plan_revision`；
 - `submission.work_revision === task.work_revision`（v2 已有 work_revision）；
 - 有效 work_basis 解释成立：优先 `legacy_approval` 且 `approved_plan_revision === task.plan_revision`，或当前 implementation_authorization / retrospective 双绑定匹配；
 - 当前 proof 分支对 `submission.work_revision` 仍成立（原 gate pass 仍在，或原 no_verify submission 且 plan 仍无 gate）；
 - 可写 actor + primary writer；`--expect-revision`；
-- Skill/调用方提供合法 knowledge_impact **输入**。
+- Skill/调用方提供合法 knowledge_impact **输入**；保留 proof 前，调用方须确认实现、配置、生成输入、gate 对象和公共行为均未变化。
 
 **效果：**
 
-- 写入 `knowledge_impact`；
+- 写入或替换 `knowledge_impact`；
 - 若缺 `plan_revision`，补写为当前 `task.plan_revision`；
 - **不**改 phase、`work_revision`、changes/unverified；`verified` 保持或保持由结构化结果可再生成的摘要策略与 v2 一致；
-- task `revision + 1`；事件 `submission_knowledge_impact_patched`；
+- task `revision + 1`；事件 `submission_knowledge_impact_patched` 区分 `backfill` 与 `correction`，后者记录 reason 及修正前后的 impact；
 - **不**重跑 gate、**不**要求假 review feedback。
 
-**拒绝：** 双 revision 真冲突、basis/proof 已失效、已有合法 impact、已 archive。
+**拒绝：** 双 revision 真冲突、basis/proof 已失效、覆盖时无 reason、相同 impact、已 archive。
 
 ### 12.4 无 impact 不得 done
 
@@ -395,7 +396,7 @@ reader 为 task artifact 派生 `tracked`、`untracked`、`ignored`、`missing` 
 | `approve` | 写 implementation_authorization；plan→dev 时 work_revision+1 |
 | `save` | 不写 basis、不擅自推 phase |
 | `verify` / `submit` / `done` | §3–§9 |
-| `patch_submission_knowledge_impact` | §12.3 |
+| `patch_submission_knowledge_impact` | §12.3；不开放 changes、verified、unverified、submitted_at 或 no_verify 的通用编辑 |
 
 提交点 task.json；锁序 task→state。
 
@@ -433,7 +434,7 @@ Light submit denied: --no-verify is not allowed for profile=light.
 
 ## 16. 一致性摘要
 
-- legacy patch 兼容无 `plan_revision` 的 v2 submission，一次补 plan_revision+impact，并复核 basis+proof；
+- submission patch 兼容无 `plan_revision` 的 v2 submission，一次补 plan_revision+impact；已有 impact 的修正只改 impact，并复核 basis+proof；
 - retrospective：首次启动 `work_revision 0→1`；仅 plan/profile 变且代码未变则 rebind 并 **保持** work_revision；继续改代码禁止 retrospective，改 authorization 且 work_revision+1；
 - 每次 implementation_authorization 的 plan→dev 都 work_revision+1；
 - standard→light 禁止静默降级；须无授权或用户明确缩小并写 `profile_changed.reason`；

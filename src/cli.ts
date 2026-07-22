@@ -83,7 +83,7 @@ Commands:
   approve <task-id> --expect-revision <revision> [--reason <text> | --authorization-file <path> | --retrospective-file <path>] [--feedback <text> | --non-implementation-feedback <text>]
   verify <task-id> --expect-revision <revision> --name <name> [--diagnostic] [-- command...]
   submit <task-id> --expect-revision <revision> --changes <text> --unverified <text> [--knowledge-impact-file <path>] [--no-verify --reason <text>]
-  patch-submission-knowledge-impact <task-id> --expect-revision <revision> --knowledge-impact-file <path>
+  patch-submission-knowledge-impact <task-id> --expect-revision <revision> --knowledge-impact-file <path> [--reason <text>]
   downgrade-v2 --task <task-id> --expect-revision <revision> --confirm-data-loss
   done <task-id> --expect-revision <revision> --followup <text>
   abandon <task-id> --expect-revision <revision> --reason <text>`
@@ -115,7 +115,7 @@ const commandUsage: Record<string, string> = {
   submit:
     'Usage: latch submit <task-id> --expect-revision <revision> --changes <text> --unverified <text> [--knowledge-impact-file <path>] [--no-verify --reason <text>] [--json]',
   'patch-submission-knowledge-impact':
-    'Usage: latch patch-submission-knowledge-impact <task-id> --expect-revision <revision> --knowledge-impact-file <path> [--json]',
+    'Usage: latch patch-submission-knowledge-impact <task-id> --expect-revision <revision> --knowledge-impact-file <path> [--reason <text>] [--json]',
   'downgrade-v2':
     'Usage: latch downgrade-v2 --task <task-id> --expect-revision <revision> --confirm-data-loss [--json]',
   done:
@@ -1113,6 +1113,7 @@ function runPatchSubmissionKnowledgeImpact(
     ...commonOptions(),
     'expect-revision': { type: 'string' },
     'knowledge-impact-file': { type: 'string' },
+    reason: { type: 'string' },
   })
   if (parsed.values.help)
     return process.stdout.write(
@@ -1136,7 +1137,12 @@ function runPatchSubmissionKnowledgeImpact(
   const result = patchSubmissionKnowledgeImpactV3(
     store,
     parsed.positionals[0],
-    { expectRevision, actor, knowledgeImpact },
+    {
+      expectRevision,
+      actor,
+      knowledgeImpact,
+      reason: parsed.values.reason,
+    },
   )
   if (parsed.values.json)
     return json(mutationJson(result.task, result.warnings, expectRevision))
