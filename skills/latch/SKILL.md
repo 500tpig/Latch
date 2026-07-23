@@ -74,7 +74,7 @@ Git delivery remains separate: do not derive permission for add, commit, push, b
 
 ## Non-negotiable contracts
 
-- Treat a missing canonical actor or writer mismatch as fail closed; remain read-only until the required explicit claim or takeover authorization exists.
+- Treat a missing canonical actor or writer mismatch as fail closed; remain read-only until claim/takeover. Grok and Codex are equal hosts; never invent or export `LATCH_ACTOR`.
 - Pass `--expect-revision` to every task mutation. In one uninterrupted flow, use each successful JSON response's `revision`; do not reread context only to obtain it. Refresh status after a revision conflict, new user input boundary, judgment-requiring warning, or task meaning change, and never auto-retry a conflict.
 - Treat takeover as ownership transfer only, never as implementation approval.
 - Submit only after all current named gates pass, or use the documented `--no-verify` exception for an approved plan without gates. Submit enters `review`; never auto-complete it.

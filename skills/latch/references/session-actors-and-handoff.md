@@ -8,7 +8,9 @@ Read this reference for actor adapters, writer mismatch, takeover, a new session
 - Inject `<tool>:session:<opaque-id>` only in a host adapter after obtaining a stable, session-unique ID from the host runtime or protocol.
 - Do not tell a user to guess or export `LATCH_ACTOR`, and do not derive it from `default`, a random UUID, PID, machine name, working directory, or user input.
 - Without an adapter-provided canonical actor, remain read-only and use only `latch list` or `latch context <task-id>`.
-- Preserve the distributed Codex compatibility path: when `LATCH_ACTOR` is absent and Codex supplies stable `CODEX_THREAD_ID`, inject `codex:session:<thread-id>` before Core reads the actor; keep an explicit empty `LATCH_ACTOR` fail closed.
+- Host adapter priority when `LATCH_ACTOR` is absent: stable `CODEX_THREAD_ID` → `codex:session:<id>`; else stable `GROK_SESSION_ID` → `grok:session:<id>`; else Grok tool shells (`GROK_AGENT`) may resolve a unique session from the Grok host registry via ancestor process match; explicit empty `LATCH_ACTOR` stays fail closed.
+- Grok and Codex are equal writable hosts. Cross-tool or cross-session continuation of the same open task still requires explicit user-authorized `takeover`; do not route work through another host just to obtain an actor.
+- Short fail path when write is rejected: remain read-only → confirm the host exposed a stable session id (or unique Grok registry match) → if the task already has another `primary_writer`, ask for explicit takeover of the named revision. Do not invent `LATCH_ACTOR`.
 
 ## Read-only orientation
 

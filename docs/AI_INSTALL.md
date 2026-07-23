@@ -94,6 +94,8 @@ checksum，确认恢复方法，再移走旧目录并执行 `latch init`。备�
 
 业务项目的 `AGENTS.md` 应写入触发章 A/B/C：A 停在 grill；B 创建或续接 light task 并以请求授权；C 创建或续接 standard task，展示 plan 后等待明确 approve。纯问答、只读探索、无写入意图或明确要求「不用 Latch」时不建 task。
 
+Grok 与 Codex 均可作为可写宿主。安装全局 `latch` 并 `pnpm build` 后，Grok 工具 shell 应自动获得 `grok:session:<id>`，无需手工 `export LATCH_ACTOR`。若写命令报 actor 不可写，先确认会话仍在运行且全局 CLI 指向当前构建；跨对话或跨工具续写同一 open task 仍需明确 `takeover`。
+
 ## Schema 3 task 回退
 
 回退单张 task 前先停止该 task 的其它写入，并确认 v3 专用字段和 event 细节只保留在 backup：

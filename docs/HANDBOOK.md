@@ -224,9 +224,15 @@ latch downgrade-v2 \
 
 同一连续写入流程中，成功 mutation 的 JSON 返回值包含新的 `revision`。下一条命令直接使用该值作为 `--expect-revision`，不得只为获取 revision 重读 context。发生 revision conflict、进入新的用户输入边界、warning 需要重新判断或任务语义变化时，再刷新 status；冲突 mutation 不得自动重试。
 
+### Session actor 宿主
+
+写路径需要 canonical session actor：`<tool>:session:<opaque-id>`。Core 只消费 `LATCH_ACTOR`；host adapter 在其缺失时按顺序注入稳定宿主 id：`CODEX_THREAD_ID` → `codex:session:<id>`，`GROK_SESSION_ID`（或 Grok 工具环境中可唯一解析的 session 登记）→ `grok:session:<id>`。Grok 与 Codex 平权可写。显式空 `LATCH_ACTOR` 或无法解析稳定 id 时保持只读。不要让用户猜测或手工 export `LATCH_ACTOR`。
+
+排障最短路径：先确认 actor 是否为 `*:session:*` → 若 task 已有其他 `primary_writer`，在用户明确授权后 `takeover` → 不要改用另一宿主绕过。
+
 ### 顺序跨会话交接
 
-fork 或新对话都会产生新的 session actor。即使继续同一 workspace 和同一 task，新 session 也必须取得明确的 takeover 授权；仅包含 plan approval 的交接提示词不能绕过 `primary_writer` 门禁。
+fork 或新对话都会产生新的 session actor。即使继续同一 workspace 和同一 task，新 session 也必须取得明确的 takeover 授权；仅包含 plan approval 的交接提示词不能绕过 `primary_writer` 门禁。跨 Grok / Codex 续写同一 open task 同样需要 takeover。
 
 交接提示词应包含 task ID、当前 phase/revision、旧 `primary_writer`、未完成的批准项和 gate、`git status --short` 摘要及共享 worktree 风险。用户须明确说明旧 session 停止写入该 task，并授权新 session 执行：
 

@@ -20,7 +20,10 @@ import {
   readTaskEventsV3,
 } from '../dist/core/notes-events.js'
 import { actorId, isWritableActor } from '../dist/core/actor.js'
-import { injectHostActor } from '../dist/host-adapter.js'
+import {
+  injectHostActor,
+  resolveGrokSessionFromActiveSessions,
+} from '../dist/host-adapter.js'
 
 const cli = join(process.cwd(), 'dist/cli.js')
 const writerA = 'codex:session:writer-a'
@@ -104,44 +107,144 @@ test.afterEach(() => {
     rmSync(directory, { recursive: true, force: true })
 })
 
-test('host adapter injects Codex actor without expanding Core host detection', () => {
+test('host adapter injects Codex and Grok actors without expanding Core host detection', () => {
   assert.equal(isWritableActor('codex:session:thread-1'), true)
+  assert.equal(isWritableActor('grok:session:session-1'), true)
   assert.equal(isWritableActor('codex:session:DEFAULT'), false)
   assert.equal(isWritableActor('codex:default:thread-1'), false)
   assert.equal(isWritableActor('codex:thread-1'), false)
 
   const latchActor = process.env.LATCH_ACTOR
   const threadId = process.env.CODEX_THREAD_ID
+  const grokSession = process.env.GROK_SESSION_ID
+  const grokAgent = process.env.GROK_AGENT
   try {
     delete process.env.LATCH_ACTOR
+    delete process.env.GROK_SESSION_ID
+    delete process.env.GROK_AGENT
     process.env.CODEX_THREAD_ID = 'thread-1'
     assert.equal(actorId(), 'unknown:default')
     injectHostActor()
     assert.equal(actorId(), 'codex:session:thread-1')
+
     process.env.LATCH_ACTOR = ''
     injectHostActor()
     assert.equal(actorId(), '')
+
     process.env.LATCH_ACTOR = 'adapter:session:session-1'
     injectHostActor()
     assert.equal(actorId(), 'adapter:session:session-1')
 
     delete process.env.LATCH_ACTOR
     delete process.env.CODEX_THREAD_ID
+    process.env.GROK_SESSION_ID = 'grok-session-1'
     injectHostActor()
+    assert.equal(actorId(), 'grok:session:grok-session-1')
+
+    // Codex wins over Grok when both host ids are present.
+    delete process.env.LATCH_ACTOR
+    process.env.CODEX_THREAD_ID = 'thread-2'
+    process.env.GROK_SESSION_ID = 'grok-session-2'
+    injectHostActor()
+    assert.equal(actorId(), 'codex:session:thread-2')
+
+    delete process.env.LATCH_ACTOR
+    delete process.env.CODEX_THREAD_ID
+    delete process.env.GROK_SESSION_ID
+    delete process.env.GROK_AGENT
+    // Isolate from a real Grok tool shell that may export GROK_AGENT.
+    injectHostActor(process.env, {
+      resolveGrokSessionId: () => undefined,
+    })
     assert.equal(actorId(), 'unknown:default')
     assert.equal(isWritableActor(actorId()), false)
+
+    // GROK_AGENT without a resolvable session stays read-only.
+    process.env.GROK_AGENT = '1'
+    injectHostActor(process.env, {
+      resolveGrokSessionId: () => undefined,
+    })
+    assert.equal(actorId(), 'unknown:default')
+
+    delete process.env.LATCH_ACTOR
+    injectHostActor(process.env, {
+      resolveGrokSessionId: () => 'resolved-from-host',
+    })
+    assert.equal(actorId(), 'grok:session:resolved-from-host')
+
+    // Explicit empty LATCH_ACTOR still fails closed even with Grok host signals.
+    process.env.LATCH_ACTOR = ''
+    injectHostActor(process.env, {
+      resolveGrokSessionId: () => 'should-not-apply',
+    })
+    assert.equal(actorId(), '')
   } finally {
     if (latchActor === undefined) delete process.env.LATCH_ACTOR
     else process.env.LATCH_ACTOR = latchActor
     if (threadId === undefined) delete process.env.CODEX_THREAD_ID
     else process.env.CODEX_THREAD_ID = threadId
+    if (grokSession === undefined) delete process.env.GROK_SESSION_ID
+    else process.env.GROK_SESSION_ID = grokSession
+    if (grokAgent === undefined) delete process.env.GROK_AGENT
+    else process.env.GROK_AGENT = grokAgent
   }
+})
+
+test('Grok active_sessions pid match injects only on unique ancestor match', () => {
+  const sessionsPath = join(temporaryDirectory(), 'active_sessions.json')
+  writeFileSync(
+    sessionsPath,
+    `${JSON.stringify([
+      { session_id: 'sess-a', pid: 100 },
+      { session_id: 'sess-b', pid: 200 },
+    ])}\n`,
+  )
+
+  const parents = new Map([
+    [10, 100],
+    [100, 1],
+  ])
+  const readParentPid = (pid) => parents.get(pid)
+
+  assert.equal(
+    resolveGrokSessionFromActiveSessions(
+      {},
+      { grokActiveSessionsPath: sessionsPath, readParentPid },
+      10,
+    ),
+    'sess-a',
+  )
+
+  // Multiple distinct sessions on the chain → fail closed.
+  parents.set(10, 100)
+  parents.set(100, 200)
+  parents.set(200, 1)
+  assert.equal(
+    resolveGrokSessionFromActiveSessions(
+      {},
+      { grokActiveSessionsPath: sessionsPath, readParentPid },
+      10,
+    ),
+    undefined,
+  )
+
+  // No match → fail closed.
+  assert.equal(
+    resolveGrokSessionFromActiveSessions(
+      {},
+      { grokActiveSessionsPath: sessionsPath, readParentPid },
+      999,
+    ),
+    undefined,
+  )
 })
 
 test('Codex adapter enables checkpoint only with a stable thread id', () => {
   const cwd = temporaryDirectory()
   const environment = { ...process.env, CODEX_THREAD_ID: 'codex-thread-1' }
   delete environment.LATCH_ACTOR
+  delete environment.GROK_SESSION_ID
+  delete environment.GROK_AGENT
   assert.equal(runWithEnvironment(cwd, ['init'], environment).status, 0)
   writePlan(cwd)
 
@@ -157,6 +260,36 @@ test('Codex adapter enables checkpoint only with a stable thread id', () => {
   const explicitlyEmpty = runWithEnvironment(
     cwd,
     ['checkpoint', 'Rejected task', '--plan-file', 'plan.json'],
+    { ...environment, LATCH_ACTOR: '' },
+  )
+  assert.notEqual(explicitlyEmpty.status, 0)
+  assert.match(explicitlyEmpty.stderr, /Actor not writable: \(empty\)/)
+})
+
+test('Grok adapter enables checkpoint with GROK_SESSION_ID and rejects empty LATCH_ACTOR', () => {
+  const cwd = temporaryDirectory()
+  const environment = {
+    ...process.env,
+    GROK_SESSION_ID: 'grok-thread-1',
+    GROK_AGENT: '1',
+  }
+  delete environment.LATCH_ACTOR
+  delete environment.CODEX_THREAD_ID
+  assert.equal(runWithEnvironment(cwd, ['init'], environment).status, 0)
+  writePlan(cwd)
+
+  const created = runWithEnvironment(
+    cwd,
+    ['checkpoint', 'Grok task', '--plan-file', 'plan.json', '--json'],
+    environment,
+  )
+  assert.equal(created.status, 0, created.stderr)
+  const task = readTask(cwd, JSON.parse(created.stdout).task_id)
+  assert.equal(task.primary_writer, 'grok:session:grok-thread-1')
+
+  const explicitlyEmpty = runWithEnvironment(
+    cwd,
+    ['checkpoint', 'Rejected Grok task', '--plan-file', 'plan.json'],
     { ...environment, LATCH_ACTOR: '' },
   )
   assert.notEqual(explicitlyEmpty.status, 0)
