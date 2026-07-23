@@ -1,0 +1,24 @@
+{
+  "schema_version": 2,
+  "generated_at": "2026-07-23T00:00:00.000Z",
+  "record_store_schema_version": 1,
+  "record": {
+    "id": "rec_123e4567-e89b-42d3-a456-426614174000",
+    "revision": 2,
+    "title": "Record 权限分层",
+    "body_ref": "bodies/rec_123e4567-e89b-42d3-a456-426614174000/2.md",
+    "body_sha256": "d11f911a1737c6c4a9b4d5aa05906bdf60e2e337f4c5ba60b11686e64f78fa0a",
+    "tags": [
+      "record",
+      "permissions"
+    ],
+    "status": "active",
+    "relations": {
+      "task_ids": [],
+      "group_ids": []
+    },
+    "created_at": "2026-07-22T00:00:00.000Z",
+    "updated_at": "2026-07-23T00:00:00.000Z"
+  },
+  "body": "Record 正文只在明确读取一条记录时返回。\n"
+}

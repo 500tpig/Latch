@@ -73,7 +73,7 @@ assert_downgraded() {
     const [taskPath, eventsPath] = process.argv.slice(1)
     const task = JSON.parse(fs.readFileSync(taskPath, "utf8"))
     if (task.schema_version !== 2) throw new Error("Task was not downgraded to schema 2")
-    for (const field of ["primary_writer", "profile", "work_basis", "group_id", "provenance"])
+    for (const field of ["primary_writer", "profile", "work_basis", "group_id", "provenance", "source_record"])
       if (field in task) throw new Error(`Unexpected v3 field: ${field}`)
     const events = fs.readFileSync(eventsPath, "utf8").trim().split("\n").filter(Boolean).map(JSON.parse)
     events.forEach((event, index) => {
@@ -86,6 +86,19 @@ git -C "${OPEN_REPO}" init -q
 write_plan "${OPEN_REPO}/plan.json" "Open R2 smoke"
 write_plan "${OPEN_REPO}/updated-plan.json" "Open R2 smoke updated by v2"
 run_current "${OPEN_REPO}" init --json >/dev/null
+run_current "${OPEN_REPO}" record create \
+  --title "R2 compatibility sentinel" \
+  --body "Old CLI must preserve this Record." \
+  --json >/dev/null
+RECORD_INDEX="${OPEN_REPO}/.latch/records/index.json"
+RECORD_BODY_REF="$(node -e '
+  const fs = require("node:fs")
+  const index = JSON.parse(fs.readFileSync(process.argv[1], "utf8"))
+  process.stdout.write(index.records[0].body_ref)
+' "${RECORD_INDEX}")"
+RECORD_BODY="${OPEN_REPO}/.latch/records/${RECORD_BODY_REF}"
+RECORD_INDEX_SHA="$(shasum -a 256 "${RECORD_INDEX}" | awk '{print $1}')"
+RECORD_BODY_SHA="$(shasum -a 256 "${RECORD_BODY}" | awk '{print $1}')"
 OPEN_ID="$(run_current "${OPEN_REPO}" checkpoint "open R2 smoke" --plan-file plan.json --json | json_field task_id)"
 run_current "${OPEN_REPO}" approve "${OPEN_ID}" --expect-revision 1 --reason "exercise v3-only authorization" --json >/dev/null
 
@@ -100,6 +113,8 @@ assert_downgraded "${OPEN_TASK_DIR}/task.json" "${OPEN_TASK_DIR}/events.jsonl"
 [[ "$(shasum -a 256 "${OPEN_BACKUP}/events.jsonl" | awk '{print $1}')" == "${OPEN_EVENTS_SHA}" ]]
 run_old "${OPEN_REPO}" context "${OPEN_ID}" --json >/dev/null
 run_old "${OPEN_REPO}" save "${OPEN_ID}" --expect-revision 2 --plan-file updated-plan.json --json >/dev/null
+[[ "$(shasum -a 256 "${RECORD_INDEX}" | awk '{print $1}')" == "${RECORD_INDEX_SHA}" ]]
+[[ "$(shasum -a 256 "${RECORD_BODY}" | awk '{print $1}')" == "${RECORD_BODY_SHA}" ]]
 node -e '
   const task = require(process.argv[1])
   if (task.schema_version !== 2 || task.revision !== 3 || task.plan.goal !== "Open R2 smoke updated by v2")

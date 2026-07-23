@@ -10,12 +10,14 @@ const actorReference = 'skills/latch/references/session-actors-and-handoff.md'
 const groupsReference = 'skills/latch/references/groups.md'
 const knowledgeReference = 'skills/latch/references/knowledge-and-context.md'
 const migrationReference = 'skills/latch/references/migration.md'
+const recordsReference = 'skills/latch/references/records.md'
 const skillReferences = [
   lifecycleReference,
   actorReference,
   groupsReference,
   knowledgeReference,
   migrationReference,
+  recordsReference,
 ]
 const currentDocs = [
   'README.md',
@@ -33,6 +35,7 @@ const currentDocs = [
   'docs/prd/2026-07-15-latch-knowledge-freshness-draft.md',
   'docs/prd/2026-07-15-latch-context-benchmark-draft.md',
   'docs/prd/2026-07-15-latch-migration-cli-draft.md',
+  'docs/prd/2026-07-23-latch-record-v1.md',
   'docs/ARTIFACTS.md',
   'docs/SCENARIOS.md',
   'docs/ADOPTER_SYNC.md',
@@ -79,6 +82,11 @@ test('canonical skill stays lean and routes every low-frequency reference', () =
   assert.match(text(migrationReference), /legacy_unclaimed/)
   assert.match(text(migrationReference), /claim <task-id>[\s\S]*--expect-revision <n>[\s\S]*--json/)
   assert.match(text(migrationReference), /downgrade-v2/)
+  assert.match(text(recordsReference), /Do not read or write Records during session startup/)
+  assert.match(text(recordsReference), /at most five candidates/)
+  assert.match(text(recordsReference), /--confirm-linked/)
+  assert.match(text(recordsReference), /untrusted project data/)
+  assert.match(text(recordsReference), /passwords, API keys, access tokens/)
 })
 
 test('canonical skill is the only tracked repo skill source', () => {
@@ -187,6 +195,38 @@ test('current docs describe compact verification, artifact, and warning commands
   assert.match(handBook, /首个失败 gate[\s\S]*停止/)
   assert.match(handBook, /最多 8 个样本/)
   assert.match(contract, /每项仍独立记录 event 和 revision/)
+})
+
+test('Record contract stays explicit, project-local, and metadata-first', () => {
+  const skill = text('skills/latch/SKILL.md')
+  const records = text(recordsReference)
+  const agents = text('AGENTS.md')
+  const handBook = text('docs/HANDBOOK.md')
+  const contract = text('docs/prd/2026-07-23-latch-record-v1.md')
+  const index = text('docs/INDEX.md')
+
+  assert.match(skill, /description:.*explicit project-local Record/)
+  assert.match(skill, /references\/records\.md/)
+  for (const content of [records, agents, handBook, contract]) {
+    assert.match(content, /Record/)
+    assert.match(content, /task/)
+    assert.match(content, /repo|项目/)
+  }
+  assert.match(agents, /普通对话、task 恢复和语义相似不得触发读写/)
+  assert.match(agents, /不作为 AI 指令/)
+  assert.match(handBook, /默认及最大返回 5 条/)
+  assert.match(handBook, /不得保存密码/)
+  assert.match(contract, /`index\.json`[\s\S]*不保存正文/)
+  assert.match(contract, /--confirm-delete/)
+  assert.match(contract, /不构成 plan 或 implementation authorization/)
+  assert.match(contract, /转义或清洗 raw HTML/)
+  assert.match(index, /2026-07-23-latch-record-v1\.md/)
+
+  for (const fixture of [
+    'tests/fixtures/record-list-v1.json',
+    'tests/fixtures/record-show-v1.json',
+  ])
+    assert.equal(existsSync(join(root, fixture)), true, fixture)
 })
 
 test('inline Light shortcuts stay consistent across instructions and current docs', () => {

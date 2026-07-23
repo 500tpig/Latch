@@ -8,13 +8,15 @@ Document-Status: current product contract
 
 Date: 2026-07-15
 
-Revision: 5
+Revision: 6
 
 Released: 2026-07-16 — C1–C8 已交付；本文件是唯一 current 产品契约入口。
 
 Updated: 2026-07-22 — 增加 Light inline 输入、共享 worktree warning 分层和 archive JSON 标记。
 
 Updated: 2026-07-23 — 增加批量 gate 验证、独立 artifact 命令、submit 缺失引用修复命令和 untracked warning 摘要。
+
+Updated: 2026-07-23 — 增加 project-local Record V1，保持 Record 与 task 生命周期及默认上下文隔离。
 
 ## 0. 地位
 
@@ -33,14 +35,15 @@ Updated: 2026-07-23 — 增加批量 gate 验证、独立 artifact 命令、subm
 | 知识与 freshness | `docs/prd/2026-07-15-latch-knowledge-freshness-draft.md` | current component |
 | Context 与 benchmark | `docs/prd/2026-07-15-latch-context-benchmark-draft.md` | current component |
 | 迁移、CLI 与发布 | `docs/prd/2026-07-15-latch-migration-cli-draft.md` | current component |
+| Project Record | `docs/prd/2026-07-23-latch-record-v1.md` | current component |
 
 ## 1. 产品一句话
 
-个人本地 coding task 记录器：保存可追溯的授权与验证，并提供 Git 模块知识和受预算的 context pack；CLI 与 Skill 负责 bookkeeping。
+个人本地 coding task 记录器：保存可追溯的授权与验证，提供 Git 模块知识、受预算的 context pack 和显式 project-local Record；CLI 与 Skill 负责 bookkeeping。
 
 ## 2. 核心对象
 
-task（唯一可写生命周期）、events、primary_writer、group_id、模块知识 Markdown 和 context pack。
+task（唯一可写生命周期）、events、primary_writer、group_id、模块知识 Markdown、context pack 和独立 Record。
 
 ## 3. 生命周期摘要
 
@@ -52,7 +55,7 @@ task（唯一可写生命周期）、events、primary_writer、group_id、模块
 
 ## 4. 阅读顺序
 
-触发章 → 迁移/CLI → Actor → Light → Group → 知识 → Context。
+触发章 → 迁移/CLI → Actor → Light → Group → 知识 → Context → Record。
 
 ## 5. 跨章不变量
 
@@ -74,6 +77,10 @@ task（唯一可写生命周期）、events、primary_writer、group_id、模块
 16. `verify-all` 只编排当前 work revision 尚未通过的 named gate；每项仍独立记录 event 和 revision，失败即停。
 17. `artifact add|remove` 复用 `save` 的 artifact 持久化语义；task schema 与 event 类型不增加新分支。
 18. submit 一次报告全部缺失 artifact 引用并给出修复命令；untracked warning 默认返回总数和最多 8 个样本，完整清单由 `--verbose-warnings` 显式请求。
+19. Record 是独立于 task 的 project-local 显式记录；Record 不具有 phase、writer、approval、gate、submission、review 或 event 历史。
+20. Record 索引不含正文；普通启动、task 恢复、task list/context 和 context pack 不读取 Record。
+21. Record 只允许当前 repo 内的标题和标签元数据查询，默认最多返回 5 条；正文只能按精确 ID 或唯一明确命中读取一条。
+22. 显式 Record CRUD 只授权对应 Record 操作；关联与 task 来源不传播状态、writer 或 implementation authorization。
 
 ## 6. 触发与授权
 
@@ -81,7 +88,7 @@ task（唯一可写生命周期）、events、primary_writer、group_id、模块
 
 ## 7. 发布完成标准
 
-本次全面 current 发布已满足 C1–C8：Actor、Light、Group、knowledge freshness、Context/benchmark、迁移与 R2 回退、文档入口和指令面均已同一发布边界交付。冻结 `0.1.0` CLI R2 smoke 作为兼容性 gate 保留在发布验证中。
+本次全面 current 发布已满足 C1–C8：Actor、Light、Group、knowledge freshness、Context/benchmark、迁移与 R2 回退、文档入口和指令面均已同一发布边界交付。Record V1 作为独立 current component 增补，不改变 C1–C8 的既有完成事实。冻结 `0.1.0` CLI R2 smoke 作为兼容性 gate 保留在发布验证中。
 
 ## 8. 发布记录
 
@@ -92,3 +99,4 @@ task（唯一可写生命周期）、events、primary_writer、group_id、模块
 - 24k、8 步和 30% token 为默认参考值，观察期内可经独立 task 调整；
 - Skill 的判定仍需以用户请求和 task 事实为依据；
 - CodeGraph 未随本发布升级，聊天记录不进入产品真源。
+- Latch-Board 的 Record 只读页面尚未在本 repo 实施，需要使用冻结 fixture 另建 task 接入。

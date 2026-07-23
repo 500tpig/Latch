@@ -1,0 +1,18 @@
+{
+  "schema_version": 2,
+  "generated_at": "2026-07-23T00:00:00.000Z",
+  "record_store_schema_version": 1,
+  "records": [
+    {
+      "id": "rec_123e4567-e89b-42d3-a456-426614174000",
+      "revision": 2,
+      "title": "Record 权限分层",
+      "tags": [
+        "record",
+        "permissions"
+      ],
+      "status": "active",
+      "updated_at": "2026-07-23T00:00:00.000Z"
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
+import { lstatSync, readFileSync, realpathSync } from 'node:fs'
 import { parseArgs, type ParseArgsConfig } from 'node:util'
-import { isAbsolute, normalize, resolve, sep } from 'node:path'
+import { isAbsolute, normalize, relative, resolve, sep } from 'node:path'
 import {
   actorId,
   assertWritableActor,
@@ -25,6 +26,20 @@ import {
   type KnowledgeCheckResult,
 } from './core/knowledge.js'
 import { discoverWorkspaceRoot } from './core/paths.js'
+import {
+  archiveProjectRecordV1,
+  createProjectRecordV1,
+  deleteProjectRecordV1,
+  editProjectRecordV1,
+  linkProjectRecordTaskV1,
+  listProjectRecordsV1,
+  openRecordStoreV1,
+  RECORD_STORE_SCHEMA_VERSION,
+  restoreProjectRecordV1,
+  showProjectRecordV1,
+  type ProjectRecordEntryV1,
+  type ProjectRecordWithBodyV1,
+} from './core/record-store.js'
 import {
   contextHumanV2,
   contextJsonV2,
@@ -72,11 +87,12 @@ const usage = `Usage: latch <command> [options]
 
 Commands:
   init
-  checkpoint <title> --plan-file <path> [--profile <light|standard>] [--authorize-request <reason> [--scope-summary <summary>] [--scope-path <path>...] | --authorization-file <path> | --retrospective-file <path>]
+  checkpoint <title> --plan-file <path> [--profile <light|standard>] [--authorize-request <reason> [--scope-summary <summary>] [--scope-path <path>...] | --authorization-file <path> | --retrospective-file <path>] [--source-record <id> --source-record-revision <revision>]
   use <task-id>
   list [--group <id> [--include-archive]] [--json] [--brief]
   context [task-id] [--json] [--brief | --status | --since-revision <revision>] [--history <timeline|events|both>]
   context pack --input-file <path>
+  record <create|list|show|edit|archive|restore|delete> [options]
   knowledge <fingerprint|check> [options]
   benchmark context [options]
   claim <task-id> --expect-revision <revision> [--reason <text>]
@@ -95,13 +111,15 @@ Commands:
 const commandUsage: Record<string, string> = {
   init: 'Usage: latch init [--json]',
   checkpoint:
-    'Usage: latch checkpoint <title> --plan-file <path> [--profile <light|standard>] [--authorize-request <reason> [--scope-summary <summary>] [--scope-path <path>...] | --authorization-file <path> | --retrospective-file <path>] [--artifact <kind>:<path>] [--json]',
+    'Usage: latch checkpoint <title> --plan-file <path> [--profile <light|standard>] [--authorize-request <reason> [--scope-summary <summary>] [--scope-path <path>...] | --authorization-file <path> | --retrospective-file <path>] [--source-record <id> --source-record-revision <revision>] [--artifact <kind>:<path>] [--json]',
   use: 'Usage: latch use <task-id> [--json]',
   list:
     'Usage: latch list [--group <id> [--include-archive]] [--json] [--brief]',
   context:
     'Usage: latch context [task-id] [--json] [--brief | --status | --since-revision <revision>] [--history <timeline|events|both>]',
   'context-pack': 'Usage: latch context pack --input-file <path> [--json]',
+  record:
+    'Usage: latch record create --title <title> (--body <text> | --body-file <path>) [--tag <tag>...] [--task <id>...] [--group <id>...] [--json]\n       latch record list [--status <active|archived|all>] [--query <text>] [--tag <tag>...] [--task <id>] [--group <id>] [--limit <1..5>] [--json]\n       latch record show <record-id> [--json]\n       latch record edit <record-id> --expect-revision <revision> [--title <title>] [--body <text> | --body-file <path>] [--tag <tag>... | --clear-tags] [--task <id>... | --clear-tasks] [--group <id>... | --clear-groups] [--json]\n       latch record archive <record-id> --expect-revision <revision> [--json]\n       latch record restore <record-id> --expect-revision <revision> [--json]\n       latch record delete <record-id> --expect-revision <revision> --confirm-delete [--confirm-linked] [--json]',
   knowledge:
     'Usage: latch knowledge fingerprint --path <path> [--json]\n       latch knowledge check (--path <path> | --task <task-id>) [--json]',
   benchmark:
@@ -334,6 +352,8 @@ function runCheckpoint(args: string[], cwd: string, actor: string) {
     'scope-path': { type: 'string', multiple: true },
     'authorization-file': { type: 'string' },
     'retrospective-file': { type: 'string' },
+    'source-record': { type: 'string' },
+    'source-record-revision': { type: 'string' },
     artifact: { type: 'string', multiple: true },
   })
   if (parsed.values.help) return process.stdout.write(`${commandUsage.checkpoint}\n`)
@@ -375,6 +395,14 @@ function runCheckpoint(args: string[], cwd: string, actor: string) {
     fail('invalid_arguments', '--scope-path entries must be non-empty.')
   if (hasInlineAuthorization && parsed.values.profile === 'standard')
     fail('invalid_arguments', 'Checkpoint request authorization requires profile light.')
+  if (
+    Boolean(parsed.values['source-record']) !==
+    Boolean(parsed.values['source-record-revision'])
+  )
+    fail(
+      'invalid_arguments',
+      '--source-record and --source-record-revision must be provided together.',
+    )
   const plan = readPlan(cwd, parsed.values['plan-file'])
   const artifacts = (parsed.values.artifact ?? []).map(artifact)
   const authorization = hasAuthorizationFile
@@ -415,6 +443,32 @@ function runCheckpoint(args: string[], cwd: string, actor: string) {
   const profile = hasInlineAuthorization || hasAuthorizationFile
     ? 'light'
     : (parsed.values.profile ?? 'standard') as TaskProfile
+  const sourceRecord = parsed.values['source-record']
+    ? showProjectRecordV1(
+        openRecordStoreV1(cwd),
+        parsed.values['source-record'],
+      )
+    : undefined
+  const sourceRecordRevision = parsed.values['source-record-revision']
+    ? positiveInteger(
+        parsed.values['source-record-revision'],
+        '--source-record-revision',
+      )
+    : undefined
+  if (sourceRecord?.record.status === 'archived')
+    fail(
+      'invalid_arguments',
+      `Archived Record must be restored before creating a task: ${sourceRecord.record.id}`,
+    )
+  if (
+    sourceRecord &&
+    sourceRecordRevision !== undefined &&
+    sourceRecord.record.revision !== sourceRecordRevision
+  )
+    fail(
+      'revision_conflict',
+      `Record revision conflict for ${sourceRecord.record.id}: expected ${sourceRecordRevision}, current ${sourceRecord.record.revision}.`,
+    )
   const store = openTaskStoreV2(cwd)
   const result = createTaskV3(
     store,
@@ -423,6 +477,15 @@ function runCheckpoint(args: string[], cwd: string, actor: string) {
       plan,
       artifacts,
       profile,
+      ...(sourceRecord
+        ? {
+            sourceRecord: {
+              record_id: sourceRecord.record.id,
+              revision: sourceRecord.record.revision,
+              body_sha256: sourceRecord.record.body_sha256,
+            },
+          }
+        : {}),
       ...(hasInlineAuthorization || hasAuthorizationFile || hasRetrospective
         ? {
             workBasis: hasInlineAuthorization
@@ -435,6 +498,22 @@ function runCheckpoint(args: string[], cwd: string, actor: string) {
     },
     actor,
   )
+  if (sourceRecord) {
+    try {
+      const linked = linkProjectRecordTaskV1(
+        openRecordStoreV1(cwd),
+        sourceRecord.record.id,
+        sourceRecord.record.revision,
+        result.task.id,
+      )
+      result.warnings.push(...linked.warnings)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      result.warnings.push(
+        `Task ${result.task.id} was created from Record ${sourceRecord.record.id}, but the backlink was not saved: ${message}`,
+      )
+    }
+  }
   if (parsed.values.json) return json(mutationJson(result.task, result.warnings))
   process.stdout.write(`Created ${result.task.id} at revision ${result.task.revision}\n`)
   printWarnings(result.warnings)
@@ -610,6 +689,319 @@ function knowledgeCheckHuman(result: KnowledgeCheckResult) {
     ...(result.error ? [`Error: ${result.error}`] : []),
     ...result.warnings.map((warning) => `Warning: ${warning}`),
   ].join('\n')
+}
+
+function recordJsonEnvelope() {
+  return {
+    ...jsonEnvelopeV2(),
+    record_store_schema_version: RECORD_STORE_SCHEMA_VERSION,
+  }
+}
+
+function recordMutationView(record: ProjectRecordEntryV1) {
+  return {
+    id: record.id,
+    revision: record.revision,
+    title: record.title,
+    tags: record.tags,
+    status: record.status,
+    relations: record.relations,
+    updated_at: record.updated_at,
+  }
+}
+
+function recordBodyPreview(body: string) {
+  const normalized = body.replace(/\s+/g, ' ').trim()
+  return [...normalized].slice(0, 240).join('')
+}
+
+function readRecordBodyInput(
+  cwd: string,
+  workspaceRoot: string,
+  body: string | undefined,
+  bodyFile: string | undefined,
+  required: boolean,
+) {
+  if (body !== undefined && bodyFile !== undefined)
+    fail('invalid_arguments', '--body and --body-file cannot be combined.')
+  if (body === undefined && bodyFile === undefined) {
+    if (required)
+      fail('invalid_arguments', 'Exactly one of --body or --body-file is required.')
+    return undefined
+  }
+  if (body !== undefined) return body
+  const inputPath = resolve(cwd, bodyFile!)
+  const relativePath = relative(workspaceRoot, inputPath)
+  if (
+    relativePath === '..' ||
+    relativePath.startsWith(`..${sep}`) ||
+    isAbsolute(relativePath)
+  )
+    fail('invalid_arguments', '--body-file must be inside the current project.')
+  let canonicalPath: string
+  try {
+    const stat = lstatSync(inputPath)
+    if (stat.isSymbolicLink() || !stat.isFile())
+      fail('invalid_arguments', '--body-file must be a regular non-symlink file.')
+    canonicalPath = realpathSync.native(inputPath)
+  } catch (error) {
+    if (error instanceof CliV2Error) throw error
+    const message = error instanceof Error ? error.message : String(error)
+    fail('invalid_arguments', `Cannot read --body-file: ${message}`)
+  }
+  const canonicalRelative = relative(workspaceRoot, canonicalPath)
+  if (
+    canonicalRelative === '..' ||
+    canonicalRelative.startsWith(`..${sep}`) ||
+    isAbsolute(canonicalRelative)
+  )
+    fail('invalid_arguments', '--body-file resolves outside the current project.')
+  return readFileSync(canonicalPath, 'utf8')
+}
+
+function printRecordMutation(result: ProjectRecordWithBodyV1) {
+  process.stdout.write([
+    `Record: ${result.record.id}`,
+    `Revision: ${result.record.revision}`,
+    `Title: ${result.record.title}`,
+    `Content: ${recordBodyPreview(result.body)}`,
+  ].join('\n') + '\n')
+}
+
+function runRecord(args: string[], cwd: string) {
+  const action = args[0]
+  if (!action || action === '--help' || action === '-h')
+    return process.stdout.write(`${commandUsage.record}\n`)
+  if (
+    action !== 'create' &&
+    action !== 'list' &&
+    action !== 'show' &&
+    action !== 'edit' &&
+    action !== 'archive' &&
+    action !== 'restore' &&
+    action !== 'delete'
+  )
+    fail('invalid_arguments', `Unknown record command: ${action}\n${commandUsage.record}`)
+  if (args[1] === '--help' || args[1] === '-h')
+    return process.stdout.write(`${commandUsage.record}\n`)
+
+  const store = openRecordStoreV1(cwd)
+  if (action === 'create') {
+    const parsed = parseCommand(args.slice(1), {
+      ...commonOptions(),
+      title: { type: 'string' },
+      body: { type: 'string' },
+      'body-file': { type: 'string' },
+      tag: { type: 'string', multiple: true },
+      task: { type: 'string', multiple: true },
+      group: { type: 'string', multiple: true },
+    })
+    if (parsed.values.help)
+      return process.stdout.write(`${commandUsage.record}\n`)
+    if (parsed.positionals.length > 0 || !parsed.values.title)
+      fail('invalid_arguments', commandUsage.record)
+    const body = readRecordBodyInput(
+      cwd,
+      store.taskStore.paths.workspaceRoot,
+      parsed.values.body,
+      parsed.values['body-file'],
+      true,
+    )!
+    const result = createProjectRecordV1(store, {
+      title: parsed.values.title,
+      body,
+      tags: parsed.values.tag,
+      taskIds: parsed.values.task,
+      groupIds: parsed.values.group,
+    })
+    if (parsed.values.json)
+      return json({
+        ...recordJsonEnvelope(),
+        record: recordMutationView(result.value.record),
+        body_preview: recordBodyPreview(result.value.body),
+        warnings: result.warnings,
+      })
+    printRecordMutation(result.value)
+    printWarnings(result.warnings)
+    return
+  }
+
+  if (action === 'list') {
+    const parsed = parseCommand(args.slice(1), {
+      ...commonOptions(),
+      status: { type: 'string' },
+      query: { type: 'string' },
+      tag: { type: 'string', multiple: true },
+      task: { type: 'string' },
+      group: { type: 'string' },
+      limit: { type: 'string' },
+    })
+    if (parsed.values.help)
+      return process.stdout.write(`${commandUsage.record}\n`)
+    if (parsed.positionals.length > 0)
+      fail('invalid_arguments', commandUsage.record)
+    if (
+      parsed.values.status !== undefined &&
+      parsed.values.status !== 'active' &&
+      parsed.values.status !== 'archived' &&
+      parsed.values.status !== 'all'
+    )
+      fail('invalid_arguments', '--status must be active, archived, or all.')
+    const records = listProjectRecordsV1(store, {
+      status: parsed.values.status,
+      query: parsed.values.query,
+      tags: parsed.values.tag,
+      taskId: parsed.values.task,
+      groupId: parsed.values.group,
+      limit: parsed.values.limit
+        ? positiveInteger(parsed.values.limit, '--limit')
+        : undefined,
+    })
+    if (parsed.values.json)
+      return json({ ...recordJsonEnvelope(), records })
+    if (records.length === 0) {
+      process.stdout.write('No Records.\n')
+      return
+    }
+    process.stdout.write(
+      `${records.map((record) =>
+        `${record.id} [${record.status}] ${record.title}${record.tags.length ? ` #${record.tags.join(' #')}` : ''}`,
+      ).join('\n')}\n`,
+    )
+    return
+  }
+
+  if (action === 'show') {
+    const parsed = parseCommand(args.slice(1), commonOptions())
+    if (parsed.values.help)
+      return process.stdout.write(`${commandUsage.record}\n`)
+    if (parsed.positionals.length !== 1)
+      fail('invalid_arguments', commandUsage.record)
+    const result = showProjectRecordV1(store, parsed.positionals[0])
+    if (parsed.values.json)
+      return json({ ...recordJsonEnvelope(), ...result })
+    process.stdout.write([
+      `Record: ${result.record.id}`,
+      `Revision: ${result.record.revision}`,
+      `Title: ${result.record.title}`,
+      `Status: ${result.record.status}`,
+      `Tags: ${result.record.tags.join(', ') || '-'}`,
+      '',
+      result.body,
+    ].join('\n') + (result.body.endsWith('\n') ? '' : '\n'))
+    return
+  }
+
+  if (action === 'edit') {
+    const parsed = parseCommand(args.slice(1), {
+      ...commonOptions(),
+      'expect-revision': { type: 'string' },
+      title: { type: 'string' },
+      body: { type: 'string' },
+      'body-file': { type: 'string' },
+      tag: { type: 'string', multiple: true },
+      task: { type: 'string', multiple: true },
+      group: { type: 'string', multiple: true },
+      'clear-tags': { type: 'boolean' },
+      'clear-tasks': { type: 'boolean' },
+      'clear-groups': { type: 'boolean' },
+    })
+    if (parsed.values.help)
+      return process.stdout.write(`${commandUsage.record}\n`)
+    if (parsed.positionals.length !== 1)
+      fail('invalid_arguments', commandUsage.record)
+    if (parsed.values['clear-tags'] && parsed.values.tag)
+      fail('invalid_arguments', '--tag and --clear-tags cannot be combined.')
+    if (parsed.values['clear-tasks'] && parsed.values.task)
+      fail('invalid_arguments', '--task and --clear-tasks cannot be combined.')
+    if (parsed.values['clear-groups'] && parsed.values.group)
+      fail('invalid_arguments', '--group and --clear-groups cannot be combined.')
+    const body = readRecordBodyInput(
+      cwd,
+      store.taskStore.paths.workspaceRoot,
+      parsed.values.body,
+      parsed.values['body-file'],
+      false,
+    )
+    const result = editProjectRecordV1(store, parsed.positionals[0], {
+      expectRevision: positiveInteger(
+        parsed.values['expect-revision'],
+        '--expect-revision',
+      ),
+      title: parsed.values.title,
+      body,
+      tags: parsed.values['clear-tags'] ? [] : parsed.values.tag,
+      taskIds: parsed.values['clear-tasks'] ? [] : parsed.values.task,
+      groupIds: parsed.values['clear-groups'] ? [] : parsed.values.group,
+    })
+    if (parsed.values.json)
+      return json({
+        ...recordJsonEnvelope(),
+        record: recordMutationView(result.value.record),
+        body_preview: recordBodyPreview(result.value.body),
+        warnings: result.warnings,
+      })
+    printRecordMutation(result.value)
+    printWarnings(result.warnings)
+    return
+  }
+
+  const parsed = parseCommand(args.slice(1), {
+    ...commonOptions(),
+    'expect-revision': { type: 'string' },
+    'confirm-delete': { type: 'boolean' },
+    'confirm-linked': { type: 'boolean' },
+  })
+  if (parsed.values.help)
+    return process.stdout.write(`${commandUsage.record}\n`)
+  if (parsed.positionals.length !== 1)
+    fail('invalid_arguments', commandUsage.record)
+  const id = parsed.positionals[0]
+  const expectRevision = positiveInteger(
+    parsed.values['expect-revision'],
+    '--expect-revision',
+  )
+  if (action === 'delete') {
+    if (!parsed.values['confirm-delete'])
+      fail(
+        'confirmation_required',
+        'Record delete requires --confirm-delete and an exact Record ID.',
+      )
+    const result = deleteProjectRecordV1(
+      store,
+      id,
+      expectRevision,
+      Boolean(parsed.values['confirm-linked']),
+    )
+    if (parsed.values.json)
+      return json({
+        ...recordJsonEnvelope(),
+        record_id: result.value.id,
+        previous_revision: result.value.previous_revision,
+        deleted: true,
+        warnings: result.warnings,
+      })
+    process.stdout.write(`Deleted Record ${result.value.id} permanently.\n`)
+    printWarnings(result.warnings)
+    return
+  }
+  if (parsed.values['confirm-delete'] || parsed.values['confirm-linked'])
+    fail(
+      'invalid_arguments',
+      '--confirm-delete and --confirm-linked are only valid for record delete.',
+    )
+  const result = action === 'archive'
+    ? archiveProjectRecordV1(store, id, expectRevision)
+    : restoreProjectRecordV1(store, id, expectRevision)
+  if (parsed.values.json)
+    return json({
+      ...recordJsonEnvelope(),
+      record: recordMutationView(result.value),
+      warnings: result.warnings,
+    })
+  process.stdout.write(
+    `${action === 'archive' ? 'Archived' : 'Restored'} Record ${result.value.id} at revision ${result.value.revision}.\n`,
+  )
 }
 
 function runKnowledge(args: string[], cwd: string) {
@@ -1473,6 +1865,8 @@ function run(argv: string[], cwd: string) {
     case 'context':
       if (args[0] === 'pack') return runContextPack(args.slice(1), cwd, actor)
       return runContext(args, cwd, actor)
+    case 'record':
+      return runRecord(args, cwd)
     case 'knowledge':
       return runKnowledge(args, cwd)
     case 'benchmark':
@@ -1513,7 +1907,10 @@ try {
   const code = error instanceof CliV2Error ? error.code : 'command_failed'
   if (process.argv.includes('--json'))
     process.stderr.write(
-      `${JSON.stringify({ ...jsonEnvelopeV2(), error: { code, message } }, null, 2)}\n`,
+      `${JSON.stringify({
+        ...(process.argv[2] === 'record' ? recordJsonEnvelope() : jsonEnvelopeV2()),
+        error: { code, message },
+      }, null, 2)}\n`,
     )
   else process.stderr.write(`${message}\n`)
   process.exitCode = 1

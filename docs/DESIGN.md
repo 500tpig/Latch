@@ -2,7 +2,7 @@
 
 ## 定位
 
-Latch 是个人 macOS 开发环境中的本地任务状态记录器。它帮助 AI 保存明确 task 的当前计划、实施批准、验证和 review 状态，不替代项目管理系统或 Git。
+Latch 是个人 macOS 开发环境中的本地任务状态记录器。它帮助 AI 保存明确 task 的当前计划、实施批准、验证和 review 状态，并提供独立的 project-local Record 保存显式轻量记录。Latch 不替代项目管理系统或 Git。
 
 当前产品契约见 [Latch 最终产品契约](prd/2026-07-15-latch-final-product-contract.md)。
 
@@ -15,12 +15,13 @@ Latch 是个人 macOS 开发环境中的本地任务状态记录器。它帮助 
 - `task.json` 保存当前状态；
 - `events.jsonl` 保存可追溯历史；
 - `state.json` 只保存各 actor 的 current task；
+- `.latch/records/index.json` 只保存 Record 元数据，正文位于独立 Markdown 文件；
 - 项目正式文档通过 artifact 关联，并从 `docs/INDEX.md` 发现。
 - 新 task 使用 schema 3 保存 `primary_writer` 和 `profile`；既有 schema 2 task 经显式 `claim` 单独升级。
 - schema 3 新 task 写入根 `provenance: clean`；历史 task 缺失该字段时按 `clean` 读取，只有明确的重叠并行或隔离恢复才显式修改。
 - light request 与 retrospective task 可在 `checkpoint` 时原子写入 work basis，不需要创建后再拼接生命周期状态。
 - schema 3 task 可通过带完整 backup 的 `downgrade-v2` 投影回可写 schema 2。
-- `docs/INDEX.md` 指向唯一 current 产品契约；七个分章按主题覆盖历史 v2 基线。
+- `docs/INDEX.md` 指向唯一 current 产品契约；既有七个分章与 Record 分章按主题覆盖历史 v2 基线。
 
 ## 关键取舍
 
@@ -32,6 +33,8 @@ Latch 是个人 macOS 开发环境中的本地任务状态记录器。它帮助 
 - provenance 只保存在 task 根，不复制到 submission 或 closure；
 - archive 使用目录 rename 作为提交点。
 - R2 回退先备份整个 task 目录，再重写 event，最后以 `task.json` 作为格式切换提交点。
+- Record 与 task 完全分离，只复用 repo root、原子写和短锁；Record 关联不传播状态、writer 或授权。
+- Record 索引不含正文，AI 只在用户明确保存或召回时访问，默认最多返回 5 条候选。
 
 ## 非目标
 
@@ -39,7 +42,7 @@ Latch 不提供：
 
 - 自动任务分类、创建或查重；
 - 任务树、依赖图、排期或百分比；
-- 聊天、日志或 knowledge 存储；
+- 聊天、日志或全局 knowledge store；
 - 向量检索、RAG 或跨 repo 搜索；
 - 自动 Git、hook 或 worktree 管理；
 - Board 写操作；

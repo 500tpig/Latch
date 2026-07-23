@@ -555,6 +555,14 @@ function briefTask(task: TaskV2) {
     profile: task.profile ?? 'standard',
     provenance: task.provenance ?? 'clean',
     ...(task.group_id !== undefined ? { group_id: task.group_id } : {}),
+    ...(task.source_record !== undefined
+      ? {
+          source_record: {
+            record_id: task.source_record.record_id,
+            revision: task.source_record.revision,
+          },
+        }
+      : {}),
     goal: task.plan.goal,
     scope: task.plan.scope,
     acceptance: task.plan.acceptance,
@@ -734,6 +742,9 @@ export function contextHumanV2(
     `Work revision: ${task.work_revision}`,
     `Profile: ${task.profile ?? 'standard'}`,
     ...(task.group_id !== undefined ? [`Group: ${task.group_id}`] : []),
+    ...(task.source_record !== undefined
+      ? [`Source Record: ${task.source_record.record_id} r${task.source_record.revision}`]
+      : []),
     `Current: ${current ? 'yes' : 'no'}`,
     `Goal: ${task.plan.goal}`,
     `Scope: ${task.plan.scope.join(' | ') || '-'}`,

@@ -1,14 +1,14 @@
 # Latch
 
-Latch 是面向个人 macOS 开发环境的本地任务记录 CLI。它保存明确创建的 coding task、实施计划、批准、验证结果和 review 状态，便于 AI 在不同会话之间继续工作。
+Latch 是面向个人 macOS 开发环境的本地任务记录 CLI。它保存明确创建的 coding task、实施计划、批准、验证结果和 review 状态，也支持 project-local Record 保存显式轻量记录。
 
-Latch 不自动判断或创建任务。只有请求明确提到 Latch 时，AI 才能创建或继续 task。
+Latch 不自动创建 task 或 Record。task 按 A/B/C 规则进入相应流程；Record 只有在用户明确表达保存或召回意图时才会读写。
 
 ## 当前状态
 
-仓库源码已切换到 Latch v2。第一阶段只修改本仓库；全局 CLI、全局 skill、Latch-Board 和业务项目将在后续获得单独授权后切换。
+仓库源码使用 Latch v2 task schema，并提供独立的 Record store schema 1。全局 CLI、Latch-Board 和业务项目同步需要单独授权。
 
-文档入口见 [`docs/INDEX.md`](docs/INDEX.md)，产品契约见 [`docs/prd/2026-07-10-latch-v2.md`](docs/prd/2026-07-10-latch-v2.md)。
+文档入口见 [`docs/INDEX.md`](docs/INDEX.md)，产品契约见 [`docs/prd/2026-07-15-latch-final-product-contract.md`](docs/prd/2026-07-15-latch-final-product-contract.md)。
 
 ## 开发命令
 

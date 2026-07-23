@@ -1,11 +1,11 @@
 ---
 name: latch
-description: Track Latch tasks for repository writes and behavior changes through planning, implementation, verification, review, archival, or abandonment.
+description: Track Latch tasks for repository writes and behavior changes, and handle explicit project-local Record save, recall, and conversion requests.
 ---
 
 # Latch
 
-Apply these rules to repository writes and observable-behavior changes. Do not create a task for pure Q&A, read-only exploration, no-write intent, or an explicit request not to use Latch.
+Use for repository writes and behavior changes; pure Q&A, read-only, no-write, or explicit no-Latch requests do not create tasks.
 
 ## Start with bounded output
 
@@ -92,3 +92,4 @@ Read each complete reference only when its condition applies:
 - [groups](references/groups.md): reading/changing `group_id`, listing a planning wave, or reasoning about sibling independence.
 - [knowledge and context](references/knowledge-and-context.md): freshness, `knowledge_impact` correction, Context packs, orientation budgets, or benchmarks.
 - [migration](references/migration.md): schema 2, claim, legacy patching, minimum writer versions, or `downgrade-v2`.
+- [records](references/records.md): explicit Record operations or task conversion.

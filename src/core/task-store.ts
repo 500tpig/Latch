@@ -46,6 +46,7 @@ import type {
   TaskPlan,
   TaskProfile,
   TaskProvenance,
+  TaskSourceRecord,
   TaskV2,
   WorkBasis,
   WorkBasisInput,
@@ -72,6 +73,7 @@ export type CreateTaskV2Input = {
 export type CreateTaskV3Input = CreateTaskV2Input & {
   profile: TaskProfile
   groupId?: string
+  sourceRecord?: TaskSourceRecord
   workBasis?: WorkBasisInput
 }
 
@@ -451,6 +453,25 @@ function assertTaskV2(value: unknown, path: string): asserts value is TaskV2 {
       throw new Error(`Invalid group_id in ${path}: schema_version 3 is required.`)
     assertGroupIdV3(value.group_id, path)
   }
+  if (Object.hasOwn(value, 'source_record')) {
+    if (value.schema_version !== V3_SCHEMA_VERSION)
+      throw new Error(`Invalid source_record in ${path}: schema_version 3 is required.`)
+    if (!isRecord(value.source_record))
+      throw new Error(`Invalid source_record in ${path}.`)
+    requireString(value.source_record.record_id, 'source_record.record_id', path)
+    if (
+      !/^rec_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
+        value.source_record.record_id,
+      )
+    )
+      throw new Error(`Invalid source_record.record_id in ${path}.`)
+    requireInteger(value.source_record.revision, 'source_record.revision', path, 1)
+    if (
+      typeof value.source_record.body_sha256 !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(value.source_record.body_sha256)
+    )
+      throw new Error(`Invalid source_record.body_sha256 in ${path}.`)
+  }
   if (value.work_basis !== undefined) {
     if (value.schema_version !== V3_SCHEMA_VERSION)
       throw new Error(`Invalid work_basis in ${path}: schema_version 3 is required.`)
@@ -636,7 +657,7 @@ function createLockFile(path: string) {
 }
 
 // 锁只覆盖一次读取、revision 校验和原子写；不同 task 与 state 使用不同锁文件。
-function withV2Lock<T>(path: string, fn: () => T): T {
+export function withV2Lock<T>(path: string, fn: () => T): T {
   let acquired = false
   try {
     try {
@@ -952,6 +973,9 @@ function createTask(
   const groupId = schemaVersion === V3_SCHEMA_VERSION
     ? (input as CreateTaskV3Input).groupId
     : undefined
+  const sourceRecord = schemaVersion === V3_SCHEMA_VERSION
+    ? (input as CreateTaskV3Input).sourceRecord
+    : undefined
   if (groupId !== undefined) assertGroupIdV3(groupId, 'checkpoint input')
   if (workBasisInput && input.plan.open_questions.length > 0)
     throw new Error('Cannot create work_basis while plan.open_questions is not empty.')
@@ -970,6 +994,9 @@ function createTask(
       ? { provenance: 'clean' as TaskProvenance }
       : {}),
     ...(groupId !== undefined ? { group_id: groupId } : {}),
+    ...(sourceRecord !== undefined
+      ? { source_record: structuredClone(sourceRecord) }
+      : {}),
     ...(workBasis ? { work_basis: workBasis } : {}),
     revision: 1,
     plan_revision: 1,
@@ -1112,6 +1139,12 @@ function assertImmutableTaskFields(
     current.primary_writer !== next.primary_writer ||
     Object.hasOwn(current, 'primary_writer') !==
       Object.hasOwn(next, 'primary_writer')
+  const sourceRecordChanged =
+    Object.hasOwn(current, 'source_record') !==
+      Object.hasOwn(next, 'source_record') ||
+    current.source_record?.record_id !== next.source_record?.record_id ||
+    current.source_record?.revision !== next.source_record?.revision ||
+    current.source_record?.body_sha256 !== next.source_record?.body_sha256
   const changed = [
     next.schema_version !== current.schema_version &&
       !(
@@ -1123,6 +1156,7 @@ function assertImmutableTaskFields(
     next.id !== current.id && 'id',
     next.revision !== current.revision && 'revision',
     !allowPrimaryWriterChange && primaryWriterChanged && 'primary_writer',
+    sourceRecordChanged && 'source_record',
     next.workspace_root !== current.workspace_root && 'workspace_root',
     next.created_at !== current.created_at && 'created_at',
     next.updated_at !== current.updated_at && 'updated_at',

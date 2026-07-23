@@ -36,9 +36,15 @@ Latch、Latch-Board、appearance-sec 和 monitoring 的当前兼容状态。
 
 ### [Latch 最终产品契约](prd/2026-07-15-latch-final-product-contract.md)
 
-- 状态：`approved`，Revision 5；
+- 状态：`approved`，Revision 6；
 - Source-Task：`20260714084358411-重审-latch-最终任务与知识上下文设计-51d5e1`；
-- 用途：Latch 唯一 current 产品契约；包含触发、Actor、Light、Group、knowledge、Context 与 R2 回退。
+- 用途：Latch 唯一 current 产品契约；包含触发、Actor、Light、Group、knowledge、Context、Record 与 R2 回退。
+
+### [Project Record V1](prd/2026-07-23-latch-record-v1.md)
+
+- 状态：`approved`，Revision 1；
+- Source-Task：`20260723055901805-设计并实现项目级-record-v1-42de93`；
+- 用途：定义 project-local Record 的存储、CLI、AI 访问、task 来源和 Board 只读边界。
 
 ### [Latch v2 分窗口实施计划](briefs/2026-07-10-latch-v2-implementation-slices.md)
 

@@ -45,6 +45,12 @@ export type TaskProfile = 'light' | 'standard'
 
 export type TaskProvenance = 'clean' | 'mixed'
 
+export type TaskSourceRecord = {
+  record_id: string
+  revision: number
+  body_sha256: string
+}
+
 export type ImplementationAuthorization = {
   kind: 'implementation_authorization'
   plan_revision: number
@@ -118,6 +124,7 @@ export type TaskV2 = {
   profile?: TaskProfile
   provenance?: TaskProvenance
   group_id?: string
+  source_record?: TaskSourceRecord
   work_basis?: WorkBasis
   revision: number
   plan_revision: number

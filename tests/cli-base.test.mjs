@@ -103,6 +103,8 @@ test('top-level and command help have no side effects', () => {
     ['save', '--help'],
     ['verify-all', '--help'],
     ['artifact', '--help'],
+    ['record', '--help'],
+    ['record', 'create', '--help'],
     ['submit', '--help'],
   ]) {
     const cwd = temporaryDirectory()
@@ -116,6 +118,8 @@ test('top-level and command help have no side effects', () => {
   assert.match(checkpointHelp.stdout, /--profile <light\|standard>/)
   assert.match(checkpointHelp.stdout, /--authorization-file/)
   assert.match(checkpointHelp.stdout, /--retrospective-file/)
+  assert.match(checkpointHelp.stdout, /--source-record/)
+  assert.match(run(temporaryDirectory(), ['record', '--help']).stdout, /record create/)
   const saveHelp = run(temporaryDirectory(), ['save', '--help'])
   assert.match(saveHelp.stdout, /--provenance <clean\|mixed>/)
   assert.match(saveHelp.stdout, /--provenance-reason/)
