@@ -63,6 +63,7 @@ import {
   doneTaskV2,
   patchSubmissionKnowledgeImpactV3,
   submitTaskV2,
+  verifyAllTasksV2,
   verifyTaskV2,
 } from './core/progress.js'
 import { now, readJsonFile } from './core/utils.js'
@@ -83,7 +84,9 @@ Commands:
   save <task-id> --expect-revision <revision> [changes]
   approve <task-id> --expect-revision <revision> [--reason <text> | --authorization-file <path> | --retrospective-file <path>] [--feedback <text> | --non-implementation-feedback <text>]
   verify <task-id> --expect-revision <revision> --name <name> [--diagnostic] [-- command...]
-  submit <task-id> --expect-revision <revision> --changes <text> --unverified <text> [--knowledge-impact-none <reason> | --knowledge-impact-file <path>] [--no-verify --reason <text>]
+  verify-all <task-id> --expect-revision <revision>
+  artifact <add|remove> <task-id> --expect-revision <revision> <kind:path>...
+  submit <task-id> --expect-revision <revision> --changes <text> --unverified <text> [--knowledge-impact-none <reason> | --knowledge-impact-file <path>] [--no-verify --reason <text>] [--verbose-warnings]
   patch-submission-knowledge-impact <task-id> --expect-revision <revision> --knowledge-impact-file <path> [--reason <text>]
   downgrade-v2 --task <task-id> --expect-revision <revision> --confirm-data-loss
   done <task-id> --expect-revision <revision> --followup <text>
@@ -113,8 +116,12 @@ const commandUsage: Record<string, string> = {
     'Usage: latch approve <task-id> --expect-revision <revision> [--reason <text> | --authorization-file <path> | --retrospective-file <path>] [--feedback <text> | --non-implementation-feedback <text>] [--json]',
   verify:
     'Usage: latch verify <task-id> --expect-revision <revision> --name <name> [--diagnostic] [-- command...] [--json]',
+  'verify-all':
+    'Usage: latch verify-all <task-id> --expect-revision <revision> [--json]',
+  artifact:
+    'Usage: latch artifact <add|remove> <task-id> --expect-revision <revision> <kind:path>... [--json]',
   submit:
-    'Usage: latch submit <task-id> --expect-revision <revision> --changes <text> --unverified <text> [--knowledge-impact-none <reason> | --knowledge-impact-file <path>] [--no-verify --reason <text>] [--json]',
+    'Usage: latch submit <task-id> --expect-revision <revision> --changes <text> --unverified <text> [--knowledge-impact-none <reason> | --knowledge-impact-file <path>] [--no-verify --reason <text>] [--verbose-warnings] [--json]',
   'patch-submission-knowledge-impact':
     'Usage: latch patch-submission-knowledge-impact <task-id> --expect-revision <revision> --knowledge-impact-file <path> [--reason <text>] [--json]',
   'downgrade-v2':
@@ -133,6 +140,8 @@ const actorRequiredCommands = new Set([
   'save',
   'approve',
   'verify',
+  'verify-all',
+  'artifact',
   'submit',
   'patch-submission-knowledge-impact',
   'downgrade-v2',
@@ -219,6 +228,38 @@ function artifactKey(value: TaskArtifact) {
 
 function artifactLabel(value: TaskArtifact) {
   return `${value.kind}:${value.path}`
+}
+
+function artifactChanges(
+  currentArtifacts: TaskArtifact[],
+  addedValues: string[],
+  removedValues: string[],
+) {
+  const addedArtifacts = addedValues.map(artifact)
+  const removedArtifacts = removedValues.map(artifact)
+  const removedKeys = new Set(removedArtifacts.map(artifactKey))
+  const actuallyRemoved = currentArtifacts.filter((value) =>
+    removedKeys.has(artifactKey(value)),
+  )
+  const nextArtifacts = currentArtifacts.filter(
+    (value) => !removedKeys.has(artifactKey(value)),
+  )
+  const existingKeys = new Set(nextArtifacts.map(artifactKey))
+  const actuallyAdded: TaskArtifact[] = []
+  for (const value of addedArtifacts) {
+    const key = artifactKey(value)
+    if (!existingKeys.has(key)) {
+      nextArtifacts.push(value)
+      actuallyAdded.push(value)
+      existingKeys.add(key)
+    }
+  }
+  return {
+    nextArtifacts,
+    actuallyAdded,
+    actuallyRemoved,
+    changed: JSON.stringify(nextArtifacts) !== JSON.stringify(currentArtifacts),
+  }
 }
 
 function readPlan(cwd: string, planFile: string | undefined) {
@@ -907,27 +948,17 @@ function runSave(args: string[], cwd: string, actor: string) {
   if (parsed.values.feedback && !planChanged)
     fail('invalid_arguments', '--feedback requires an effective --plan-file change.')
 
-  const addedArtifacts = (parsed.values.artifact ?? []).map(artifact)
-  const removedArtifacts = (parsed.values['remove-artifact'] ?? []).map(artifact)
-  const removedKeys = new Set(removedArtifacts.map(artifactKey))
-  const actuallyRemoved = current.artifacts.filter((value) =>
-    removedKeys.has(artifactKey(value)),
+  const artifactUpdate = artifactChanges(
+    current.artifacts,
+    parsed.values.artifact ?? [],
+    parsed.values['remove-artifact'] ?? [],
   )
-  const nextArtifacts = current.artifacts.filter(
-    (value) => !removedKeys.has(artifactKey(value)),
-  )
-  const existingKeys = new Set(nextArtifacts.map(artifactKey))
-  const actuallyAdded: TaskArtifact[] = []
-  for (const value of addedArtifacts) {
-    const key = artifactKey(value)
-    if (!existingKeys.has(key)) {
-      nextArtifacts.push(value)
-      actuallyAdded.push(value)
-      existingKeys.add(key)
-    }
-  }
-  const artifactsChanged =
-    JSON.stringify(nextArtifacts) !== JSON.stringify(current.artifacts)
+  const {
+    nextArtifacts,
+    actuallyAdded,
+    actuallyRemoved,
+    changed: artifactsChanged,
+  } = artifactUpdate
 
   const shouldBlock = Boolean(hasBlock)
   const shouldUnblock = Boolean(parsed.values.unblock && current.blocked)
@@ -1128,6 +1159,91 @@ function runVerify(args: string[], cwd: string, actor: string) {
   if (result.verification.status === 'fail') process.exitCode = 1
 }
 
+function runVerifyAll(args: string[], cwd: string, actor: string) {
+  const parsed = parseCommand(args, {
+    ...commonOptions(),
+    'expect-revision': { type: 'string' },
+  })
+  if (parsed.values.help)
+    return process.stdout.write(`${commandUsage['verify-all']}\n`)
+  requirePositionals('verify-all', parsed.positionals, 1)
+  const expectRevision = positiveInteger(
+    parsed.values['expect-revision'],
+    '--expect-revision',
+  )
+  const store = openTaskStoreV2(cwd)
+  const result = verifyAllTasksV2(store, parsed.positionals[0], {
+    expectRevision,
+    actor,
+  })
+  const executed = result.verifications.map((verification, index) => ({
+    name: verification.name,
+    status: verification.status,
+    revision: expectRevision + index + 1,
+  }))
+  if (parsed.values.json)
+    json({
+      ...mutationJson(result.task, result.warnings, expectRevision),
+      executed,
+      failed: result.failed?.name ?? null,
+    })
+  else {
+    process.stdout.write(
+      executed.length === 0
+        ? `No pending gates for ${result.task.id}.\n`
+        : `Verified ${result.task.id}: ${executed.map((item) => `${item.name}: ${item.status}`).join('; ')}\n`,
+    )
+    printWarnings(result.warnings)
+  }
+  if (result.failed) process.exitCode = 1
+}
+
+function runArtifact(args: string[], cwd: string, actor: string) {
+  const parsed = parseCommand(args, {
+    ...commonOptions(),
+    'expect-revision': { type: 'string' },
+  })
+  if (parsed.values.help)
+    return process.stdout.write(`${commandUsage.artifact}\n`)
+  requirePositionals('artifact', parsed.positionals, [3, Number.MAX_SAFE_INTEGER])
+  const [action, taskId, ...values] = parsed.positionals
+  if (action !== 'add' && action !== 'remove')
+    fail('invalid_arguments', commandUsage.artifact)
+  const expectRevision = positiveInteger(
+    parsed.values['expect-revision'],
+    '--expect-revision',
+  )
+  const store = openTaskStoreV2(cwd)
+  const current = readTaskV2(store, taskId)
+  const update = artifactChanges(
+    current.artifacts,
+    action === 'add' ? values : [],
+    action === 'remove' ? values : [],
+  )
+  if (!update.changed)
+    fail('invalid_arguments', 'artifact did not contain any effective change.')
+  const result = updateTaskV2(store, current.id, {
+    expectRevision,
+    actor,
+    events: [{
+      type: 'artifact_updated',
+      fields: {
+        added: update.actuallyAdded.map(artifactLabel),
+        removed: update.actuallyRemoved.map(artifactLabel),
+      },
+    }],
+    update(task) {
+      task.artifacts = structuredClone(update.nextArtifacts)
+    },
+  })
+  if (parsed.values.json)
+    return json(mutationJson(result.task, result.warnings, expectRevision))
+  process.stdout.write(
+    `Updated ${result.task.id} artifacts: revision ${expectRevision} -> ${result.task.revision}\n`,
+  )
+  printWarnings(result.warnings)
+}
+
 function runSubmit(args: string[], cwd: string, actor: string) {
   const parsed = parseCommand(args, {
     ...commonOptions(),
@@ -1138,6 +1254,7 @@ function runSubmit(args: string[], cwd: string, actor: string) {
     reason: { type: 'string' },
     'knowledge-impact-file': { type: 'string' },
     'knowledge-impact-none': { type: 'string' },
+    'verbose-warnings': { type: 'boolean' },
   })
   if (parsed.values.help) return process.stdout.write(`${commandUsage.submit}\n`)
   requirePositionals('submit', parsed.positionals, 1)
@@ -1179,6 +1296,7 @@ function runSubmit(args: string[], cwd: string, actor: string) {
     noVerify: Boolean(parsed.values['no-verify']),
     reason: parsed.values.reason,
     knowledgeImpact,
+    verboseWarnings: Boolean(parsed.values['verbose-warnings']),
   })
   if (parsed.values.json)
     return json(mutationJson(result.task, result.warnings, expectRevision))
@@ -1369,6 +1487,10 @@ function run(argv: string[], cwd: string) {
       return runApprove(args, cwd, actor)
     case 'verify':
       return runVerify(args, cwd, actor)
+    case 'verify-all':
+      return runVerifyAll(args, cwd, actor)
+    case 'artifact':
+      return runArtifact(args, cwd, actor)
     case 'submit':
       return runSubmit(args, cwd, actor)
     case 'patch-submission-knowledge-impact':

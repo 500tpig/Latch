@@ -175,6 +175,20 @@ test('task lifecycle avoids redundant gate plans without allowing execution skip
   assert.match(lifecycle, /Run every named gate from the approved plan/)
 })
 
+test('current docs describe compact verification, artifact, and warning commands', () => {
+  const skill = text('skills/latch/SKILL.md')
+  const handBook = text('docs/HANDBOOK.md')
+  const contract = text('docs/prd/2026-07-15-latch-final-product-contract.md')
+  for (const content of [skill, handBook, contract]) {
+    assert.match(content, /verify-all/)
+    assert.match(content, /artifact add\|remove|artifact add/)
+    assert.match(content, /--verbose-warnings/)
+  }
+  assert.match(handBook, /首个失败 gate[\s\S]*停止/)
+  assert.match(handBook, /最多 8 个样本/)
+  assert.match(contract, /每项仍独立记录 event 和 revision/)
+})
+
 test('inline Light shortcuts stay consistent across instructions and current docs', () => {
   const skill = text('skills/latch/SKILL.md')
   const lifecycle = text(lifecycleReference)

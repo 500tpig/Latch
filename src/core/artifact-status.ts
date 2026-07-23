@@ -60,16 +60,27 @@ export function artifactWarnings(delivery: ArtifactDelivery[]): string[] {
     )
 }
 
-export function untrackedWorktreeWarnings(workspaceRoot: string): string[] {
+export function untrackedWorktreeWarnings(
+  workspaceRoot: string,
+  verbose = false,
+): string[] {
   const result = spawnSync(
     'git',
     ['-C', workspaceRoot, 'ls-files', '--others', '--exclude-standard', '-z'],
     { encoding: 'utf8' },
   )
   if (result.status !== 0 || !result.stdout) return []
-  return result.stdout
+  const paths = result.stdout
     .split('\0')
     .filter(Boolean)
+    .sort()
+  if (!verbose) {
+    const samples = paths.slice(0, 8).join(', ')
+    return [
+      `Worktree delivery: ${paths.length} untracked file${paths.length === 1 ? '' : 's'}; samples: ${samples}; they may not be delivered by Git.`,
+    ]
+  }
+  return paths
     .map(
       (path) =>
         `Worktree delivery: ${path} is untracked; it may not be delivered by Git.`,

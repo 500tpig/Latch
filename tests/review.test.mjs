@@ -160,6 +160,55 @@ test('multiple named gates are independent and submit requires all current passe
   assert.equal(task.submission.verified, 'first: pass; second: pass')
 })
 
+test('verify-all skips current passes, stops on failure, and preserves per-gate revisions', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const id = checkpoint(cwd, plan({
+    verification_plan: [
+      { name: 'first', command: [process.execPath, '-e', 'process.exit(0)'], kind: 'gate' },
+      { name: 'second', command: [process.execPath, '-e', 'process.exit(1)'], kind: 'gate' },
+      { name: 'third', command: [process.execPath, '-e', 'process.exit(0)'], kind: 'gate' },
+      { name: 'diagnostic', command: [process.execPath, '-e', 'process.exit(1)'], kind: 'diagnostic' },
+    ],
+  }))
+  approve(cwd, id)
+  assert.equal(verify(cwd, id, 'first').status, 0)
+
+  const failed = run(cwd, [
+    'verify-all', id, '--expect-revision', revision(cwd, id), '--json',
+  ])
+  assert.notEqual(failed.status, 0)
+  assert.deepEqual(JSON.parse(failed.stdout).executed, [
+    { name: 'second', status: 'fail', revision: 4 },
+  ])
+  assert.equal(JSON.parse(failed.stdout).failed, 'second')
+  assert.equal(JSON.parse(failed.stdout).revision, 4)
+  assert.equal(readTask(cwd, id).verification.gate.third, undefined)
+  assert.equal(readTask(cwd, id).verification.diagnostic.diagnostic, undefined)
+
+  const task = readTask(cwd, id)
+  task.plan.verification_plan[1].command = [process.execPath, '-e', 'process.exit(0)']
+  writeFileSync(taskPath(cwd, id), `${JSON.stringify(task, null, 2)}\n`)
+  const passed = run(cwd, [
+    'verify-all', id, '--expect-revision', '4', '--json',
+  ])
+  assert.equal(passed.status, 0, passed.stderr)
+  assert.deepEqual(JSON.parse(passed.stdout).executed, [
+    { name: 'second', status: 'pass', revision: 5 },
+    { name: 'third', status: 'pass', revision: 6 },
+  ])
+  assert.equal(JSON.parse(passed.stdout).failed, null)
+
+  const before = readFileSync(taskPath(cwd, id), 'utf8')
+  const noOp = run(cwd, [
+    'verify-all', id, '--expect-revision', '6', '--json',
+  ])
+  assert.equal(noOp.status, 0, noOp.stderr)
+  assert.deepEqual(JSON.parse(noOp.stdout).executed, [])
+  assert.equal(JSON.parse(noOp.stdout).revision, 6)
+  assert.equal(readFileSync(taskPath(cwd, id), 'utf8'), before)
+})
+
 test('same gate rerun replaces its current result and a failure blocks submit', () => {
   const cwd = temporaryDirectory()
   init(cwd)
@@ -318,7 +367,7 @@ test('submit warns when an artifact is not tracked by Git', () => {
   assert.match(JSON.parse(result.stdout).warnings.join('\n'), /docs\/local\.md is missing/)
 })
 
-test('submit reports every untracked worktree file separately from artifacts', () => {
+test('submit verbose warnings report every untracked worktree file separately from artifacts', () => {
   const cwd = temporaryDirectory()
   spawnSync('git', ['init'], { cwd, encoding: 'utf8' })
   writeFileSync(join(cwd, '.gitignore'), '.latch/\n')
@@ -328,12 +377,67 @@ test('submit reports every untracked worktree file separately from artifacts', (
   writeFileSync(join(cwd, 'implementation.ts'), 'export const value = 1\n')
   writeFileSync(join(cwd, 'review-note.md'), 'review\n')
   approve(cwd, id)
-  const result = submit(cwd, id, ['--no-verify', '--reason', 'fixture'])
+  const result = submit(cwd, id, [
+    '--no-verify', '--reason', 'fixture', '--verbose-warnings',
+  ])
   assert.equal(result.status, 0, result.stderr)
   const warnings = JSON.parse(result.stdout).warnings.join('\n')
   assert.match(warnings, /Worktree delivery: implementation\.ts is untracked/)
   assert.match(warnings, /Worktree delivery: review-note\.md is untracked/)
   assert.doesNotMatch(warnings, /Artifact delivery: implementation\.ts/)
+})
+
+test('submit aggregates untracked worktree warnings with eight sorted samples by default', () => {
+  const cwd = temporaryDirectory()
+  spawnSync('git', ['init'], { cwd, encoding: 'utf8' })
+  writeFileSync(join(cwd, '.gitignore'), '.latch/\n')
+  spawnSync('git', ['add', '.gitignore'], { cwd, encoding: 'utf8' })
+  init(cwd)
+  const id = checkpoint(cwd, plan({ verification_plan: [] }))
+  for (let index = 0; index < 10; index += 1)
+    writeFileSync(join(cwd, `file-${String(index).padStart(2, '0')}.txt`), 'fixture\n')
+  approve(cwd, id)
+
+  const result = submit(cwd, id, ['--no-verify', '--reason', 'fixture'])
+  assert.equal(result.status, 0, result.stderr)
+  const warnings = JSON.parse(result.stdout).warnings.filter(
+    (warning) => warning.startsWith('Worktree delivery:'),
+  )
+  assert.equal(warnings.length, 1)
+  assert.match(warnings[0], /12 untracked files/)
+  assert.match(warnings[0], /samples: file-00\.txt, file-01\.txt, file-02\.txt, file-03\.txt, file-04\.txt, file-05\.txt, file-06\.txt, file-07\.txt/)
+  assert.doesNotMatch(warnings[0], /file-08\.txt/)
+})
+
+test('submit reports every missing knowledge artifact and a copyable repair command', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const id = checkpoint(cwd, plan({ verification_plan: [] }))
+  approve(cwd, id)
+  writeFileSync(join(cwd, 'impact.json'), `${JSON.stringify({
+    kind: 'updated',
+    summary: '更新知识',
+    artifact_refs: [
+      { kind: 'knowledge', path: 'docs/a.md' },
+      { kind: 'doc', path: 'docs/b.md' },
+    ],
+  })}\n`)
+
+  const result = run(cwd, [
+    'submit', id, '--expect-revision', '2',
+    '--changes', '实现完成', '--unverified', '',
+    '--knowledge-impact-file', 'impact.json',
+    '--no-verify', '--reason', '纯文档', '--json',
+  ])
+  assert.notEqual(result.status, 0)
+  const message = JSON.parse(result.stderr).error.message
+  assert.match(message, /knowledge:docs\/a\.md, doc:docs\/b\.md/)
+  assert.match(
+    message,
+    new RegExp(`latch artifact add ${id} --expect-revision 2 knowledge:docs/a\\.md doc:docs/b\\.md`),
+  )
+  assert.equal(readTask(cwd, id).revision, 2)
+  assert.equal(readTask(cwd, id).phase, 'dev')
 })
 
 test('no-verify requires approval, no gates, and a reason', () => {

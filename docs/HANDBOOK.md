@@ -104,9 +104,15 @@ latch save <task-id> --expect-revision 5 --block-reason "等待接口" --waiting
 latch save <task-id> --expect-revision 6 --unblock
 latch save <task-id> --expect-revision 7 \
   --provenance mixed --provenance-reason "用户允许重叠并行"
+latch artifact add <task-id> --expect-revision 8 \
+  doc:docs/example.md skill:skills/example/SKILL.md
+latch artifact remove <task-id> --expect-revision 9 \
+  doc:docs/obsolete.md
 ```
 
 plan 任一持久化值变化都会增加 `plan_revision`，phase 回到 plan，并使旧批准、gate 和 submission 失效。
+
+`artifact add` 和 `artifact remove` 一次接受一个或多个 `<kind>:<path>`。两条命令复用 `save --artifact` 和 `save --remove-artifact` 的去重、相对路径校验、`artifact_updated` event 与 revision 语义；`save` 的既有参数保持兼容。
 
 schema 3 新 task 的根 `provenance` 默认为 `clean`。只有明确允许路径重叠并行时才写
 `mixed`；隔离恢复后，使用同一命令显式写回 `clean`。provenance 更新必须单独执行，
@@ -130,9 +136,12 @@ latch approve <task-id> --expect-revision 13 \
 ```bash
 latch verify <task-id> --expect-revision 8 --name typecheck
 latch verify <task-id> --expect-revision 9 --diagnostic --name exploratory -- pnpm typecheck
+latch verify-all <task-id> --expect-revision 10
 ```
 
 普通 gate 执行 plan 保存的 argv，不接受调用方替换命令。diagnostic 可以使用 plan 命令或 `--` 后的临时 argv，不参与 submit 门禁。验证进程不经过 shell。
+
+`verify-all` 按 plan 顺序执行当前 work revision 中尚未通过的 named gate，不执行 diagnostic。每个 gate 继续独立写入 `verification_run` 并增加 revision；首个失败 gate 写入结果后停止。全部 gate 已通过时返回空执行摘要，不修改 task。
 
 ### 提交 review
 
@@ -154,7 +163,7 @@ latch submit <task-id> --expect-revision 10 \
 
 `--knowledge-impact-none <reason>` 只构造 `{ kind: "none", reason }`，必须提供
 非空 reason，且不能与 `--knowledge-impact-file` 组合。`updated` 仍必须通过文件
-提供 artifact refs。
+提供 artifact refs。存在多个未登记引用时，submit 一次列出全部缺失项，并返回包含当前 task ID、revision 和全部缺失项的 `latch artifact add` 修复命令。
 
 无可执行 gate 的任务使用：
 
@@ -169,7 +178,7 @@ latch submit <task-id> --expect-revision 4 \
 
 schema 3 submission 必须通过 `impact.json` 提供 `knowledge_impact`，使用 `none` 时 reason 需说明为何不更新模块知识。submission 绑定当前 work revision，verified 摘要由结构化 gate 结果生成。
 
-context 会在 `artifact_delivery` 中标记 task 已声明 artifact 的 Git 状态：`tracked`、`untracked`、`ignored`、`missing` 或 `unknown`。submit 对非 `tracked` artifact 返回非阻断 warning，并单独列出 worktree 中全部 untracked 文件；后者不自动归类为 artifact 或实现文件。Git 状态不把 ignored 文件自动解释为「本地知识」，也不增加 submit 或 done 门禁。
+context 会在 `artifact_delivery` 中标记 task 已声明 artifact 的 Git 状态：`tracked`、`untracked`、`ignored`、`missing` 或 `unknown`。submit 对非 `tracked` artifact 继续逐项返回非阻断 warning。worktree 中的 untracked 文件默认合并为一条 warning，包含总数和稳定排序后的最多 8 个样本；`submit --verbose-warnings` 返回完整逐文件清单。两种形式都不自动推断文件归属或迁移原因。Git 状态不把 ignored 文件自动解释为「本地知识」，也不增加 submit 或 done 门禁。
 
 ### 修正 review submission 的知识影响
 

@@ -1,6 +1,6 @@
 ---
 name: latch
-description: Use for Latch task tracking, implementation, verification, review feedback, archival, and abandonment in a project using the Latch CLI. Apply the A/B/C trigger rules to repository-write or observable-behavior requests; explicit Latch requests use the same rules.
+description: Track Latch tasks for repository writes and behavior changes through planning, implementation, verification, review, archival, or abandonment.
 ---
 
 # Latch
@@ -35,7 +35,7 @@ Require an explicit user write request before creating or continuing a task. Sto
 latch checkpoint "Task title" --plan-file plan.json --profile light --authorize-request "User requested this scoped change" --scope-summary "Bounded scope" --scope-path path/to/file --json
 ```
 
-3. Implement only that scope, run every named gate with `verify`, then submit to `review`. Wait for user acceptance; never run `done` automatically.
+3. Implement the scope, run every named gate, submit to `review`, and wait. Never run `done` automatically.
 
 ### Standard plan
 
@@ -46,7 +46,7 @@ latch checkpoint "Task title" --plan-file plan.json --profile light --authorize-
 latch approve <task-id> --expect-revision <n> --reason "User approved the current plan" --json
 ```
 
-3. Implement the approved scope, run every named gate with `verify`, submit to `review`, and wait. Never treat task creation, takeover, or feedback as plan approval.
+3. Implement the approved scope, run every named gate, submit to `review`, and wait. Task creation and takeover do not approve a plan.
 
 ### Review closeout fast path
 
@@ -78,6 +78,7 @@ Git delivery remains separate: do not derive permission for add, commit, push, b
 - Pass `--expect-revision` to every task mutation. In one uninterrupted flow, use each successful JSON response's `revision`; do not reread context only to obtain it. Refresh status after a revision conflict, new user input boundary, judgment-requiring warning, or task meaning change, and never auto-retry a conflict.
 - Treat takeover as ownership transfer only, never as implementation approval.
 - Submit only after all current named gates pass, or use the documented `--no-verify` exception for an approved plan without gates. Submit enters `review`; never auto-complete it.
+- Prefer `verify-all` for pending gates and `artifact add|remove` for artifact-only changes; use `submit --verbose-warnings` for full untracked paths.
 - Run `done` only after explicit user authorization to complete/archive the named task. Run `abandon` only after explicit user authorization to cancel it.
 - Preserve task facts and the semantics of gates, submission, and `knowledge_impact`; never fabricate or reinterpret them to advance phase.
 - Never perform Git add, commit, push, branch, reset, checkout, or clean without separate explicit authorization.

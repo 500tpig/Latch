@@ -96,7 +96,15 @@ test.afterEach(() => {
 })
 
 test('top-level and command help have no side effects', () => {
-  for (const args of [[], ['--help'], ['checkpoint', '--help'], ['save', '--help']]) {
+  for (const args of [
+    [],
+    ['--help'],
+    ['checkpoint', '--help'],
+    ['save', '--help'],
+    ['verify-all', '--help'],
+    ['artifact', '--help'],
+    ['submit', '--help'],
+  ]) {
     const cwd = temporaryDirectory()
     const result = run(cwd, args)
     assert.equal(result.status, 0, result.stderr)
@@ -115,6 +123,7 @@ test('top-level and command help have no side effects', () => {
   assert.match(contextHelp.stdout, /--status/)
   assert.match(contextHelp.stdout, /--since-revision/)
   assert.match(contextHelp.stdout, /--history <timeline\|events\|both>/)
+  assert.match(run(temporaryDirectory(), ['submit', '--help']).stdout, /--verbose-warnings/)
 })
 
 test('unknown command and flag fail before creating .latch', () => {
@@ -908,6 +917,62 @@ test('save can remove artifacts and explicitly unblock', () => {
   assert.deepEqual(task.artifacts, [])
   assert.equal('blocked' in task, false)
   assert.equal(task.revision, 3)
+})
+
+test('artifact add and remove support multiple values with save-compatible semantics', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const created = checkpoint(cwd)
+  const added = run(cwd, [
+    'artifact', 'add', created.task_id,
+    '--expect-revision', '1',
+    'doc:docs/a.md',
+    'skill:skills/example.md',
+    'doc:docs/a.md',
+    '--json',
+  ])
+  assert.equal(added.status, 0, added.stderr)
+  assert.equal(JSON.parse(added.stdout).revision, 2)
+  assert.deepEqual(readTask(cwd, created.task_id).artifacts, [
+    { kind: 'doc', path: 'docs/a.md' },
+    { kind: 'skill', path: 'skills/example.md' },
+  ])
+
+  const removed = run(cwd, [
+    'artifact', 'remove', created.task_id,
+    '--expect-revision', '2',
+    'doc:docs/a.md',
+    'doc:docs/missing.md',
+    '--json',
+  ])
+  assert.equal(removed.status, 0, removed.stderr)
+  assert.equal(JSON.parse(removed.stdout).revision, 3)
+  assert.deepEqual(readTask(cwd, created.task_id).artifacts, [
+    { kind: 'skill', path: 'skills/example.md' },
+  ])
+
+  const events = readFileSync(
+    join(cwd, '.latch', 'tasks', created.task_id, 'events.jsonl'),
+    'utf8',
+  ).trim().split('\n').map(JSON.parse)
+  assert.deepEqual(events.slice(-2).map((event) => event.type), [
+    'artifact_updated',
+    'artifact_updated',
+  ])
+  assert.deepEqual(events.at(-2).added, [
+    'doc:docs/a.md',
+    'skill:skills/example.md',
+  ])
+  assert.deepEqual(events.at(-1).removed, ['doc:docs/a.md'])
+
+  const noOp = run(cwd, [
+    'artifact', 'remove', created.task_id,
+    '--expect-revision', '3',
+    'doc:docs/missing.md',
+  ])
+  assert.notEqual(noOp.status, 0)
+  assert.match(noOp.stderr, /did not contain any effective change/)
+  assert.equal(readTask(cwd, created.task_id).revision, 3)
 })
 
 test('save rejects stale revision and no-op without modifying task or events', () => {

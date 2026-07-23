@@ -14,6 +14,8 @@ Released: 2026-07-16 — C1–C8 已交付；本文件是唯一 current 产品�
 
 Updated: 2026-07-22 — 增加 Light inline 输入、共享 worktree warning 分层和 archive JSON 标记。
 
+Updated: 2026-07-23 — 增加批量 gate 验证、独立 artifact 命令、submit 缺失引用修复命令和 untracked warning 摘要。
+
 ## 0. 地位
 
 本文件与以下七个 current 分章共同构成 Latch 的产品契约。分章路径保留历史 `-draft` 文件名，仅为兼容既有链接；该文件名不表示文档状态。
@@ -69,6 +71,9 @@ task（唯一可写生命周期）、events、primary_writer、group_id、模块
 13. 默认过程记录面向任务使用者，展示发生了什么、影响和下一步；原始 event 与 schema 字段只作为详情和调试入口。
 14. inline Light 请求授权与 `none` knowledge impact 仅是 CLI 输入快捷路径，写入既有 work basis、submission、proof、revision 和 event 结构。
 15. `done --json` 与 `abandon --json` 返回 `archived: true`；`phase` 保持归档前的最后开放 phase，`outcome` 保持既有语义。
+16. `verify-all` 只编排当前 work revision 尚未通过的 named gate；每项仍独立记录 event 和 revision，失败即停。
+17. `artifact add|remove` 复用 `save` 的 artifact 持久化语义；task schema 与 event 类型不增加新分支。
+18. submit 一次报告全部缺失 artifact 引用并给出修复命令；untracked warning 默认返回总数和最多 8 个样本，完整清单由 `--verbose-warnings` 显式请求。
 
 ## 6. 触发与授权
 

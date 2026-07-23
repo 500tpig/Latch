@@ -41,6 +41,11 @@ function requireText(value: string | undefined, message: string): string {
   return value.trim()
 }
 
+function cliArgument(value: string) {
+  if (/^[A-Za-z0-9_./:@+-]+$/.test(value)) return value
+  return `'${value.replaceAll("'", "'\\''")}'`
+}
+
 function sharedWorktreeWarnings(store: TaskStoreV2, taskId: string): string[] {
   const active = listTasksV2(store).filter((task) => task.id !== taskId)
   const devOrCheck = active.find(
@@ -416,6 +421,11 @@ export type VerifyTaskV2Result = TaskWriteResultV2 & {
   verification: VerifyResult
 }
 
+export type VerifyAllTasksV2Result = TaskWriteResultV2 & {
+  verifications: VerifyResult[]
+  failed?: VerifyResult
+}
+
 function assertReadyForWork(task: ReturnType<typeof readTaskV2>) {
   if (task.blocked) throw new Error(`Task is blocked: ${task.blocked.reason}`)
   if (usesLightProofPackage(task)) return assertValidWorkBasis(task)
@@ -504,6 +514,56 @@ export function verifyTaskV2(
   return { ...written, verification: result }
 }
 
+export function verifyAllTasksV2(
+  store: TaskStoreV2,
+  id: string,
+  input: Pick<VerifyTaskV2Input, 'expectRevision' | 'actor'>,
+): VerifyAllTasksV2Result {
+  const current = assertTaskWritableV2(
+    store,
+    id,
+    input.actor,
+    input.expectRevision,
+  )
+  assertReadyForWork(current)
+  if (current.phase !== 'dev' && current.phase !== 'check')
+    throw new Error(`Cannot verify task in phase ${current.phase}.`)
+
+  const pending = gatePlan(current).filter((item) => {
+    const result = current.verification.gate[item.name]
+    return (
+      !result ||
+      result.work_revision !== current.work_revision ||
+      result.status !== 'pass'
+    )
+  })
+  if (pending.length === 0)
+    return { task: current, warnings: [], verifications: [] }
+
+  let revision = input.expectRevision
+  let task = current
+  const warnings: string[] = []
+  const verifications: VerifyResult[] = []
+  let failed: VerifyResult | undefined
+  for (const item of pending) {
+    const result = verifyTaskV2(store, id, {
+      expectRevision: revision,
+      actor: input.actor,
+      name: item.name,
+      diagnostic: false,
+    })
+    task = result.task
+    revision = result.task.revision
+    warnings.push(...result.warnings)
+    verifications.push(result.verification)
+    if (result.verification.status === 'fail') {
+      failed = result.verification
+      break
+    }
+  }
+  return { task, warnings, verifications, ...(failed ? { failed } : {}) }
+}
+
 export type SubmitTaskV2Input = {
   expectRevision: number
   actor: string
@@ -512,6 +572,7 @@ export type SubmitTaskV2Input = {
   noVerify: boolean
   reason?: string
   knowledgeImpact?: KnowledgeImpact
+  verboseWarnings?: boolean
 }
 
 export function submitTaskV2(
@@ -551,6 +612,36 @@ export function submitTaskV2(
   if (usesLightProofPackage(current)) {
     if (!input.knowledgeImpact)
       throw new Error('--knowledge-impact-file is required for schema 3 submission.')
+    if (
+      input.knowledgeImpact.kind === 'updated' &&
+      Array.isArray(input.knowledgeImpact.artifact_refs) &&
+      input.knowledgeImpact.artifact_refs.every(
+        (item) =>
+          item !== null &&
+          typeof item === 'object' &&
+          typeof item.kind === 'string' &&
+          typeof item.path === 'string',
+      )
+    ) {
+      assertKnowledgeImpact(
+        input.knowledgeImpact,
+        [...current.artifacts, ...input.knowledgeImpact.artifact_refs],
+        'submit input',
+      )
+      const attached = new Set(
+        current.artifacts.map((item) => `${item.kind}\u0000${item.path}`),
+      )
+      const missing = input.knowledgeImpact.artifact_refs.filter(
+        (item) => !attached.has(`${item.kind}\u0000${item.path}`),
+      )
+      if (missing.length > 0) {
+        const labels = missing.map((item) => `${item.kind}:${item.path}`)
+        throw new Error(
+          `Knowledge impact artifacts are not attached to the task: ${labels.join(', ')}. ` +
+          `Run: latch artifact add ${cliArgument(current.id)} --expect-revision ${current.revision} ${labels.map(cliArgument).join(' ')}`,
+        )
+      }
+    }
     assertKnowledgeImpact(input.knowledgeImpact, current.artifacts, 'submit input')
   } else if (input.knowledgeImpact) {
     throw new Error(
@@ -595,7 +686,10 @@ export function submitTaskV2(
     },
   }), [
     ...artifactDeliveryWarnings(store.paths.workspaceRoot, current.artifacts),
-    ...untrackedWorktreeWarnings(store.paths.workspaceRoot),
+    ...untrackedWorktreeWarnings(
+      store.paths.workspaceRoot,
+      input.verboseWarnings,
+    ),
   ])
 }
 
