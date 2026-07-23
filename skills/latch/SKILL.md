@@ -5,99 +5,89 @@ description: Use for Latch task tracking, implementation, verification, review f
 
 # Latch
 
-Apply these rules to repository-write or observable-behavior requests. Do not create a task for pure Q&A, read-only exploration, no-write intent, or an explicit request not to use Latch.
+Apply these rules to repository writes and observable-behavior changes. Do not create a task for pure Q&A, read-only exploration, no-write intent, or an explicit request not to use Latch.
 
-## Start
+## Start with bounded output
 
-1. Run `git status --short`.
-2. Run `latch list --json --brief`.
-3. If the user names a task, run `latch context <task-id> --json --status`; otherwise, run it for the returned `current_task_id` only when that field exists. If neither exists, do not call `latch context --json --status` without a task ID.
-4. Expand with `--brief --history timeline` when goal, scope, acceptance, pending plan items, gates, submission evidence, or readable history is needed; read raw events only for debugging, auditing, or compatibility checks. Use `--since-revision` only with a trusted baseline for that exact task revision.
-5. Read task artifacts first. Read `docs/INDEX.md` and directly relevant project documents only when the task affects product contracts, architecture, installation, documentation behavior, or the available evidence is insufficient.
-6. Preserve unrelated worktree changes.
+1. Run `git status --short`, then `latch list --json --brief`.
+2. If the user names a task, read `latch context <task-id> --json --status`. Otherwise read status only for a returned `current_task_id`; if neither exists, do not call context without a task ID.
+3. Read task artifacts first. Read `docs/INDEX.md` and directly relevant project documents only when the task affects product contracts, architecture, installation, documentation behavior, or existing evidence is insufficient.
+4. Preserve unrelated worktree changes.
 
-## Cross-session orientation
+Always execute `git status --short`, but above 50 entries return only the total, status counts, and at most eight representative paths unless the full list is requested. Avoid a full `git diff` unless code review or exact patch evidence requires it. Run high-output status, context, diff, and stat separately; never join them with `;` into one tool result.
 
-- Treat an exact task ID or user-supplied group ID as the normal recovery seed. Do not read other Codex conversations to reconstruct routine task state.
-- For a named planning wave, read the groups reference, run `latch list --group <group-id> --include-archive --json --brief`, then request `context <task-id> --json --status` only for relevant open tasks.
-- Expand at most one relevant task with `--brief --history timeline` when the minimal views cannot answer a named fact. Do not load multiple full contexts or raw event histories for routine orientation.
-- Read-only task or group orientation is not a handoff and needs no claim or takeover. Use the handoff reference only when a new session will continue writing the same open task.
-- Do not create a planning or anchor task solely to preserve chat continuity. Use `group_id` only for a real related wave identified by the user.
+## Classify before writing
 
-## Read references on demand
+- A: Grill and remain in `plan` when goal, success criteria, scope, product choice, root cause, or a high-risk change is unclear; keep only blocking questions in `open_questions`.
+- B: Use a Light task only when change, scope, success criteria, and low-risk implementation are concrete, `open_questions` is empty, and no extra scope is inferred.
+- C: Use a Standard task when implementation needs a design choice, migration, authentication, public API change, destructive data handling, or disputed/multiple gates.
 
-Read the complete linked file only when its condition applies:
+Require an explicit user write request before creating or continuing a task. Stop and return to `plan` when implementation reveals missing information or scope expansion. Never infer group-wide, batch, Git, archive, cancellation, claim, or takeover authority from task-level authorization.
 
-- Read [session actors and handoff](references/session-actors-and-handoff.md) for actor adapters, missing canonical actors, writer takeover, a new session continuing the same open task, handoff prompts, and provenance changes.
-- Read [groups](references/groups.md) before reading or changing `group_id`, listing group members, or reasoning about sibling task independence.
-- Read [knowledge and context](references/knowledge-and-context.md) for freshness checks, `knowledge_impact`, Context packs, orientation budgets, or context benchmarks.
-- Read [migration](references/migration.md) for schema 2 tasks, `claim`, legacy patching, minimum writer versions, or `downgrade-v2`.
+## Three executable paths
 
-## Trigger rules
+### Ordinary Light task
 
-Classify before implementation:
-
-- A: Grill and remain in `plan` when the goal, success criteria, scope, product choice, root cause, or high-risk change is unclear; record only blocking questions in `open_questions`.
-- B: Use light request authorization only when the change, scope, success criteria, and low-risk implementation are concrete, `open_questions` is empty, and no extra scope is inferred.
-- C: Use a standard task and explicit approval when implementation requires design choice, migration, authentication, public API changes, destructive data handling, or multiple disputed gates.
-- Use `source: user_request` for a complete low-risk request, `source: user_delta` for a precise low-risk addition to the current plan, and `source: user_approve` after the displayed standard plan receives explicit approval.
-- Use `checkpoint --retrospective-file` only for an honest after-the-fact record when no matching open task exists.
-- Stop and return to `plan` when implementation reveals missing information or scope expansion; never stretch an earlier authorization.
-
-Require an explicit user write request before creating or continuing a task. Do not infer group-wide, batch, Git, archive, or cancellation authority from task-level authorization.
-
-## Plan and records
-
-- Create a task only with a complete plan file. Wrap file paths, identifiers, configuration keys, and commands in inline code, and keep each plan item to one sentence.
-- Show every plan before implementation. Run `approve` only after explicit implementation authorization, and reject approval while `open_questions` is non-empty.
-- Record task facts rather than chat logs. During grill, persist only blocking questions and short durable decisions.
-- Classify `review_feedback`, decisions, submissions, and closure text before writing concise user-readable Chinese summaries of what happened, why it matters, what changed, and the next action.
-- Keep internal schema terms in raw events or technical details rather than default user-facing summaries.
-
-## Ownership and revision
-
-- Treat a missing canonical actor or a writer mismatch as fail closed: keep the caller read-only and do not mutate until the required explicit claim or takeover authorization is present.
-- Treat takeover as ownership transfer only, never as implementation approval. Preserve the phase and wait for separate approval unless the same user message explicitly authorizes both.
-- Pass `--expect-revision` to every task mutation.
-- In one uninterrupted mutation flow, use the successful JSON result's `revision` for the next `--expect-revision`; do not reread context only to obtain that revision.
-- Refresh status after a revision conflict, a new user input boundary, a warning that requires judgment, or a change in task meaning. Never auto-retry a conflicted mutation.
-- Keep normal sequential handoff provenance `clean`; read the session reference before any provenance change.
-
-## Create and approve
-
-Create a standard task with:
+1. Prepare a complete plan file with no open questions.
+2. Create and authorize it atomically from the concrete request:
 
 ```bash
-latch checkpoint "Task title" --plan-file plan.json
+latch checkpoint "Task title" --plan-file plan.json --profile light --authorize-request "User requested this scoped change" --scope-summary "Bounded scope" --scope-path path/to/file --json
 ```
 
-Create a complete low-risk task atomically with `--authorize-request <reason>` and optional `--scope-summary` / repeated `--scope-path`; this writes `source: user_request` and creates a light task. Use `--authorization-file` for complex scope structure, and `--retrospective-file` only for the retrospective case defined above.
+3. Implement only that scope, run every named gate with `verify`, then submit to `review`. Wait for user acceptance; never run `done` automatically.
 
-Approve only after displaying the current plan and receiving explicit authorization:
+### Standard plan
+
+1. Prepare and show the complete plan. Create the task with `latch checkpoint "Task title" --plan-file plan.json --json`.
+2. Run `approve` only after explicit implementation authorization and only when `open_questions` is empty:
 
 ```bash
 latch approve <task-id> --expect-revision <n> --reason "User approved the current plan" --json
 ```
 
-## Update and feedback
+3. Implement the approved scope, run every named gate with `verify`, submit to `review`, and wait. Never treat task creation, takeover, or feedback as plan approval.
 
-- Use `save --plan-file` when goal, scope, acceptance, contracts, user flow, or important boundaries change. This returns the task to `plan` and requires new approval.
-- Use `approve --feedback` only for an executable implementation correction that leaves the approved plan intact; it starts a new work revision and invalidates prior proof.
-- Use `approve --non-implementation-feedback` only when implementation, configuration, generated inputs, gates, and public behavior are unchanged; it preserves the existing proof.
-- Diagnose evaluative or ambiguous feedback before mutating. If impact is uncertain, treat it as an implementation correction.
+### Review closeout fast path
 
-## Verify and submit
+Use this path only when status shows `phase: review`, every gate is `pass`, both `stale` and `pending` are zero, the user explicitly requests takeover, completion/archive, or Git delivery, and the user does not request renewed code review or history explanation.
 
-- Run every named gate from the approved plan with `latch verify <task-id> --expect-revision <n> --name <gate-name> --json`.
-- Use diagnostic argv only after `--`; diagnostic results never satisfy submit gates.
-- Submit only after all current named gates pass, or use `--no-verify` with a reason for an approved plan without gates; prefer `--knowledge-impact-none <reason>` for a concrete no-impact record and retain `--knowledge-impact-file` for `updated` impacts.
-- Read the knowledge reference before preparing `knowledge_impact`. Report non-`tracked` artifact delivery and untracked-worktree warnings without inventing artifact ownership; treat them as delivery risks, not automatic lifecycle failures.
-- Submit the current work revision to `review` and wait for user acceptance; do not run `done` automatically.
+1. Run `git status --short` and `latch list --json --brief` with the output limits above.
+2. Read only `latch context <task-id> --json --status`.
+3. If no canonical actor exists, remain read-only. If writer mismatches, fail closed until the user explicitly authorizes takeover of the named revision, then run:
 
-## Finish
+```bash
+latch takeover <task-id> --expect-revision <n> --reason "User authorized takeover" --json
+```
 
-- Run `done` only after explicit user authorization to complete or archive the named task.
-- When the user authorizes `done`, record a concrete next task or action in `followup`, or state explicitly that there is no follow-up and why. Do not use vague text such as "handle normally."
-- Run `abandon` only after explicit user authorization to cancel the named task.
-- Inspect open tasks before either command and modify only the named task.
-- Never perform Git add, commit, push, branch, reset, checkout, or clean unless separately requested.
+Takeover only transfers writer ownership; it does not reapprove a plan or authorize `done`. Use its returned `revision` for the next mutation.
+
+4. Run `done` only when the user explicitly authorizes completion/archive of the named task:
+
+```bash
+latch done <task-id> --expect-revision <n> --followup "Concrete next action, or no follow-up and why" --json
+```
+
+Do not load `--brief --history timeline` on this path unless gates are missing, stale, pending, or failed; writer data is unclear; status cannot establish a required fact; or the user requests historical evidence. Do not rerun an already passed, non-stale full build solely to close review.
+
+Git delivery remains separate: do not derive permission for add, commit, push, branch, reset, checkout, or clean from takeover, task approval, submit, review acceptance, or `done`. Latch never performs Git operations.
+
+## Non-negotiable contracts
+
+- Treat a missing canonical actor or writer mismatch as fail closed; remain read-only until the required explicit claim or takeover authorization exists.
+- Pass `--expect-revision` to every task mutation. In one uninterrupted flow, use each successful JSON response's `revision`; do not reread context only to obtain it. Refresh status after a revision conflict, new user input boundary, judgment-requiring warning, or task meaning change, and never auto-retry a conflict.
+- Treat takeover as ownership transfer only, never as implementation approval.
+- Submit only after all current named gates pass, or use the documented `--no-verify` exception for an approved plan without gates. Submit enters `review`; never auto-complete it.
+- Run `done` only after explicit user authorization to complete/archive the named task. Run `abandon` only after explicit user authorization to cancel it.
+- Preserve task facts and the semantics of gates, submission, and `knowledge_impact`; never fabricate or reinterpret them to advance phase.
+- Never perform Git add, commit, push, branch, reset, checkout, or clean without separate explicit authorization.
+
+## Read one-level references on demand
+
+Read each complete reference only when its condition applies:
+
+- [task lifecycle](references/task-lifecycle.md): plan structure, checkpoint/approve details, feedback classification, gate execution, submit evidence, `knowledge_impact`, followup, or abandon.
+- [session actors and handoff](references/session-actors-and-handoff.md): actor adapters, missing canonical actor, writer mismatch, takeover, a new session continuing the same open task, handoff prompts, or provenance changes.
+- [groups](references/groups.md): reading/changing `group_id`, listing a planning wave, or reasoning about sibling independence.
+- [knowledge and context](references/knowledge-and-context.md): freshness, `knowledge_impact` correction, Context packs, orientation budgets, or benchmarks.
+- [migration](references/migration.md): schema 2, claim, legacy patching, minimum writer versions, or `downgrade-v2`.

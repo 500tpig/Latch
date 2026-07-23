@@ -5,11 +5,17 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const lifecycleReference = 'skills/latch/references/task-lifecycle.md'
+const actorReference = 'skills/latch/references/session-actors-and-handoff.md'
+const groupsReference = 'skills/latch/references/groups.md'
+const knowledgeReference = 'skills/latch/references/knowledge-and-context.md'
+const migrationReference = 'skills/latch/references/migration.md'
 const skillReferences = [
-  'skills/latch/references/session-actors-and-handoff.md',
-  'skills/latch/references/groups.md',
-  'skills/latch/references/knowledge-and-context.md',
-  'skills/latch/references/migration.md',
+  lifecycleReference,
+  actorReference,
+  groupsReference,
+  knowledgeReference,
+  migrationReference,
 ]
 const currentDocs = [
   'README.md',
@@ -53,20 +59,22 @@ test('canonical skill has valid minimal frontmatter', () => {
 
 test('canonical skill stays lean and routes every low-frequency reference', () => {
   const skill = text('skills/latch/SKILL.md')
-  assert.ok(Buffer.byteLength(skill, 'utf8') <= 9000)
+  assert.ok(Buffer.byteLength(skill, 'utf8') <= 7000)
   for (const path of skillReferences) {
     assert.equal(existsSync(join(root, path)), true, path)
     assert.equal(skill.includes(path.replace('skills/latch/', '')), true, path)
   }
 
-  assert.match(text(skillReferences[0]), /LATCH_ACTOR/)
-  assert.match(text(skillReferences[0]), /handoff prompt/)
-  assert.match(text(skillReferences[1]), /group_id/)
-  assert.match(text(skillReferences[2]), /knowledge fingerprint/)
-  assert.match(text(skillReferences[2]), /context pack/i)
-  assert.match(text(skillReferences[3]), /legacy_unclaimed/)
-  assert.match(text(skillReferences[3]), /claim <task-id>[\s\S]*--expect-revision <n>[\s\S]*--json/)
-  assert.match(text(skillReferences[3]), /downgrade-v2/)
+  assert.match(text(lifecycleReference), /Show every Standard plan/)
+  assert.match(text(lifecycleReference), /approve --feedback/)
+  assert.match(text(actorReference), /LATCH_ACTOR/)
+  assert.match(text(actorReference), /handoff prompt/)
+  assert.match(text(groupsReference), /group_id/)
+  assert.match(text(knowledgeReference), /knowledge fingerprint/)
+  assert.match(text(knowledgeReference), /context pack/i)
+  assert.match(text(migrationReference), /legacy_unclaimed/)
+  assert.match(text(migrationReference), /claim <task-id>[\s\S]*--expect-revision <n>[\s\S]*--json/)
+  assert.match(text(migrationReference), /downgrade-v2/)
 })
 
 test('canonical skill is the only tracked repo skill source', () => {
@@ -115,22 +123,59 @@ test('current contract and instruction surface use the final A/B/C rules', () =>
 
 test('canonical skill keeps normal lifecycle safety rules in the main file', () => {
   const skill = text('skills/latch/SKILL.md')
+  const lifecycle = text(lifecycleReference)
   assert.match(skill, /pure Q&A/)
-  assert.match(skill, /Show every plan[\s\S]*explicit implementation authorization/)
+  assert.match(skill, /show the complete plan[\s\S]*explicit implementation authorization/)
   assert.match(skill, /writer mismatch as fail closed/)
   assert.match(skill, /takeover[\s\S]*never as implementation approval/)
-  assert.match(skill, /implementation correction/)
-  assert.match(skill, /non-implementation-feedback/)
+  assert.match(lifecycle, /implementation correction/)
+  assert.match(lifecycle, /non-implementation-feedback/)
   assert.match(skill, /every named gate/)
   assert.match(skill, /Run `done` only after explicit user authorization/)
   assert.match(skill, /Run `abandon` only after explicit user authorization/)
   assert.match(skill, /Never perform Git add, commit, push, branch, reset, checkout, or clean/)
 })
 
+test('canonical skill provides three executable paths without weakening closeout', () => {
+  const skill = text('skills/latch/SKILL.md')
+  assert.match(skill, /### Ordinary Light task/)
+  assert.match(skill, /checkpoint[\s\S]*--profile light[\s\S]*--authorize-request/)
+  assert.match(skill, /### Standard plan/)
+  assert.match(skill, /approve <task-id> --expect-revision <n>/)
+  assert.match(skill, /### Review closeout fast path/)
+  assert.match(skill, /phase: review[\s\S]*every gate is `pass`[\s\S]*`stale` and `pending` are zero/)
+  assert.match(skill, /context <task-id> --json --status/)
+  assert.match(skill, /takeover <task-id> --expect-revision <n>/)
+  assert.match(skill, /done <task-id> --expect-revision <n>/)
+  assert.match(skill, /Takeover only transfers writer ownership; it does not reapprove a plan or authorize `done`/)
+  assert.match(skill, /Run `done` only when the user explicitly authorizes completion\/archive/)
+  assert.match(skill, /Git delivery remains separate/)
+  assert.match(skill, /Do not load `--brief --history timeline`[\s\S]*gates are missing, stale, pending, or failed/)
+})
+
+test('canonical skill bounds large command output without creating a new workflow', () => {
+  const skill = text('skills/latch/SKILL.md')
+  assert.match(skill, /above 50 entries/i)
+  assert.match(skill, /total, status counts, and at most eight representative paths/)
+  assert.match(skill, /Avoid a full `git diff` unless code review/)
+  assert.match(skill, /never join them with `;` into one tool result/)
+  assert.match(skill, /Do not rerun an already passed, non-stale full build/)
+})
+
+test('task lifecycle avoids redundant gate plans without allowing execution skips', () => {
+  const lifecycle = text(lifecycleReference)
+  assert.match(lifecycle, /every gate must add distinct proof/)
+  assert.match(lifecycle, /final comprehensive gate[\s\S]*typecheck, build, or the full test suite/)
+  assert.match(lifecycle, /development diagnostics[\s\S]*distinct acceptance requirement/)
+  assert.match(lifecycle, /Once approved, never skip a named gate/)
+  assert.match(lifecycle, /Run every named gate from the approved plan/)
+})
+
 test('inline Light shortcuts stay consistent across instructions and current docs', () => {
   const skill = text('skills/latch/SKILL.md')
-  const knowledge = text('skills/latch/references/knowledge-and-context.md')
-  const migration = text('skills/latch/references/migration.md')
+  const lifecycle = text(lifecycleReference)
+  const knowledge = text(knowledgeReference)
+  const migration = text(migrationReference)
   const install = text('docs/AI_INSTALL.md')
   const handBook = text('docs/HANDBOOK.md')
 
@@ -139,7 +184,7 @@ test('inline Light shortcuts stay consistent across instructions and current doc
     assert.match(content, /--scope-summary/)
     assert.match(content, /--scope-path/)
   }
-  for (const content of [skill, knowledge, install, handBook]) {
+  for (const content of [lifecycle, knowledge, install, handBook]) {
     assert.match(content, /--knowledge-impact-none/)
     assert.match(content, /--knowledge-impact-file/)
   }
@@ -157,7 +202,7 @@ test('startup reads context and project docs only when conditions require them',
     assert.match(content, /task ID/)
     assert.match(content, /docs\/INDEX\.md/)
   }
-  assert.match(skill, /If neither exists, do not call/)
+  assert.match(skill, /if neither exists, do not call/i)
   assert.match(agents, /两者都没有时，不得调用/)
   assert.match(handBook, /不含 `current_task_id`[\s\S]*不得调用/)
   assert.match(skill, /only when the task affects product contracts/)
@@ -180,27 +225,25 @@ test('continuous mutation flows reuse returned revision without redundant contex
 })
 
 test('cross-session planning recovery stays artifact-first and bounded', () => {
-  const skill = text('skills/latch/SKILL.md')
   const agents = text('AGENTS.md')
-  const handoff = text('skills/latch/references/session-actors-and-handoff.md')
-  const groups = text('skills/latch/references/groups.md')
+  const lifecycle = text(lifecycleReference)
+  const handoff = text(actorReference)
+  const groups = text(groupsReference)
 
-  assert.match(skill, /Do not read other Codex conversations/)
   assert.match(agents, /常规恢复不得读取其他 Codex 会话/)
-  for (const content of [skill, agents, groups]) {
+  for (const content of [agents, groups]) {
     assert.match(
       content,
       /list --group <(?:group-)?id> --include-archive --json --brief/,
     )
     assert.match(content, /context <task-id> --json --status/)
   }
-  assert.match(skill, /Do not load multiple full contexts or raw event histories/)
   assert.match(agents, /不得同时展开多张完整 context 或原始 event/)
   assert.match(handoff, /Read-only orientation does not authorize claim, takeover/)
   assert.match(handoff, /Starting a different task.*is not a takeover/)
-  assert.match(skill, /Do not create a planning or anchor task solely/)
+  assert.match(groups, /Do not create a planning or anchor task solely/)
   assert.match(agents, /不得只为保存聊天连续性创建 planning 或 anchor task/)
-  assert.match(skill, /concrete next task or action in `followup`/)
+  assert.match(lifecycle, /concrete next task\/action in `followup`/)
   assert.match(agents, /`followup` 必须写具体下一张 task、下一项动作/)
   assert.match(groups, /Group membership does not encode task order/)
   assert.match(groups, /do not generate an automatic group-level next task/)
@@ -210,7 +253,7 @@ test('cross-session handoff requires takeover separate from implementation appro
   const handBook = text('docs/HANDBOOK.md')
   const actor = text('docs/prd/2026-07-15-latch-actor-writer-affinity-draft.md')
   const skill = text('skills/latch/SKILL.md')
-  const handoff = text('skills/latch/references/session-actors-and-handoff.md')
+  const handoff = text(actorReference)
   for (const content of [handBook, actor, handoff]) {
     assert.match(content, /新对话|new conversation/)
     assert.match(content, /takeover/)
