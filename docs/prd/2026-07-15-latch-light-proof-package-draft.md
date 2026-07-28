@@ -8,11 +8,13 @@ Document-Status: current component of `2026-07-15-latch-final-product-contract.m
 
 Date: 2026-07-15
 
-Revision: 7
+Revision: 8
 
 Released: 2026-07-16 — 全面 current 发布。
 
 Updated: 2026-07-22 — 增加 inline Light 请求授权与 `none` knowledge impact 快捷路径。
+
+Updated: 2026-07-28 — 修订 Light 中途重新分类与多 gate 边界。
 
 判定表 B、A、C 的权威定义见 `docs/prd/2026-07-15-latch-workflow-triggers-draft.md`，本章不重复展开。
 
@@ -59,9 +61,17 @@ type TaskProfile = 'light' | 'standard'
 4. **当时不**改 `work_revision`（重新开工规则见 §4.5–4.6）；
 5. 追加 `profile_changed` 事件，字段至少含 `from`、`to`、`reason`（非空；Skill 填写，Core 只验非空）。
 
-### 2.3 Light → standard（必须升级）
+### 2.3 Light 中途重新分类与升级
 
-Skill 判定出现 open_questions、高风险、自拟方案、越界、多 gate 等 → **必须**升级并走 §2.2。`reason` 例：`risk-surface`、`open-questions`、`scope-expanded`。
+Light task 出现 plan change、产品选择或 scope 扩大时，Skill 必须停止沿用原分类并重新执行触发章 A/B/C：
+
+- 重新满足 B：可保持 Light，但 plan 变化仍使旧 authorization、gate 和 submission 失效，须用新的请求或精确 delta 重新授权；
+- 命中 A：保持在 `plan` 并继续 grill，不实施；
+- 命中 C：**必须**升级 Standard 并走 §2.2，再展示完整 plan 等待明确 approve。
+
+多个 lint、typecheck、build、文档索引等机械检查本身不触发升级；多个独立验收面、产品选择、公共契约、高风险、自拟方案或越界使任务命中 C。`reason` 例：`risk-surface`、`product-choice`、`scope-expanded`。
+
+Core 不读取 gate 数量或命令语义自动分类，只执行 Skill 请求的结构化 profile 变化及 §2.2 的机械效果。
 
 ### 2.4 Standard → light（降级限制，恢复 handoff 规则）
 
@@ -447,6 +457,7 @@ Light submit denied: --no-verify is not allowed for profile=light.
 - submission patch 兼容无 `plan_revision` 的 v2 submission，一次补 plan_revision+impact；已有 impact 的修正只改 impact，并复核 basis+proof；
 - retrospective：首次启动 `work_revision 0→1`；仅 plan/profile 变且代码未变则 rebind 并 **保持** work_revision；继续改代码禁止 retrospective，改 authorization 且 work_revision+1；
 - 每次 implementation_authorization 的 plan→dev 都 work_revision+1；
+- Light 出现 plan change、产品选择或 scope 扩大时重新执行 A/B/C；机械 gate 数量不触发升级，Core 不自动分类；
 - standard→light 禁止静默降级；须无授权或用户明确缩小并写 `profile_changed.reason`；
 - blocked 允许只读、unblock、更新 plan、abandon；拒绝 verify/submit/done/patch/实施向 approve/retrospective 启动；
 - `knowledge_impact.updated`：非空 summary、`artifact_refs.length >= 1` 且 ref∈artifacts；

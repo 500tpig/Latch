@@ -10,7 +10,11 @@ Latch 记录本地 coding task。每张 task 保存 plan、批准、工作轮次
 
 - A：目标、成功标准、范围、根因或高风险改法不明确时，停在 grill，不实施；
 - B：改法和范围明确、低风险、`open_questions` 为空且不扩 scope 时，创建或续接 light task，`source: user_request` 作为授权；
-- C：需要方案确认、多 gate 或存在高风险面时，创建或续接 standard task，展示 plan 后等待明确 approve。
+- C：需要方案确认、存在多个独立验收面、产品选择、公共契约或高风险面时，创建或续接 standard task，展示 plan 后等待明确 approve。
+
+多个 lint、typecheck、build、文档索引等机械检查如果共同证明同一个边界明确、低风险的验收面，不单独触发 Standard。多个命令分别证明独立验收面，或任务包含产品选择、公共契约或高风险面时，进入 C。
+
+Light task 出现 plan change、产品选择或 scope 扩大时，立即停止沿用原分类并重新执行 A/B/C。重新满足 B 时可保持 Light，但 plan 变化仍使旧授权与验证失效；命中 A 时停在 grill；命中 C 时升级 Standard，展示更新后的完整 plan 并等待明确 approve。Core 只执行结构化 plan、profile 与 revision 变化，不根据 gate 数量或命令语义自动分类。
 
 纯问答、只读探索和无写入意图的请求不建 task。用户明确要求「不用 Latch」时，本轮也不建 task。
 

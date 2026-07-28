@@ -8,9 +8,11 @@ Document-Status: current component of `2026-07-15-latch-final-product-contract.m
 
 Date: 2026-07-15
 
-Revision: 3
+Revision: 4
 
 Released: 2026-07-16 — 全面 current 发布。
+
+Updated: 2026-07-28 — 修订多 gate 判定与 Light 中途重新分类规则。
 
 **定位：** 承接 handoff 用户流程中尚未落入分章的可执行规则；Light 章「判定表 B」、Group 章「batch 委托」以本节为准，不重开 Actor/Light/Group 已定产品取舍。
 
@@ -78,19 +80,28 @@ Released: 2026-07-16 — 全面 current 发布。
 |---|---|
 | 改法可复述 | 能钉成「改什么行为/哪个点」 |
 | scope 可钉死 | 文件/组件/行为边界可写进 authorization.scope |
-| 低风险 | 不碰认证/迁移/公共 API 契约/数据销毁 |
+| 低风险 | 不碰认证/迁移/公共契约/数据销毁 |
 | `open_questions` 空 | 本轮阻塞问题已清空 |
 | AI 不扩 scope | 实施不超出用户原话 |
+| 验收面单一 | 可同时配置 lint、typecheck、build、文档索引等多个机械检查 |
 
 → 写入 `implementation_authorization` 且 `source=user_request`（Light 章结构）。
 
 ### 3.3 C — standard（展示 plan → 明确 approve）
 
-目标够写方案但路径需确认，或多 gate / 高风险但用户仍要做：`profile=standard`，`source=user_approve`。
+目标足以写出完整方案，但需要方案确认，或存在多个独立验收面、产品选择、公共契约或高风险面时：`profile=standard`，`source=user_approve`。
 
-### 3.4 中途变不够
+gate 数量不是 profile 信号。多个 lint、typecheck、build、文档索引或其他机械检查如果共同证明同一个边界明确、低风险的验收面，不单独触发 Standard；多个命令分别证明独立验收面，或任务包含产品选择、公共契约或高风险面时，才进入 C。Core 不统计 gate 数量，也不根据命令名称或语义自动选择或升级 profile。
 
-发现要猜 / 越界 → 立即停；旧 authorization 按 Light 章失效；升 standard 或 re-auth。
+### 3.4 Light 中途重新分类
+
+Light task 出现 plan change、产品选择或 scope 扩大时，立即停止沿用原分类和 authorization，并重新执行 A/B/C 判断：
+
+- 重新满足 B：可保持 Light，但 plan 变化仍按 Light 章使旧 authorization 失效，并通过新的请求或精确 delta 重新授权；
+- 命中 A：保持在 plan，记录阻塞问题并继续 grill，不实施；
+- 命中 C：升级 Standard，展示更新后的完整 plan 并等待明确 approve。
+
+发现要猜、越界、产品选择或 scope 扩大时，不得只因现有 gate 已通过而继续实施。Core 只执行 Skill 请求的结构化 plan/profile 变化，不负责上述语义判断。
 
 ### 3.5 「按你推荐」
 
@@ -206,6 +217,7 @@ Group 章凡写 batch 委托，均指 **本节 §5**。
 ## 9. 一致性摘要
 
 - 自动建 light 有客观信号；可跳过；发布时改 AGENTS/skill/AI_INSTALL；
-- 判定表 A/B/C 为请求即授权与 standard 的权威定义；
+- 判定表 A/B/C 按验收面与风险语义区分请求即授权和 Standard，机械 gate 数量不决定 profile；
+- Light 出现 plan change、产品选择或 scope 扩大时重新执行 A/B/C，Core 不自动分类；
 - batch 仅同对话共批一张 task；跨对话用 group+多 task；
 - 反馈有矩阵；`provenance` 仅 task 根字段；同时仅 primary 可写。

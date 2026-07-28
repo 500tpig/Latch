@@ -60,9 +60,10 @@ test('canonical skill has valid minimal frontmatter', () => {
   )
 })
 
-test('canonical skill stays lean and routes every low-frequency reference', () => {
+test('canonical skill routes every low-frequency reference without hiding core safety', () => {
   const skill = text('skills/latch/SKILL.md')
-  assert.ok(Buffer.byteLength(skill, 'utf8') <= 7000)
+  const testSource = text('tests/docs-skill.test.mjs')
+  assert.equal(testSource.includes(['Buffer', 'byteLength'].join('.')), false)
   for (const path of skillReferences) {
     assert.equal(existsSync(join(root, path)), true, path)
     assert.equal(skill.includes(path.replace('skills/latch/', '')), true, path)
@@ -133,11 +134,62 @@ test('current contract and instruction surface use the final A/B/C rules', () =>
   }
 })
 
+test('A/B/C profile classification follows acceptance semantics instead of gate count', () => {
+  const contract = text('docs/prd/2026-07-15-latch-final-product-contract.md')
+  const triggers = text('docs/prd/2026-07-15-latch-workflow-triggers-draft.md')
+  const light = text('docs/prd/2026-07-15-latch-light-proof-package-draft.md')
+  const agents = text('AGENTS.md')
+  const handBook = text('docs/HANDBOOK.md')
+  const skill = text('skills/latch/SKILL.md')
+  const chineseSurfaces = [contract, triggers, light, agents, handBook]
+
+  for (const content of chineseSurfaces) {
+    assert.match(content, /机械检查[\s\S]{0,100}不(?:单独)?触发/)
+    assert.match(content, /多个独立验收面/)
+    assert.match(content, /产品选择/)
+    assert.match(content, /公共契约/)
+    assert.match(
+      content,
+      /Light task[\s\S]{0,160}plan change[\s\S]{0,160}scope 扩大[\s\S]{0,200}A\/B\/C/,
+    )
+    assert.match(
+      content,
+      /Core[\s\S]{0,120}(?:不根据|不统计|不读取)[\s\S]{0,80}gate/,
+    )
+  }
+
+  assert.match(skill, /Multiple mechanical lint, typecheck, build, documentation-index/)
+  assert.match(skill, /same bounded acceptance surface/)
+  assert.match(skill, /Gate count alone never decides the profile/)
+  assert.match(skill, /independent acceptance surfaces/)
+  assert.match(skill, /scope is fixed/)
+  assert.match(skill, /a product choice/)
+  assert.match(skill, /a public contract change/)
+  assert.match(skill, /migration/)
+  assert.match(skill, /authentication/)
+  assert.match(skill, /destructive data handling/)
+  assert.match(skill, /Light task gains a plan change[\s\S]*scope expansion[\s\S]*re-run A\/B\/C/)
+  assert.match(skill, /A: remain in `plan`[\s\S]*grill without implementing/)
+  assert.match(skill, /B: keep the Light profile[\s\S]*precise delta authorization/)
+  assert.match(skill, /C: upgrade to Standard[\s\S]*wait for explicit approval/)
+  assert.match(skill, /Core applies requested structure and revision changes/)
+  assert.match(skill, /never classifies or upgrades a task from gate count/)
+  assert.doesNotMatch(skill, /disputed\/multiple gates/)
+})
+
 test('canonical skill keeps normal lifecycle safety rules in the main file', () => {
   const skill = text('skills/latch/SKILL.md')
   const lifecycle = text(lifecycleReference)
   assert.match(skill, /pure Q&A/)
   assert.match(skill, /show the complete plan[\s\S]*explicit implementation authorization/)
+  assert.match(
+    skill,
+    /implementation reveals missing information[\s\S]*changed root cause[\s\S]*new product choice[\s\S]*scope expansion[\s\S]*stop implementation[\s\S]*update the plan/,
+  )
+  assert.match(
+    skill,
+    /Standard task must show the updated complete plan and wait for explicit reapproval/,
+  )
   assert.match(skill, /writer mismatch as fail closed/)
   assert.match(skill, /takeover[\s\S]*never as implementation approval/)
   assert.match(lifecycle, /implementation correction/)
@@ -169,9 +221,25 @@ test('canonical skill bounds large command output without creating a new workflo
   const skill = text('skills/latch/SKILL.md')
   assert.match(skill, /above 50 entries/i)
   assert.match(skill, /total, status counts, and at most eight representative paths/)
-  assert.match(skill, /Avoid a full `git diff` unless code review/)
+  assert.match(skill, /unless the full list is explicitly requested/)
+  assert.match(skill, /Avoid a full `git diff` unless code review or exact patch evidence/)
   assert.match(skill, /never join them with `;` into one tool result/)
   assert.match(skill, /Do not rerun an already passed, non-stale full build/)
+})
+
+test('canonical skill keeps high-frequency scope and isolation rules in the main file', () => {
+  const skill = text('skills/latch/SKILL.md')
+  assert.match(skill, /do not read other Codex conversations/)
+  assert.match(
+    skill,
+    /Do not read or write Records during session startup, task recovery, or ordinary discussion without explicit Record intent/,
+  )
+  assert.match(skill, /every task mutation/)
+  assert.match(skill, /one uninterrupted mutation flow/)
+  assert.match(skill, /successful JSON response's `revision`/)
+  assert.match(skill, /Refresh status after a revision conflict/)
+  assert.match(skill, /`verify-all` for pending gates/)
+  assert.match(skill, /`artifact add\|remove` for artifact-only changes/)
 })
 
 test('task lifecycle avoids redundant gate plans without allowing execution skips', () => {
@@ -196,7 +264,7 @@ test('descriptive commands cannot stand in for automatic or manual gate evidence
     assert.match(content, /submission\.unverified/)
   }
 
-  assert.match(skill, /instruction-only gates/)
+  assert.match(skill, /instruction-only command as a gate/)
   assert.match(lifecycle, /zero exit code[\s\S]*does not prove that a manual step occurred/)
   assert.match(lifecycle, /diagnostic success never verifies the manual action/)
   assert.match(handBook, /只输出操作说明的命令不得配置为 gate/)

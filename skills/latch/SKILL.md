@@ -14,15 +14,29 @@ Use for repository writes and behavior changes; pure Q&A, read-only, no-write, o
 3. Read task artifacts first. Read `docs/INDEX.md` and directly relevant project documents only when the task affects product contracts, architecture, installation, documentation behavior, or existing evidence is insufficient.
 4. Preserve unrelated worktree changes.
 
-Always execute `git status --short`; above 50 entries return only the total, status counts, and at most eight representative paths. Avoid a full `git diff` unless code review requires it. Run high-output status, context, diff, and stat separately; never join them with `;` into one tool result.
+Always execute `git status --short`; above 50 entries return only the total, status counts, and at most eight representative paths unless the full list is explicitly requested. Avoid a full `git diff` unless code review or exact patch evidence requires it. Run high-output status, context, diff, and stat separately; never join them with `;` into one tool result.
+
+Recover routine task state from exact task or group artifacts; do not read other Codex conversations. Do not read or write Records during session startup, task recovery, or ordinary discussion without explicit Record intent.
 
 ## Classify before writing
 
-- A: Grill and remain in `plan` when goal, success criteria, scope, product choice, root cause, or a high-risk change is unclear; keep only blocking questions in `open_questions`.
-- B: Use a Light task only when change, scope, success criteria, and low-risk implementation are concrete, `open_questions` is empty, and no extra scope is inferred.
-- C: Use a Standard task when implementation needs a design choice, migration, authentication, public API change, destructive data handling, or disputed/multiple gates.
+- A: Grill and remain in `plan` when the goal, success criteria, scope, product choice, root cause, or a high-risk change is too unclear to write a complete plan; keep only blocking questions in `open_questions`.
+- B: Use a Light task only when the requested change and success criteria are concrete, scope is fixed, implementation is low risk, `open_questions` is empty, and no extra scope is inferred.
+- C: Use a Standard task when a complete plan can be written but implementation needs plan approval or includes multiple independent acceptance surfaces, a product choice, a public contract change, migration, authentication, destructive data handling, or another high-risk surface.
 
-Require an explicit user write request before creating or continuing a task. Stop and return to `plan` when implementation reveals missing information or scope expansion. Never infer group-wide, batch, Git, archive, cancellation, claim, or takeover authority from task-level authorization.
+Multiple mechanical lint, typecheck, build, documentation-index, or similar gates do not trigger C when they prove the same bounded acceptance surface. Gate count alone never decides the profile.
+
+Whenever implementation reveals missing information, a changed root cause, a new product choice, or scope expansion, stop implementation and update the plan before continuing. Re-run A/B/C: a Light task follows the branches below, while a Standard task must show the updated complete plan and wait for explicit reapproval.
+
+If a Light task gains a plan change, product choice, or scope expansion, stop and re-run A/B/C before continuing:
+
+- A: remain in `plan`, record the blockers, and grill without implementing;
+- B: keep the Light profile only after updating the plan and obtaining a new request or precise delta authorization;
+- C: upgrade to Standard, show the updated complete plan, and wait for explicit approval.
+
+Core applies requested structure and revision changes; it never classifies or upgrades a task from gate count, command names, or command semantics.
+
+Require an explicit user write request before creating or continuing a task. Never infer group-wide, batch, Git, archive, cancellation, claim, or takeover authority from task-level authorization.
 
 ## Three executable paths
 
@@ -79,11 +93,11 @@ Git delivery remains separate from Latch and requires separate authorization.
 ## Non-negotiable contracts
 
 - Treat a missing canonical actor or writer mismatch as fail closed; remain read-only until claim/takeover. Grok and Codex are equal hosts; never invent or export `LATCH_ACTOR`.
-- Pass `--expect-revision` to every mutation. Reuse each successful JSON `revision`; do not reread context for it. Refresh after a revision conflict, new user input boundary, judgment-requiring warning, or task meaning change; never auto-retry conflicts.
+- Pass `--expect-revision` to every task mutation. In one uninterrupted mutation flow, reuse the successful JSON response's `revision`; do not reread context only to obtain it. Refresh status after a revision conflict, new user input boundary, judgment-requiring warning, or task meaning change; never auto-retry conflicts.
 - Treat takeover as ownership transfer only, never as implementation approval.
 - Submit only after all current named gates pass, or use the documented `--no-verify` exception for an approved plan without gates. Submit enters `review`; never auto-complete it.
-- Reject `echo`, `printf`, `true`, and instruction-only gates. Put manual steps in diagnostics or `submission.unverified`; later record explicit acceptance facts.
-- Prefer `verify-all`; use `artifact add|remove` for artifacts and `submit --verbose-warnings` for full untracked paths.
+- Do not use `echo`, `printf`, `true`, or any instruction-only command as a gate. Put manual steps in diagnostics or `submission.unverified`; record explicit acceptance facts after completion.
+- Prefer `verify-all` for pending gates; use `artifact add|remove` for artifact-only changes and `submit --verbose-warnings` for the full untracked path list.
 - Run `done` only after explicit user authorization to complete/archive the named task. Run `abandon` only after explicit user authorization to cancel it.
 - Preserve task facts and the semantics of gates, submission, and `knowledge_impact`; never fabricate or reinterpret them to advance phase.
 - Never perform Git add, commit, push, branch, reset, checkout, or clean without separate explicit authorization.

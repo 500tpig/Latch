@@ -6,7 +6,9 @@
 
 - A：目标、成功标准、范围、根因或高风险改法不明确时，停在 grill，不实施；
 - B：改法和范围明确、低风险、`open_questions` 为空且不扩 scope 时，创建或续接 light task，`source: user_request` 作为授权；
-- C：需要方案确认、多 gate 或存在高风险面时，创建或续接 standard task，展示 plan 后等待明确 approve。
+- C：需要方案确认、存在多个独立验收面、产品选择、公共契约或高风险面时，创建或续接 standard task，展示 plan 后等待明确 approve。
+
+多个 lint、typecheck、build、文档索引等机械检查本身不触发 C；按验收面是否独立及产品和风险语义判断，不按 gate 数量判断。Light task 出现 plan change、产品选择或 scope 扩大时，必须重新执行 A/B/C：重新满足 B 才能保持 Light，命中 A 时停在 grill，命中 C 时升级 Standard 并等待明确 approve。Core 不根据 gate 数量或命令语义自动分类。
 
 纯问答、只读探索、无写入意图或明确要求「不用 Latch」时不建 task。显式 Latch 请求直接进入同一判定表，不是唯一入口。
 

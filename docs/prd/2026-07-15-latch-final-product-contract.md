@@ -8,7 +8,7 @@ Document-Status: current product contract
 
 Date: 2026-07-15
 
-Revision: 6
+Revision: 7
 
 Released: 2026-07-16 — C1–C8 已交付；本文件是唯一 current 产品契约入口。
 
@@ -17,6 +17,8 @@ Updated: 2026-07-22 — 增加 Light inline 输入、共享 worktree warning 分
 Updated: 2026-07-23 — 增加批量 gate 验证、独立 artifact 命令、submit 缺失引用修复命令和 untracked warning 摘要。
 
 Updated: 2026-07-23 — 增加 project-local Record V1，保持 Record 与 task 生命周期及默认上下文隔离。
+
+Updated: 2026-07-28 — 修订 A/B/C 的多 gate 判定，按独立验收面与风险语义选择 profile。
 
 ## 0. 地位
 
@@ -61,7 +63,7 @@ task（唯一可写生命周期）、events、primary_writer、group_id、模块
 
 1. 同一时刻仅 `primary_writer` 可写该 task；允许跨 session 顺序 takeover，不允许同时共写。
 2. group 无写门禁和完成门禁。
-3. Core 处理结构与 revision，Skill 处理语义；Core 不做 NLP 归档。
+3. Core 处理结构与 revision，Skill 处理语义；Core 不根据 gate 数量或命令语义选择或升级 profile，也不做 NLP 归档。
 4. `task.json` 是提交点，不实现通用事务。
 5. `knowledge_impact` 在 submit 写入；知识文档与 fingerprint 基线独立维护。
 6. stale 或失败的 adapter 不得静默当作 current。
@@ -84,7 +86,7 @@ task（唯一可写生命周期）、events、primary_writer、group_id、模块
 
 ## 6. 触发与授权
 
-触发章的判定表是权威定义：A 命中不明确或高风险信号时停在 grill；B 在范围明确、低风险且无未决问题时创建或续接 light task，并以请求作为授权；C 需要方案确认、多 gate 或存在高风险面时创建或续接 standard task，展示 plan 后等待明确 approve。
+触发章的判定表是权威定义：A 命中不明确或高风险改法不清时停在 grill；B 在范围明确、低风险且无未决问题时创建或续接 light task，并以请求作为授权，多个 lint、typecheck、build、文档索引等机械检查本身不触发 Standard；C 在需要方案确认、存在多个独立验收面、产品选择、公共契约或高风险面时创建或续接 standard task，展示 plan 后等待明确 approve。Light task 出现 plan change、产品选择或 scope 扩大时，必须重新执行 A/B/C 判断，并按结果保持 Light、停在 grill 或升级 Standard。
 
 ## 7. 发布完成标准
 
