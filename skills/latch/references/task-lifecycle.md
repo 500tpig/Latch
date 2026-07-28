@@ -30,6 +30,16 @@ Read this reference for plan structure, checkpoint and approve details, feedback
 ## Finish
 
 - Inspect open tasks and mutate only the named task.
+- Before `done`, read the bounded brief and compare the current
+  `submission.unverified` with the user's latest explicit review acceptance.
+- An archive request alone is not acceptance of remaining risk. If an unverified
+  item remains unresolved, `followup` must name its owner and next action or record
+  the user's explicit risk acceptance.
+- If manual verification completed after submit, `followup` must record the new
+  acceptance fact and identify which prior unverified item it resolves.
+- Use "no follow-up" only when no unresolved unverified item remains, and state the
+  concrete reason. If the required acceptance fact, owner, or next action is
+  missing, remain in review and ask for it.
 - Run `done` only after explicit completion/archive authorization. Write a concrete next task/action in `followup`, or state that there is no follow-up and why.
 - Run `abandon` only after explicit cancellation authorization.
 - Never treat task-level authorization as Git authorization.

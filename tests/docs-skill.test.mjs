@@ -307,6 +307,25 @@ test('cross-session planning recovery stays artifact-first and bounded', () => {
   assert.match(groups, /do not generate an automatic group-level next task/)
 })
 
+test('review closeout reconciles unverified evidence before archive', () => {
+  const skill = text('skills/latch/SKILL.md')
+  const lifecycle = text(lifecycleReference)
+  const handBook = text('docs/HANDBOOK.md')
+
+  for (const content of [skill, lifecycle, handBook])
+    assert.match(content, /submission\.unverified/)
+
+  assert.match(skill, /archive intent alone\s+is not risk acceptance/i)
+  assert.match(lifecycle, /latest explicit review acceptance/)
+  assert.match(lifecycle, /owner and next action/)
+  assert.match(lifecycle, /manual verification completed after submit/)
+  assert.match(lifecycle, /remain in review and ask for it/)
+  assert.match(handBook, /归档请求本身不表示接受剩余风险/)
+  assert.match(handBook, /责任方和下一步/)
+  assert.match(handBook, /解决的[\s\S]*`submission\.unverified` 项/)
+  assert.match(handBook, /只有不存在未解决的未验证项时，才能写「无后续」/)
+})
+
 test('cross-session handoff requires takeover separate from implementation approval', () => {
   const handBook = text('docs/HANDBOOK.md')
   const actor = text('docs/prd/2026-07-15-latch-actor-writer-affinity-draft.md')

@@ -232,11 +232,31 @@ latch patch-submission-knowledge-impact <task-id> \
 ### 归档或放弃
 
 ```bash
-latch done <task-id> --expect-revision 11 --followup "后续观察"
+latch done <task-id> --expect-revision 11 \
+  --followup "后续由前端负责人在发布前完成真实数据验收"
+
+latch done <task-id> --expect-revision 11 \
+  --followup "无后续：用户已在 review 中完成浏览器验收，已解决 submission.unverified 中的页面验收项"
+
+latch done <task-id> --expect-revision 11 \
+  --followup "无后续：用户明确接受未覆盖真实数据环境的剩余风险"
+
 latch abandon <task-id> --expect-revision 5 --reason "用户取消"
 ```
 
 `done` 只接受 review 中当前 work revision 的有效 submission。`abandon` 必须提供原因。AI 只有获得明确用户授权后才能执行这两个命令。
+
+执行 `done` 前，先读取 bounded brief，并将当前 `submission.unverified` 与 review
+期间新增的明确验收事实进行比较。归档请求本身不表示接受剩余风险：
+
+- 未验证项仍待处理时，`followup` 写明责任方和下一步；
+- 用户明确接受剩余风险时，`followup` 记录该事实；
+- 用户在 submit 后完成手工验收时，`followup` 记录新的验收事实，以及它解决的
+  `submission.unverified` 项。
+
+只有不存在未解决的未验证项时，才能写「无后续」，并说明具体原因。缺少验收事实、
+责任方或下一步时，task 保持在 review，等待补充信息。该规则不修改 submission；
+是否需要新的 review event 或 evidence patch 由后续独立设计决定。
 
 两条命令的 JSON 响应都保留既有 `outcome` 与最后开放 phase，并增加
 `archived: true` 以明确目录已归档；不把 `done` 或 `abandoned` 加入 phase 枚举。

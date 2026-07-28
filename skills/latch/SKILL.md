@@ -62,15 +62,19 @@ latch takeover <task-id> --expect-revision <n> --reason "User authorized takeove
 
 Takeover only transfers writer ownership; it does not reapprove a plan or authorize `done`. Use its returned `revision` for the next mutation.
 
-4. Run `done` only when the user explicitly authorizes completion/archive of the named task:
+4. Before `done`, read the bounded `--brief` view and reconcile
+   `submission.unverified` under the lifecycle Finish rules; archive intent alone
+   is not risk acceptance.
+
+5. Run `done` only when the user explicitly authorizes completion/archive of the named task:
 
 ```bash
 latch done <task-id> --expect-revision <n> --followup "Concrete next action, or no follow-up and why" --json
 ```
 
-Do not load `--brief --history timeline` on this path unless gates are missing, stale, pending, or failed; writer data is unclear; status cannot establish a required fact; or the user requests historical evidence. Do not rerun an already passed, non-stale full build solely to close review.
+Do not load `--brief --history timeline` unless gates are missing, stale, pending, or failed; writer data is unclear; the brief lacks a required fact; or the user requests history. Do not rerun an already passed, non-stale full build solely to close review.
 
-Git delivery remains separate: do not derive permission for add, commit, push, branch, reset, checkout, or clean from takeover, task approval, submit, review acceptance, or `done`. Latch never performs Git operations.
+Git delivery remains separate from Latch and requires separate authorization.
 
 ## Non-negotiable contracts
 
