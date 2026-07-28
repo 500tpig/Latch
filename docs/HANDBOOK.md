@@ -173,6 +173,8 @@ latch verify-all <task-id> --expect-revision 10
 
 普通 gate 执行 plan 保存的 argv，不接受调用方替换命令。diagnostic 可以使用 plan 命令或 `--` 后的临时 argv，不参与 submit 门禁。验证进程不经过 shell。
 
+`echo`、`printf`、`true` 和只输出操作说明的命令不得配置为 gate。这类命令返回 0 只能证明命令成功退出，不能证明手工步骤已经执行。需要在 plan 中保留手工步骤时，将其标为 diagnostic；diagnostic 的执行结果不构成手工验收事实。手工验收尚未完成时，在 submit 的 `submission.unverified` 中写明待验收内容。
+
 `verify-all` 按 plan 顺序执行当前 work revision 中尚未通过的 named gate，不执行 diagnostic。每个 gate 继续独立写入 `verification_run` 并增加 revision；首个失败 gate 写入结果后停止。全部 gate 已通过时返回空执行摘要，不修改 task。
 
 ### 提交 review
@@ -251,8 +253,8 @@ latch abandon <task-id> --expect-revision 5 --reason "用户取消"
 
 - 未验证项仍待处理时，`followup` 写明责任方和下一步；
 - 用户明确接受剩余风险时，`followup` 记录该事实；
-- 用户在 submit 后完成手工验收时，`followup` 记录新的验收事实，以及它解决的
-  `submission.unverified` 项。
+- 用户在 submit 后完成手工验收时，`followup` 记录具体操作与观察结果，并指出该
+  验收事实解决的 `submission.unverified` 项。
 
 只有不存在未解决的未验证项时，才能写「无后续」，并说明具体原因。缺少验收事实、
 责任方或下一步时，task 保持在 review，等待补充信息。该规则不修改 submission；

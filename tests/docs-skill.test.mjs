@@ -183,6 +183,27 @@ test('task lifecycle avoids redundant gate plans without allowing execution skip
   assert.match(lifecycle, /Run every named gate from the approved plan/)
 })
 
+test('descriptive commands cannot stand in for automatic or manual gate evidence', () => {
+  const skill = text('skills/latch/SKILL.md')
+  const lifecycle = text(lifecycleReference)
+  const handBook = text('docs/HANDBOOK.md')
+
+  for (const content of [skill, lifecycle, handBook]) {
+    assert.match(content, /`echo`/)
+    assert.match(content, /`printf`/)
+    assert.match(content, /`true`/)
+    assert.match(content, /diagnostic/)
+    assert.match(content, /submission\.unverified/)
+  }
+
+  assert.match(skill, /instruction-only gates/)
+  assert.match(lifecycle, /zero exit code[\s\S]*does not prove that a manual step occurred/)
+  assert.match(lifecycle, /diagnostic success never verifies the manual action/)
+  assert.match(handBook, /只输出操作说明的命令不得配置为 gate/)
+  assert.match(handBook, /返回 0[\s\S]*不能证明手工步骤已经执行/)
+  assert.match(handBook, /具体操作与观察结果/)
+})
+
 test('current docs describe compact verification, artifact, and warning commands', () => {
   const skill = text('skills/latch/SKILL.md')
   const handBook = text('docs/HANDBOOK.md')

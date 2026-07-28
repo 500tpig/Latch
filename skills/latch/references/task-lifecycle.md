@@ -20,6 +20,8 @@ Read this reference for plan structure, checkpoint and approve details, feedback
 ## Verify and submit
 
 - When authoring `verification_plan`, avoid redundant named gates: every gate must add distinct proof. If a final comprehensive gate already runs typecheck, build, or the full test suite, keep subsumed steps as development diagnostics unless they verify a distinct acceptance requirement. Once approved, never skip a named gate because its proof overlaps another gate.
+- Never use `echo`, `printf`, `true`, or a command whose only effect is to print instructions as a gate; a zero exit code from such a command does not prove that a manual step occurred.
+- Put a manual step in a non-gating diagnostic when the plan needs to preserve it as an instruction, or in `submission.unverified` while acceptance remains outstanding; diagnostic success never verifies the manual action.
 - Run every named gate from the approved plan with `latch verify <task-id> --expect-revision <n> --name <gate-name> --json`.
 - Use diagnostic argv only after `--`; diagnostic results never satisfy submit gates.
 - Submit only after all current named gates pass. For an approved plan without gates, use `--no-verify` with a concrete reason.
@@ -35,8 +37,9 @@ Read this reference for plan structure, checkpoint and approve details, feedback
 - An archive request alone is not acceptance of remaining risk. If an unverified
   item remains unresolved, `followup` must name its owner and next action or record
   the user's explicit risk acceptance.
-- If manual verification completed after submit, `followup` must record the new
-  acceptance fact and identify which prior unverified item it resolves.
+- If manual verification completed after submit, `followup` must record the
+  concrete action and observed result as a new acceptance fact, then identify
+  which prior unverified item it resolves.
 - Use "no follow-up" only when no unresolved unverified item remains, and state the
   concrete reason. If the required acceptance fact, owner, or next action is
   missing, remain in review and ask for it.
