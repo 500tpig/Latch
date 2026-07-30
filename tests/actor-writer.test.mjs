@@ -56,6 +56,7 @@ function runWithEnvironment(cwd, args, environment) {
 function plan(overrides = {}) {
   return {
     goal: '验证 actor writer affinity',
+    workspace_scope: { paths: ['src/'] },
     scope: ['temporary fixture'],
     acceptance: ['actor tests pass'],
     approach: ['使用 schema 3 fixture'],

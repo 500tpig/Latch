@@ -16,6 +16,7 @@ const temporaryDirectories = []
 
 function temporaryDirectory() {
   const directory = mkdtempSync(join(tmpdir(), 'latch-v2-review-'))
+  spawnSync('git', ['init'], { cwd: directory, encoding: 'utf8' })
   temporaryDirectories.push(directory)
   return directory
 }
@@ -31,6 +32,7 @@ function run(cwd, args, actor = 'codex:session:review') {
 function plan(overrides = {}) {
   return {
     goal: '完成 review 流程',
+    workspace_scope: { paths: ['src/cli.ts'] },
     scope: ['src/cli.ts'],
     acceptance: ['tests pass'],
     approach: ['执行 plan argv'],
@@ -58,8 +60,9 @@ function plan(overrides = {}) {
 
 function writePlan(cwd, value = plan()) {
   const name = `plan-${Math.random()}.json`
-  writeFileSync(join(cwd, name), `${JSON.stringify(value, null, 2)}\n`)
-  return name
+  const path = join('.latch', name)
+  writeFileSync(join(cwd, path), `${JSON.stringify(value, null, 2)}\n`)
+  return path
 }
 
 function init(cwd) {
@@ -111,14 +114,15 @@ function verify(cwd, id, name, extra = []) {
 
 function submit(cwd, id, extra = []) {
   const impactFile = `impact-${Math.random()}.json`
-  writeFileSync(join(cwd, impactFile), `${JSON.stringify({
+  const impactPath = join('.latch', impactFile)
+  writeFileSync(join(cwd, impactPath), `${JSON.stringify({
     kind: 'none',
     reason: 'Review lifecycle fixture does not change module contracts.',
   })}\n`)
   return run(cwd, [
     'submit', id, '--expect-revision', revision(cwd, id),
     '--changes', '实现完成', '--unverified', '未做浏览器验收',
-    '--knowledge-impact-file', impactFile, ...extra, '--json',
+    '--knowledge-impact-file', impactPath, ...extra, '--json',
   ])
 }
 
@@ -179,7 +183,12 @@ test('verify-all skips current passes, stops on failure, and preserves per-gate 
   ])
   assert.notEqual(failed.status, 0)
   assert.deepEqual(JSON.parse(failed.stdout).executed, [
-    { name: 'second', status: 'fail', revision: 4 },
+    {
+      name: 'second',
+      status: 'fail',
+      revision: 4,
+      failure_reason: 'command_failed',
+    },
   ])
   assert.equal(JSON.parse(failed.stdout).failed, 'second')
   assert.equal(JSON.parse(failed.stdout).revision, 4)
@@ -404,7 +413,7 @@ test('submit aggregates untracked worktree warnings with eight sorted samples by
     (warning) => warning.startsWith('Worktree delivery:'),
   )
   assert.equal(warnings.length, 1)
-  assert.match(warnings[0], /12 untracked files/)
+  assert.match(warnings[0], /10 untracked files/)
   assert.match(warnings[0], /samples: file-00\.txt, file-01\.txt, file-02\.txt, file-03\.txt, file-04\.txt, file-05\.txt, file-06\.txt, file-07\.txt/)
   assert.doesNotMatch(warnings[0], /file-08\.txt/)
 })

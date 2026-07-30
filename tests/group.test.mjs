@@ -44,6 +44,7 @@ function run(cwd, args) {
 function plan(overrides = {}) {
   return {
     goal: '验证 Group 最小集',
+    workspace_scope: { paths: ['src/'] },
     scope: ['src/core/task-view.ts'],
     acceptance: ['Group tests pass'],
     approach: ['使用 schema 3 临时 fixture'],

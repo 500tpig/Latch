@@ -4,6 +4,7 @@ export type TaskOutcome = 'done' | 'abandoned'
 
 export type TaskPlan = {
   goal: string
+  workspace_scope?: WorkspaceScope
   scope: string[]
   acceptance: string[]
   approach: string[]
@@ -20,6 +21,125 @@ export type TaskPlan = {
   open_questions: string[]
 }
 
+export type WorkspaceScope = {
+  paths: string[]
+}
+
+export type WorkspaceEvidenceCoverage = {
+  git_visible: true
+  explicit_ignored_files: true
+  ignored_tree: false
+}
+
+export type WorkspaceFileType =
+  | 'file'
+  | 'directory'
+  | 'symlink'
+  | 'submodule'
+  | 'missing'
+
+export type WorkspaceEntry = {
+  path: string
+  scope: 'in_scope' | 'out_of_scope'
+  source: 'git_status' | 'workspace_scope' | 'artifact'
+  index_state: string
+  worktree_state: string
+  file_type: WorkspaceFileType
+  exists: boolean
+  mode?: string
+  content_sha256?: string
+  index_fingerprint?: string
+  submodule_state?: string
+  original_path?: string
+}
+
+export type WorkspaceSnapshotCounts = {
+  tracked_dirty: number
+  untracked: number
+  explicit_ignored: number
+  in_scope: number
+  out_of_scope: number
+}
+
+export type WorkspaceSnapshot = {
+  provider: 'git-v1'
+  captured_at: string
+  complete: boolean
+  coverage: WorkspaceEvidenceCoverage
+  counts: WorkspaceSnapshotCounts
+  entries: WorkspaceEntry[]
+  error?: string
+}
+
+export type WorkspaceEvidenceRef = {
+  path: string
+  sha256: string
+  entry_count: number
+}
+
+export type WorkspacePathChange = {
+  path: string
+  old_path?: string
+  scope: 'in_scope' | 'out_of_scope'
+  change:
+    | 'created'
+    | 'removed'
+    | 'restored_clean'
+    | 'state_changed'
+    | 'content_changed'
+  before?: WorkspaceEntry
+  after?: WorkspaceEntry
+}
+
+export type WorkspaceDelta = {
+  status:
+    | 'unchanged'
+    | 'in_scope_mutation'
+    | 'out_of_scope_mutation'
+    | 'mixed_mutation'
+    | 'evidence_error'
+  changed_count: number
+  in_scope_count: number
+  out_of_scope_count: number
+  samples: WorkspacePathChange[]
+  changes_ref?: WorkspaceEvidenceRef
+  changes: WorkspacePathChange[]
+  error?: string
+}
+
+export type WorkspaceViolation = {
+  id: string
+  path: string
+  source_gate: string
+  created_generation: number
+  status: 'unresolved' | 'restored' | 'reclassified'
+  before?: WorkspaceEntry
+  after?: WorkspaceEntry
+  resolved_at?: string
+}
+
+export type WorkspaceProofState = {
+  generation: number
+  baseline_ref: WorkspaceEvidenceRef
+  baseline_counts: WorkspaceSnapshotCounts
+  unresolved_violations: WorkspaceViolation[]
+}
+
+export type CommandOutcome = {
+  status: 'pass' | 'fail' | 'error'
+  exit_code: number
+  error?: string
+}
+
+export type VerificationProofBinding = {
+  work_revision: number
+  started_generation: number
+  ended_generation: number
+  before_ref: WorkspaceEvidenceRef
+  after_ref: WorkspaceEvidenceRef
+  delta_ref: WorkspaceEvidenceRef
+}
+
 export type BlockedState = {
   reason: string
   waiting_for: string
@@ -34,6 +154,20 @@ export type VerifyResult = {
   exit_code: number
   work_revision: number
   created_at: string
+  failure_reason?:
+    | 'command_failed'
+    | 'workspace_mutated'
+    | 'scope_violation'
+    | 'evidence_error'
+    | 'unresolved_scope_violation'
+  command_outcome?: CommandOutcome
+  workspace_effect?: Omit<WorkspaceDelta, 'changes'>
+  proof?: VerificationProofBinding
+  stale_reason?:
+    | 'work_revision_changed'
+    | 'proof_generation_changed'
+    | 'workspace_baseline_mismatch'
+    | 'unresolved_scope_violation'
 }
 
 export type TaskArtifact = {
@@ -142,6 +276,7 @@ export type TaskV2 = {
     gate: Record<string, VerifyResult>
     diagnostic: Record<string, VerifyResult>
   }
+  workspace_proof?: WorkspaceProofState
   submission?: TaskSubmission
   closure?: {
     changes: string
@@ -186,6 +321,9 @@ export const LIGHT_EVENT_TYPES = [
   'retrospective_recorded',
   'profile_changed',
   'submission_knowledge_impact_patched',
+  'proof_generation_started',
+  'proof_invalidated',
+  'workspace_violation_resolved',
 ] as const
 
 export const GROUP_EVENT_TYPES = ['group_changed'] as const

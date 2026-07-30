@@ -1,10 +1,12 @@
 import type { TaskPlan } from './types.js'
+import { posix } from 'node:path'
 
 export const LIGHT_PLAN_TEMPLATE_COMMAND =
   'latch checkpoint --print-plan-template light'
 
 const minimumLightPlanTemplate: TaskPlan = {
   goal: 'Describe the intended outcome.',
+  workspace_scope: { paths: [] },
   scope: [],
   acceptance: [],
   approach: [],
@@ -45,6 +47,7 @@ const requiredPlanFields = [
 
 const planSchemaSummary = [
   'plan.goal: non-empty string',
+  'plan.workspace_scope: { paths: repo-relative POSIX path[] }',
   ...stringArrayPlanFields.map((field) => `plan.${field}: string[]`),
   'plan.verification_plan: Array<{ name: non-empty string; command: non-empty string[]; kind: "gate" | "diagnostic" }>',
 ].join('; ')
@@ -98,6 +101,54 @@ function requireStringArray(
     invalidField(field, 'string[]', value, minimumLegalValue, path)
 }
 
+function normalizeWorkspaceScopePath(value: string, path: string) {
+  if (value === '' || value === '.' || value === '..')
+    throw new Error(`Invalid plan.workspace_scope.paths in ${path}: empty or root path.`)
+  if (
+    value.startsWith('/') ||
+    /^[A-Za-z]:[\\/]/.test(value) ||
+    value.includes('\\') ||
+    value.startsWith(':') ||
+    /[*?[\]]/.test(value) ||
+    value.includes('\0')
+  )
+    throw new Error(`Invalid plan.workspace_scope.paths in ${path}: ${value}.`)
+  const directory = value.endsWith('/')
+  const normalized = posix.normalize(value)
+  if (
+    normalized === '.' ||
+    normalized === '..' ||
+    normalized.startsWith('../') ||
+    normalized.split('/').includes('..')
+  )
+    throw new Error(`Invalid plan.workspace_scope.paths in ${path}: ${value}.`)
+  return directory ? `${normalized.replace(/\/+$/, '')}/` : normalized
+}
+
+function validateWorkspaceScope(plan: Record<string, unknown>, path: string) {
+  if (plan.workspace_scope === undefined) return
+  if (!isRecord(plan.workspace_scope))
+    invalidField(
+      'plan.workspace_scope',
+      '{ paths: string[] }',
+      plan.workspace_scope,
+      { paths: [] },
+      path,
+    )
+  requireStringArray(
+    plan.workspace_scope.paths,
+    'plan.workspace_scope.paths',
+    path,
+  )
+  plan.workspace_scope.paths = [
+    ...new Set(
+      plan.workspace_scope.paths.map((entry) =>
+        normalizeWorkspaceScopePath(entry, path),
+      ),
+    ),
+  ]
+}
+
 export function lightPlanTemplate(): TaskPlan {
   return structuredClone(minimumLightPlanTemplate)
 }
@@ -122,6 +173,7 @@ export function assertTaskPlan(
     )
 
   requireString(plan.goal, 'plan.goal', path, minimumLightPlanTemplate.goal)
+  validateWorkspaceScope(plan, path)
   for (const field of stringArrayPlanFields)
     requireStringArray(plan[field], `plan.${field}`, path)
 
@@ -180,4 +232,16 @@ export function assertTaskPlan(
         path,
       )
   }
+}
+
+export function assertWritableTaskPlan(
+  plan: unknown,
+  path: string,
+): asserts plan is TaskPlan {
+  assertTaskPlan(plan, path)
+  if (!plan.workspace_scope)
+    throw new Error(
+      `Missing required plan field in ${path}: plan.workspace_scope. ` +
+        `Run \`${LIGHT_PLAN_TEMPLATE_COMMAND}\` for a complete template.`,
+    )
 }

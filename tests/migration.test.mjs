@@ -47,6 +47,7 @@ function run(cwd, args, selectedActor = actor) {
 function plan() {
   return {
     goal: '验证 schema 迁移',
+    workspace_scope: { paths: ['src/'] },
     scope: ['src/core/migration.ts'],
     acceptance: ['migration tests pass'],
     approach: ['使用单 task fixture'],
@@ -252,9 +253,60 @@ test('downgrade-v2 backs up and projects open and archived tasks', () => {
     actor,
   ).task
   const current = readTask(cwd, task.id)
+  const evidenceRef = (name, entryCount) => ({
+    path: `evidence/${name}.json`,
+    sha256: 'a'.repeat(64),
+    entry_count: entryCount,
+  })
   current.phase = 'review'
-  current.revision = 5
+  current.revision = 7
   current.provenance = 'mixed'
+  current.workspace_proof = {
+    generation: 2,
+    baseline_ref: evidenceRef('baseline', 1),
+    baseline_counts: {
+      tracked_dirty: 0,
+      untracked: 1,
+      explicit_ignored: 0,
+      in_scope: 0,
+      out_of_scope: 1,
+    },
+    unresolved_violations: [{
+      id: 'violation-1',
+      path: 'outside.txt',
+      source_gate: 'project-check',
+      created_generation: 2,
+      status: 'unresolved',
+    }],
+  }
+  current.verification.gate['project-check'] = {
+    name: 'project-check',
+    kind: 'gate',
+    command: ['pnpm', 'check'],
+    status: 'fail',
+    exit_code: 0,
+    work_revision: 1,
+    created_at: '2026-07-16T00:00:06.000Z',
+    failure_reason: 'scope_violation',
+    command_outcome: { status: 'pass', exit_code: 0 },
+    workspace_effect: {
+      status: 'out_of_scope_mutation',
+      changed_count: 1,
+      in_scope_count: 0,
+      out_of_scope_count: 1,
+      samples: [],
+      changes_ref: evidenceRef('delta', 1),
+    },
+    proof: {
+      work_revision: 1,
+      started_generation: 1,
+      ended_generation: 2,
+      before_ref: evidenceRef('before', 0),
+      after_ref: evidenceRef('after', 1),
+      delta_ref: evidenceRef('delta', 1),
+    },
+    stale_reason: 'unresolved_scope_violation',
+  }
   current.submission = {
     plan_revision: 1,
     work_revision: 1,
@@ -268,7 +320,7 @@ test('downgrade-v2 backs up and projects open and archived tasks', () => {
     submitted_at: new Date().toISOString(),
   }
   writeTask(cwd, current)
-  const dates = [1, 2, 3, 4, 5].map((second) =>
+  const dates = [1, 2, 3, 4, 5, 6, 7].map((second) =>
     `2026-07-16T00:00:0${second}.000Z`,
   )
   const originalEvents = [
@@ -297,6 +349,20 @@ test('downgrade-v2 backs up and projects open and archived tasks', () => {
       type: 'group_changed', actor, task_id: task.id,
       revision: 5, created_at: dates[4], from: 'Wave:Old', to: 'Wave:R2',
     },
+    {
+      type: 'proof_generation_started', actor, task_id: task.id,
+      revision: 6, created_at: dates[5], generation: 2,
+      reason: 'workspace_mutated',
+    },
+    {
+      type: 'verification_run', actor, task_id: task.id,
+      revision: 7, created_at: dates[6], name: 'project-check',
+      kind: 'gate', status: 'fail', exit_code: 0, work_revision: 1,
+      failure_reason: 'scope_violation', started_generation: 1,
+      ended_generation: 2, workspace_effect: 'out_of_scope_mutation',
+      changed_count: 1, violation_ids: ['violation-1'],
+      before_ref: evidenceRef('before', 0),
+    },
   ]
   writeEvents(cwd, task.id, originalEvents)
   const taskBefore = readFileSync(taskPath(cwd, task.id), 'utf8')
@@ -310,23 +376,48 @@ test('downgrade-v2 backs up and projects open and archived tasks', () => {
   assert.match(output.warnings[0], /future_event/)
   const downgraded = readTask(cwd, task.id)
   assert.equal(downgraded.schema_version, 2)
-  assert.equal(downgraded.revision, 5)
+  assert.equal(downgraded.revision, 7)
   for (const field of ['primary_writer', 'profile', 'work_basis', 'group_id', 'provenance'])
     assert.equal(field in downgraded, false)
+  assert.equal('workspace_scope' in downgraded.plan, false)
+  assert.equal('workspace_proof' in downgraded, false)
+  assert.deepEqual(downgraded.verification.gate['project-check'], {
+    name: 'project-check',
+    kind: 'gate',
+    command: ['pnpm', 'check'],
+    status: 'fail',
+    exit_code: 0,
+    work_revision: 1,
+    created_at: '2026-07-16T00:00:06.000Z',
+  })
   assert.equal(downgraded.implementation_approval.source, 'user')
   assert.equal('plan_revision' in downgraded.submission, false)
   assert.equal('knowledge_impact' in downgraded.submission, false)
-  assert.deepEqual(
-    readTaskEventsV2(taskDirectory(cwd, task.id)).map((event) => [
-      event.type,
-      event.revision,
-    ]),
-    [['task_created', 1], ['submitted', 2]],
-  )
+  const downgradedEvents = readTaskEventsV2(taskDirectory(cwd, task.id))
+  assert.deepEqual(downgradedEvents.map((event) => [
+    event.type,
+    event.revision,
+  ]), [['task_created', 1], ['submitted', 2], ['verification_run', 3]])
+  assert.deepEqual(downgradedEvents[2], {
+    type: 'verification_run',
+    actor,
+    task_id: task.id,
+    revision: 3,
+    created_at: dates[6],
+    name: 'project-check',
+    kind: 'gate',
+    status: 'fail',
+    exit_code: 0,
+    work_revision: 1,
+  })
   assert.deepEqual(readStateV2(store), stateBefore)
   const backup = join(cwd, output.backup_path)
   assert.equal(readFileSync(join(backup, 'task.json'), 'utf8'), taskBefore)
   assert.equal(readFileSync(join(backup, 'events.jsonl'), 'utf8'), eventsBefore)
+  const backupTask = JSON.parse(readFileSync(join(backup, 'task.json'), 'utf8'))
+  assert.deepEqual(backupTask.plan.workspace_scope, { paths: ['src/'] })
+  assert.equal(backupTask.workspace_proof.generation, 2)
+  assert.equal(backupTask.verification.gate['project-check'].proof.ended_generation, 2)
 
   const archived = createTaskV3(
     store,

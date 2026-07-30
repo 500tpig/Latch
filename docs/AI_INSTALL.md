@@ -2,7 +2,11 @@
 
 Latch 面向个人 macOS 开发环境。v1 备份在观察期结束前继续保留。
 
-schema 3 task 写入与 R2 回退要求 CLI 版本不低于 `0.2.0`。该版本保留 v2 JSON envelope；产品规则以 [最终产品契约](prd/2026-07-15-latch-final-product-contract.md)为准。
+当前 schema 3 workspace proof 写入要求 CLI 版本不低于 `0.3.0`。`0.2.0` 只支持引入
+writer、profile 和 work basis 时的 schema 3 基线，不得继续写入包含
+`workspace_scope`、`workspace_proof` 或 verification proof 扩展的 task。`0.3.0`
+继续使用 v2 JSON envelope；产品规则以
+[最终产品契约](prd/2026-07-15-latch-final-product-contract.md)为准。
 
 ## 检查当前安装
 
@@ -83,7 +87,9 @@ latch init
 ```
 
 初始化后的普通 `checkpoint` 创建 schema 3 standard task，并写入
-`provenance: clean`。普通 light request 使用 `--authorize-request <reason>`，可选
+`provenance: clean`。plan 必须提供 `workspace_scope.paths`；精确文件使用
+repo-relative POSIX 路径，目录前缀以 `/` 结尾。普通 light request 使用
+`--authorize-request <reason>`，可选
 `--scope-summary` 和重复的 `--scope-path`；复杂 authorization 继续使用
 `--profile light --authorization-file`。提交无知识影响时使用
 `--knowledge-impact-none <reason>`，`updated` impact 继续使用
@@ -110,6 +116,10 @@ latch downgrade-v2 \
 ```
 
 成功后检查命令返回的 `.latch/archive/v3-backup/` 路径，并使用目标 v2 CLI 执行 `context <task-id> --json`。回退失败时不得删除 `.latch` 或已创建的 backup。
+
+完整 backup 保留 `workspace_scope`、`workspace_proof`、generation、violation 和
+evidence ref。schema 2 主 `task.json`、verification 与 `events.jsonl` 的显式投影会
+剥离这些 v3-only 字段；回退不提供自动升级或兼容回退。
 
 ## 备份保留
 

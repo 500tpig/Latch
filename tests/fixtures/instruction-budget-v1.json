@@ -9,8 +9,8 @@
         "AGENTS.md",
         "skills/latch/SKILL.md"
       ],
-      "reviewed_baseline": 2731,
-      "review_reason": "建立普通写入路径压缩后的审查基线；必要的安全或产品规则增长应保留内容并显式更新本值与理由。"
+      "reviewed_baseline": 2778,
+      "review_reason": "加入机器 workspace scope、mutation proof 和禁止自动恢复的高频安全规则后，审查并接受普通写入路径的必要增长。"
     },
     {
       "name": "planning-path",
@@ -19,8 +19,8 @@
         "skills/latch/SKILL.md",
         "skills/latch/references/task-lifecycle.md"
       ],
-      "reviewed_baseline": 3844,
-      "review_reason": "建立进入 lifecycle 规划路径后的审查基线；该值用于暴露无意回膨，不构成永久 token 上限。"
+      "reviewed_baseline": 4133,
+      "review_reason": "加入 gate evidence、proof generation、verify-all 停止和 submit live preflight 规则后，审查并接受 lifecycle 路径的必要增长。"
     }
   ]
 }

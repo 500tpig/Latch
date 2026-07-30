@@ -51,6 +51,7 @@ function temporaryDirectory() {
 function plan(overrides = {}) {
   return {
     goal: '建立 v2 数据底座',
+    workspace_scope: { paths: ['src/'] },
     scope: ['src/core'],
     acceptance: ['store tests pass'],
     approach: ['使用 schema v2'],

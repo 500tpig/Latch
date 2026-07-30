@@ -43,6 +43,7 @@ function run(cwd, args, options = {}) {
 function plan(overrides = {}) {
   return {
     goal: '实现 v2 CLI',
+    workspace_scope: { paths: ['src/'] },
     scope: ['src/cli.ts'],
     acceptance: ['CLI tests pass'],
     approach: ['使用 node:util.parseArgs'],
@@ -155,6 +156,7 @@ test('checkpoint prints a side-effect-free Light plan template that round-trips'
   const template = JSON.parse(printed.stdout)
   assert.deepEqual(template, {
     goal: 'Describe the intended outcome.',
+    workspace_scope: { paths: [] },
     scope: [],
     acceptance: [],
     approach: [],
@@ -1004,6 +1006,7 @@ test('brief context summarizes planned verification states', () => {
       command: ['pnpm', 'check'],
       kind: 'gate',
       status: 'stale',
+      stale_reason: 'work_revision_changed',
     },
     {
       name: 'pending',

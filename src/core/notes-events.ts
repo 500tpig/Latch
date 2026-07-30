@@ -178,6 +178,35 @@ function validateTaskEvent(
     )
       throw new Error(`Invalid group_changed event in ${path}.`)
   }
+  if (value.type === 'proof_generation_started') {
+    if (!Number.isInteger(value.generation) || (value.generation as number) < 1)
+      throw new Error(`Invalid proof generation in ${path}.`)
+    if (typeof value.reason !== 'string' || !value.reason.trim())
+      throw new Error(`Invalid proof generation reason in ${path}.`)
+  }
+  if (value.type === 'proof_invalidated') {
+    if (
+      !Number.isInteger(value.from_generation) ||
+      (value.from_generation as number) < 1 ||
+      !Number.isInteger(value.to_generation) ||
+      (value.to_generation as number) <= (value.from_generation as number)
+    )
+      throw new Error(`Invalid proof invalidation generations in ${path}.`)
+    if (typeof value.reason !== 'string' || !value.reason.trim())
+      throw new Error(`Invalid proof invalidation reason in ${path}.`)
+  }
+  if (value.type === 'workspace_violation_resolved') {
+    if (
+      !Array.isArray(value.violation_ids) ||
+      value.violation_ids.length === 0 ||
+      value.violation_ids.some(
+        (id) => typeof id !== 'string' || id.trim() === '',
+      )
+    )
+      throw new Error(`Invalid resolved workspace violations in ${path}.`)
+    if (value.resolution !== 'restored' && value.resolution !== 'reclassified')
+      throw new Error(`Invalid workspace violation resolution in ${path}.`)
+  }
 }
 
 export function validateTaskEventV2(

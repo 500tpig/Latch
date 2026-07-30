@@ -15,6 +15,13 @@ import {
 } from './task-store.js'
 import type { TaskEvent, TaskV2 } from './types.js'
 import { now } from './utils.js'
+import {
+  captureWorkspaceSnapshot,
+  compareWorkspaceSnapshots,
+  readWorkspaceEvidence,
+} from './workspace-evidence.js'
+import type { WorkspaceSnapshot } from './types.js'
+import { join } from 'node:path'
 
 export type JsonEnvelopeV2 = {
   schema_version: 2
@@ -128,17 +135,108 @@ export function listJsonV2(
   }
 }
 
-function briefVerificationPlan(task: TaskV2) {
+function briefVerificationPlan(
+  task: TaskV2,
+  liveStatus?: 'match' | 'mismatch' | 'unknown',
+) {
   return task.plan.verification_plan.map((item) => {
     const result = task.verification[item.kind][item.name]
+    let staleReason: VerifyStaleReason | undefined
     const status = !result
       ? 'pending'
       : result.work_revision !== task.work_revision
-        ? 'stale'
-        : result.status
+        ? ((staleReason = 'work_revision_changed'), 'stale')
+        : item.kind === 'gate' &&
+            result.proof?.ended_generation !== task.workspace_proof?.generation
+          ? ((staleReason = 'proof_generation_changed'), 'stale')
+          : item.kind === 'gate' &&
+              result.status === 'pass' &&
+              liveStatus === 'mismatch'
+            ? ((staleReason = 'workspace_baseline_mismatch'), 'stale')
+            : item.kind === 'gate' &&
+                result.status === 'pass' &&
+                liveStatus === 'unknown'
+              ? ((staleReason = 'workspace_baseline_mismatch'), 'stale')
+            : item.kind === 'gate' &&
+                result.status === 'pass' &&
+                (task.workspace_proof?.unresolved_violations.length ?? 0) > 0
+              ? ((staleReason = 'unresolved_scope_violation'), 'stale')
+          : result.status
 
-    return { ...item, status }
+    return {
+      ...item,
+      status,
+      ...(staleReason ? { stale_reason: staleReason } : {}),
+    }
   })
+}
+
+type VerifyStaleReason =
+  | 'work_revision_changed'
+  | 'proof_generation_changed'
+  | 'workspace_baseline_mismatch'
+  | 'unresolved_scope_violation'
+
+function workspaceProofView(
+  store: TaskStoreV2,
+  task: TaskV2,
+  archived: boolean,
+) {
+  if (!task.workspace_proof) return undefined
+  let liveStatus: 'match' | 'mismatch' | 'unknown' = 'unknown'
+  if (!archived && task.plan.workspace_scope) {
+    const live = captureWorkspaceSnapshot(
+      store.paths.workspaceRoot,
+      task.plan.workspace_scope,
+      task.artifacts,
+    )
+    if (live.complete) {
+      try {
+        const baseline = readWorkspaceEvidence<WorkspaceSnapshot>(
+          join(store.paths.tasksDir, task.id),
+          task.workspace_proof.baseline_ref,
+        )
+        const directory = join(store.paths.tasksDir, task.id)
+        for (const gate of task.plan.verification_plan.filter(
+          (item) => item.kind === 'gate',
+        )) {
+          const result = task.verification.gate[gate.name]
+          if (
+            result?.status !== 'pass' ||
+            result.work_revision !== task.work_revision ||
+            result.proof?.ended_generation !== task.workspace_proof.generation
+          )
+            continue
+          if (!result.proof)
+            throw new Error(`Gate ${gate.name} has no workspace proof.`)
+          readWorkspaceEvidence(directory, result.proof.before_ref)
+          readWorkspaceEvidence(directory, result.proof.after_ref)
+          readWorkspaceEvidence(directory, result.proof.delta_ref)
+        }
+        liveStatus =
+          compareWorkspaceSnapshots(
+            baseline,
+            live,
+            task.plan.workspace_scope,
+          ).status === 'unchanged'
+            ? 'match'
+            : 'mismatch'
+      } catch {
+        liveStatus = 'unknown'
+      }
+    }
+  }
+  return {
+    generation: task.workspace_proof.generation,
+    baseline_dirty:
+      task.workspace_proof.baseline_counts.tracked_dirty +
+      task.workspace_proof.baseline_counts.untracked +
+      task.workspace_proof.baseline_counts.explicit_ignored,
+    baseline_out_of_scope: task.workspace_proof.baseline_counts.out_of_scope,
+    live_status: liveStatus,
+    unresolved_violations:
+      task.workspace_proof.unresolved_violations.length,
+  }
 }
 
 function authorizationState(task: TaskV2) {
@@ -191,8 +289,11 @@ function writerState(task: TaskV2, actor: string) {
   }
 }
 
-function gateSummary(task: TaskV2) {
-  const statuses = briefVerificationPlan(task)
+function gateSummary(
+  task: TaskV2,
+  liveStatus?: 'match' | 'mismatch' | 'unknown',
+) {
+  const statuses = briefVerificationPlan(task, liveStatus)
     .filter((item) => item.kind === 'gate')
     .map((item) => item.status)
   return {
@@ -338,6 +439,14 @@ function timelineEvent(task: TaskV2, event: TaskEvent): TimelineEvent {
     'from',
     'to',
     'reason',
+    'generation',
+    'from_generation',
+    'to_generation',
+    'failure_reason',
+    'workspace_effect',
+    'changed_count',
+    'resolution',
+    'violation_ids',
   ])
 
   if (event.type === 'task_created')
@@ -407,6 +516,32 @@ function timelineEvent(task: TaskV2, event: TaskEvent): TimelineEvent {
       details: technicalDetails,
     }
   }
+  if (event.type === 'proof_generation_started')
+    return {
+      ...base,
+      title: '建立工作区证明版本',
+      summary: `工作区 proof generation ${detailValue(event, 'generation') ?? '-'} 已建立。`,
+      impact: 'named gate 只有绑定这个 generation 才能参与提交。',
+      details: technicalDetails,
+    }
+  if (event.type === 'proof_invalidated')
+    return {
+      ...base,
+      title: '工作区证明失效',
+      summary: '检测到 covered workspace 与 active baseline 不一致。',
+      impact: '旧 named gate proof 已 stale，需要按新 baseline 重新验证。',
+      next_action: '重新运行全部 named gate。',
+      details: technicalDetails,
+    }
+  if (event.type === 'workspace_violation_resolved')
+    return {
+      ...base,
+      title: '解决工作区 violation',
+      summary: '已通过新 evidence 解决记录的 scope violation。',
+      impact: '旧 gate proof 不会自动恢复，仍需重新验证。',
+      next_action: '重新运行全部 named gate。',
+      details: technicalDetails,
+    }
   if (event.type === 'review_feedback') {
     const feedback = feedbackText(event)!
     return {
@@ -512,7 +647,11 @@ function timelineEvents(
   return timeline.map(({ details: _, ...event }) => event)
 }
 
-function nextAction(task: TaskV2, actor: string) {
+function nextAction(
+  task: TaskV2,
+  actor: string,
+  liveStatus?: 'match' | 'mismatch' | 'unknown',
+) {
   const writer = writerState(task, actor)
   if (writer.caller_capability === 'read_only') return 'read_only'
   if (writer.task_status === 'legacy_unclaimed') return 'claim'
@@ -523,11 +662,17 @@ function nextAction(task: TaskV2, actor: string) {
       ? 'resolve_open_questions'
       : 'approve'
   if (task.phase === 'review') return 'review_or_archive'
-  const gates = gateSummary(task)
+  const gates = gateSummary(task, liveStatus)
   return gates.total > 0 && gates.pass !== gates.total ? 'verify' : 'submit'
 }
 
-function statusTask(task: TaskV2, actor: string, archived = false) {
+function statusTask(
+  store: TaskStoreV2,
+  task: TaskV2,
+  actor: string,
+  archived = false,
+) {
+  const workspaceProof = workspaceProofView(store, task, archived)
   return {
     id: task.id,
     title: task.title,
@@ -540,13 +685,20 @@ function statusTask(task: TaskV2, actor: string, archived = false) {
     ...(task.blocked ? { blocked: task.blocked } : {}),
     authorization: authorizationState(task),
     writer: writerState(task, actor),
-    gates: gateSummary(task),
-    next_action: archived ? 'read_only' : nextAction(task, actor),
+    ...(workspaceProof ? { workspace_proof: workspaceProof } : {}),
+    gates: gateSummary(
+      task,
+      archived ? undefined : workspaceProof?.live_status,
+    ),
+    next_action: archived
+      ? 'read_only'
+      : nextAction(task, actor, workspaceProof?.live_status),
     updated_at: task.updated_at,
   }
 }
 
-function briefTask(task: TaskV2) {
+function briefTask(store: TaskStoreV2, task: TaskV2, archived = false) {
+  const workspaceProof = workspaceProofView(store, task, archived)
   return {
     id: task.id,
     title: task.title,
@@ -566,6 +718,9 @@ function briefTask(task: TaskV2) {
         }
       : {}),
     goal: task.plan.goal,
+    ...(task.plan.workspace_scope
+      ? { workspace_scope: task.plan.workspace_scope }
+      : {}),
     scope: task.plan.scope,
     acceptance: task.plan.acceptance,
     open_questions: task.plan.open_questions,
@@ -574,8 +729,12 @@ function briefTask(task: TaskV2) {
       : {}),
     ...(task.work_basis ? { work_basis: task.work_basis } : {}),
     ...(task.blocked ? { blocked: task.blocked } : {}),
-    verification_plan: briefVerificationPlan(task),
+    verification_plan: briefVerificationPlan(
+      task,
+      archived ? undefined : workspaceProof?.live_status,
+    ),
     verification: task.verification,
+    ...(workspaceProof ? { workspace_proof: workspaceProof } : {}),
     ...(task.submission ? { submission: task.submission } : {}),
     artifacts: task.artifacts,
     updated_at: task.updated_at,
@@ -656,7 +815,7 @@ export function contextJsonV2(
       ...archivedContextMetadata(context),
       view: 'delta',
       current,
-      task: statusTask(task, actor, context.archived),
+      task: statusTask(store, task, actor, context.archived),
       from_revision: options.sinceRevision,
       to_revision: task.revision,
       requires_baseline: true,
@@ -678,9 +837,9 @@ export function contextJsonV2(
     view: options.status ? 'status' : options.brief ? 'brief' : 'full',
     current,
     task: options.status
-      ? statusTask(task, actor, context.archived)
+      ? statusTask(store, task, actor, context.archived)
       : options.brief
-        ? briefTask(task)
+        ? briefTask(store, task, context.archived)
         : task,
     ...(!options.status && includeRawEvents
       ? { recent_events: options.brief ? events.slice(-5) : events }
@@ -743,6 +902,7 @@ export function contextHumanV2(
   const current = currentTaskIdV2(store, actor) === task.id
   const historyIncomplete = taskHistoryIncompleteForTaskV2(task, eventLog.events)
   const group = groupContext(store, task)
+  const workspaceProof = workspaceProofView(store, task, context.archived)
   const lines = [
     `Task: ${task.id}`,
     `Title: ${task.title}`,
@@ -765,10 +925,18 @@ export function contextHumanV2(
     `Current: ${current ? 'yes' : 'no'}`,
     `Goal: ${task.plan.goal}`,
     `Scope: ${task.plan.scope.join(' | ') || '-'}`,
+    `Workspace scope: ${task.plan.workspace_scope?.paths.join(' | ') || '-'}`,
     `Acceptance: ${task.plan.acceptance.join(' | ') || '-'}`,
     `Open questions: ${task.plan.open_questions.join(' | ') || '-'}`,
     `Artifacts: ${task.artifacts.map((item) => `${item.kind}:${item.path}`).join(' | ') || '-'}`,
     `History incomplete: ${historyIncomplete ? 'yes' : 'no'}`,
+    ...(workspaceProof
+      ? [
+          `Proof generation: ${workspaceProof.generation}`,
+          `Workspace live status: ${workspaceProof.live_status}`,
+          `Unresolved workspace violations: ${workspaceProof.unresolved_violations}`,
+        ]
+      : []),
     ...eventLog.warnings.map((warning) => `Warning: ${warning}`),
   ]
   if (task.blocked) {

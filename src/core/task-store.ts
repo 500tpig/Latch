@@ -14,7 +14,10 @@ import { randomBytes } from 'node:crypto'
 import { isAbsolute, join, normalize, relative, sep } from 'node:path'
 import { discoverWorkspaceRoot, pathsForWorkspace } from './paths.js'
 import type { LatchPathsV2 } from './paths.js'
-import { assertTaskPlan } from './plan-schema.js'
+import {
+  assertTaskPlan,
+  assertWritableTaskPlan,
+} from './plan-schema.js'
 import {
   now,
   readJsonFile,
@@ -49,6 +52,7 @@ import type {
   TaskProvenance,
   TaskSourceRecord,
   TaskV2,
+  WorkspaceEvidenceRef,
   WorkBasis,
   WorkBasisInput,
 } from './types.js'
@@ -374,6 +378,97 @@ function assertVerificationMap(
       throw new Error(`Invalid ${field}.${name}.kind in ${path}.`)
     if (result.status !== 'pass' && result.status !== 'fail')
       throw new Error(`Invalid ${field}.${name}.status in ${path}.`)
+    if (result.proof !== undefined) {
+      if (!isRecord(result.proof))
+        throw new Error(`Invalid ${field}.${name}.proof in ${path}.`)
+      requireInteger(
+        result.proof.started_generation,
+        `${field}.${name}.proof.started_generation`,
+        path,
+        1,
+      )
+      requireInteger(
+        result.proof.ended_generation,
+        `${field}.${name}.proof.ended_generation`,
+        path,
+        1,
+      )
+      for (const key of ['before_ref', 'after_ref', 'delta_ref'] as const)
+        assertEvidenceRef(
+          result.proof[key],
+          `${field}.${name}.proof.${key}`,
+          path,
+        )
+    }
+  }
+}
+
+function assertEvidenceRef(
+  value: unknown,
+  field: string,
+  taskPath: string,
+): asserts value is WorkspaceEvidenceRef {
+  if (!isRecord(value))
+    throw new Error(`Invalid ${field} in ${taskPath}.`)
+  requireString(value.path, `${field}.path`, taskPath)
+  if (
+    !value.path.startsWith('evidence/') ||
+    value.path.includes('\\') ||
+    normalize(value.path).startsWith(`..${sep}`)
+  )
+    throw new Error(`Invalid ${field}.path in ${taskPath}.`)
+  if (
+    typeof value.sha256 !== 'string' ||
+    !/^[a-f0-9]{64}$/.test(value.sha256)
+  )
+    throw new Error(`Invalid ${field}.sha256 in ${taskPath}.`)
+  requireInteger(value.entry_count, `${field}.entry_count`, taskPath, 0)
+}
+
+function assertWorkspaceProof(value: unknown, taskPath: string) {
+  if (!isRecord(value))
+    throw new Error(`Invalid workspace_proof in ${taskPath}.`)
+  requireInteger(value.generation, 'workspace_proof.generation', taskPath, 1)
+  assertEvidenceRef(
+    value.baseline_ref,
+    'workspace_proof.baseline_ref',
+    taskPath,
+  )
+  if (!isRecord(value.baseline_counts))
+    throw new Error(`Invalid workspace_proof.baseline_counts in ${taskPath}.`)
+  for (const key of [
+    'tracked_dirty',
+    'untracked',
+    'explicit_ignored',
+    'in_scope',
+    'out_of_scope',
+  ])
+    requireInteger(
+      value.baseline_counts[key],
+      `workspace_proof.baseline_counts.${key}`,
+      taskPath,
+      0,
+    )
+  if (!Array.isArray(value.unresolved_violations))
+    throw new Error(`Invalid workspace_proof.unresolved_violations in ${taskPath}.`)
+  for (const violation of value.unresolved_violations) {
+    if (!isRecord(violation))
+      throw new Error(`Invalid workspace violation in ${taskPath}.`)
+    requireString(violation.id, 'workspace violation id', taskPath)
+    requireString(violation.path, 'workspace violation path', taskPath)
+    requireString(violation.source_gate, 'workspace violation source_gate', taskPath)
+    requireInteger(
+      violation.created_generation,
+      'workspace violation created_generation',
+      taskPath,
+      1,
+    )
+    if (
+      violation.status !== 'unresolved' &&
+      violation.status !== 'restored' &&
+      violation.status !== 'reclassified'
+    )
+      throw new Error(`Invalid workspace violation status in ${taskPath}.`)
   }
 }
 
@@ -462,6 +557,8 @@ function assertTaskV2(value: unknown, path: string): asserts value is TaskV2 {
     'gate',
     path,
   )
+  if (value.workspace_proof !== undefined)
+    assertWorkspaceProof(value.workspace_proof, path)
   assertVerificationMap(
     value.verification.diagnostic,
     'verification.diagnostic',
@@ -979,7 +1076,9 @@ function createTask(
 ): TaskWriteResultV2 {
   assertWritableActor(actor)
   requireString(input.title, 'title', 'checkpoint input')
-  assertTaskPlan(input.plan, 'checkpoint input')
+  if (schemaVersion === V3_SCHEMA_VERSION)
+    assertWritableTaskPlan(input.plan, 'checkpoint input')
+  else assertTaskPlan(input.plan, 'checkpoint input')
   const artifacts = structuredClone(input.artifacts ?? [])
   for (const artifact of artifacts) {
     requireString(artifact.kind, 'artifact.kind', 'checkpoint input')

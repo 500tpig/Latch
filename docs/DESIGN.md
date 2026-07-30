@@ -20,7 +20,10 @@ Latch 是个人 macOS 开发环境中的本地任务状态记录器。它帮助 
 - 新 task 使用 schema 3 保存 `primary_writer` 和 `profile`；既有 schema 2 task 经显式 `claim` 单独升级。
 - schema 3 新 task 写入根 `provenance: clean`；历史 task 缺失该字段时按 `clean` 读取，只有明确的重叠并行或隔离恢复才显式修改。
 - light request 与 retrospective task 可在 `checkpoint` 时原子写入 work basis，不需要创建后再拼接生命周期状态。
-- schema 3 task 可通过带完整 backup 的 `downgrade-v2` 投影回可写 schema 2。
+- 新 plan 使用 `workspace_scope.paths` 保存机器范围；自然语言 `plan.scope`、授权摘要和 artifact 不替代该字段。
+- named gate 保存 command outcome、before/after workspace evidence、workspace effect 和 proof generation；只有当前 generation 上的完整无 mutation proof 才能参与 submit。
+- workspace evidence 覆盖 Git-visible 脏路径、非 ignored untracked 路径，以及 scope 或 artifact 精确引用的 ignored 文件；不递归扫描 ignored 目录。
+- schema 3 task 可通过带完整 backup 的 `downgrade-v2` 投影回可写 schema 2；主投影剥离 workspace proof 扩展，完整数据只保留在 backup。
 - `docs/INDEX.md` 指向唯一 current 产品契约；既有七个分章与 Record 分章按主题覆盖历史 v2 基线。
 
 ## 关键取舍
@@ -28,12 +31,16 @@ Latch 是个人 macOS 开发环境中的本地任务状态记录器。它帮助 
 - 创建 task 不等于批准实施；
 - 每张 implementation task 单独获得 direct approval；
 - plan 和 work revision 使旧结果明确失效；
+- proof generation 表示稳定的 covered workspace baseline；工作区 mismatch 或 gate mutation 使旧 generation 的 named gate proof stale。
+- scope 内 mutation 拒绝当前 gate pass；scope 外 mutation 还创建 unresolved violation，并在恢复或重新批准前阻止 submit。
+- `context` 只读计算 live workspace status，不推进 generation，也不写 task、event 或 evidence。
 - 不同 task 可以在同一 workspace 独立推进；共享 worktree 风险通过 warning 提示；
 - 原子写和短锁保护当前事实，不引入通用事务框架；
 - provenance 只保存在 task 根，不复制到 submission 或 closure；
 - archive 使用目录 rename 作为提交点。
 - 已知完整 Task ID 时，Context 先读 open task，再按精确 ID 只读回退 archive；所有 mutation 继续只解析 open task。
 - R2 回退先备份整个 task 目录，再重写 event，最后以 `task.json` 作为格式切换提交点。
+- workspace evidence sidecar 使用原子写和 SHA-256、entry count 校验；未引用、缺失、损坏或计数不一致的 sidecar 不构成 proof。
 - Record 与 task 完全分离，只复用 repo root、原子写和短锁；Record 关联不传播状态、writer 或授权。
 - Record 索引不含正文，AI 只在用户明确保存或召回时访问，默认最多返回 5 条候选。
 
@@ -46,8 +53,10 @@ Latch 不提供：
 - 聊天、日志或全局 knowledge store；
 - 向量检索、RAG 或跨 repo 搜索；
 - 自动 Git、hook 或 worktree 管理；
+- gate mutation 自动回滚、允许 mutation 后继续 pass，或通过 argv 猜测写入意图；
+- 全量 ignored 目录监视、commit hash 或最终 tree hash 证明；
 - Board 写操作；
 - 多用户、远程同步或公共 npm 发布；
 - v1 migration 或兼容层。
 
-新能力在 v2 完成真实使用观察后单独评估。
+后续扩展必须保持 workspace coverage 与未覆盖边界可见，不能静默回退到仅按退出码判断 gate。

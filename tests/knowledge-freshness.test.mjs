@@ -82,6 +82,7 @@ function expectedFingerprint(cwd, paths) {
 function plan() {
   return {
     goal: '验证知识 freshness',
+    workspace_scope: { paths: ['src/'] },
     scope: ['src/core/knowledge.ts'],
     acceptance: ['knowledge tests pass'],
     approach: ['使用 schema 3 fixture'],

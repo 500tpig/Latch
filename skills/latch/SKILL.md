@@ -115,6 +115,11 @@ delivery remains separate and needs separate authorization.
 - Takeover transfers writer ownership only, never implementation approval.
 - Run all current named gates before submit. Prefer `verify-all` for pending gates;
   instruction-only commands such as `echo`, `printf`, and `true` are not evidence.
+- New and updated plans require repo-relative POSIX `workspace_scope.paths`; never
+  infer machine scope from prose, authorization, or artifacts.
+- A gate pass requires successful command outcome, complete evidence, no covered
+  mutation, current proof generation, and no unresolved violation. Preserve
+  mutations for inspection; never reset, clean, stash, or auto-widen scope.
 - Use `artifact add|remove` for artifact-only changes and
   `submit --verbose-warnings` when the full untracked list is needed.
 - Preserve task facts, gate semantics, submission evidence, and knowledge impact.

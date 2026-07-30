@@ -1,5 +1,5 @@
 import { TASK_EVENT_TYPES } from './types.js'
-import type { TaskEvent, TaskV2 } from './types.js'
+import type { TaskEvent, TaskPlan, TaskV2, VerifyResult } from './types.js'
 
 const v2EventTypes = new Set<string>(TASK_EVENT_TYPES)
 
@@ -16,6 +16,59 @@ function downgradeApproval(task: TaskV2) {
   return task.implementation_approval
     ? structuredClone(task.implementation_approval)
     : undefined
+}
+
+function downgradePlan(plan: TaskPlan): TaskPlan {
+  const { workspace_scope: _workspaceScope, ...v2Plan } = plan
+  return structuredClone(v2Plan)
+}
+
+function downgradeVerificationResult(result: VerifyResult): VerifyResult {
+  return {
+    name: result.name,
+    kind: result.kind,
+    command: [...result.command],
+    status: result.status,
+    exit_code: result.exit_code,
+    work_revision: result.work_revision,
+    created_at: result.created_at,
+  }
+}
+
+function downgradeVerification(
+  verification: TaskV2['verification'],
+): TaskV2['verification'] {
+  return {
+    gate: Object.fromEntries(
+      Object.entries(verification.gate).map(([name, result]) => [
+        name,
+        downgradeVerificationResult(result),
+      ]),
+    ),
+    diagnostic: Object.fromEntries(
+      Object.entries(verification.diagnostic).map(([name, result]) => [
+        name,
+        downgradeVerificationResult(result),
+      ]),
+    ),
+  }
+}
+
+function downgradeVerificationEvent(event: TaskEvent): TaskEvent {
+  if (event.type !== 'verification_run') return structuredClone(event)
+  return {
+    type: event.type,
+    task_id: event.task_id,
+    actor: event.actor,
+    revision: event.revision,
+    created_at: event.created_at,
+    name: event.name,
+    kind: event.kind,
+    status: event.status,
+    exit_code: event.exit_code,
+    work_revision: event.work_revision,
+    ...(typeof event.error === 'string' ? { error: event.error } : {}),
+  }
 }
 
 export function downgradeTaskValue(task: TaskV2): TaskV2 {
@@ -42,10 +95,10 @@ export function downgradeTaskValue(task: TaskV2): TaskV2 {
     plan_revision: task.plan_revision,
     work_revision: task.work_revision,
     workspace_root: task.workspace_root,
-    plan: structuredClone(task.plan),
+    plan: downgradePlan(task.plan),
     ...(approval ? { implementation_approval: approval } : {}),
     ...(task.blocked ? { blocked: structuredClone(task.blocked) } : {}),
-    verification: structuredClone(task.verification),
+    verification: downgradeVerification(task.verification),
     ...(submission ? { submission } : {}),
     ...(task.closure ? { closure: structuredClone(task.closure) } : {}),
     artifacts: structuredClone(task.artifacts),
@@ -63,7 +116,7 @@ export function downgradeTaskEvents(events: TaskEvent[]): TaskEvent[] {
       left.index - right.index,
     )
     .map(({ event }, index) => ({
-      event: structuredClone(event),
+      event: downgradeVerificationEvent(event),
       revision: index + 1,
     }))
     .map(({ event, revision }) => {

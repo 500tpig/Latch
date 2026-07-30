@@ -19,27 +19,28 @@ function json(result) {
 test('formal CLI completes approval, gate, review correction, resubmit, and done', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'latch-v2-integration-'))
   try {
+    spawnSync('git', ['init'], { cwd, encoding: 'utf8' })
     const plan = {
-      goal: 'integration', scope: ['fixture'], acceptance: ['archive'],
+      goal: 'integration', workspace_scope: { paths: ['fixture'] }, scope: ['fixture'], acceptance: ['archive'],
       approach: ['run argv'], api_assumptions: [], permission_assumptions: [],
       data_assumptions: [], user_flow: ['approve verify review done'], out_of_scope: [],
       verification_plan: [{ name: 'gate', command: [process.execPath, '-e', 'process.exit(0)'], kind: 'gate' }],
       open_questions: [],
     }
-    writeFileSync(join(cwd, 'plan.json'), `${JSON.stringify(plan)}\n`)
-    writeFileSync(join(cwd, 'impact.json'), `${JSON.stringify({
+    json(run(cwd, ['init', '--json']))
+    writeFileSync(join(cwd, '.latch', 'plan.json'), `${JSON.stringify(plan)}\n`)
+    writeFileSync(join(cwd, '.latch', 'impact.json'), `${JSON.stringify({
       kind: 'none',
       reason: 'Integration fixture does not change module contracts.',
     })}\n`)
-    json(run(cwd, ['init', '--json']))
-    const created = json(run(cwd, ['checkpoint', 'integration', '--plan-file', 'plan.json', '--json']))
+    const created = json(run(cwd, ['checkpoint', 'integration', '--plan-file', '.latch/plan.json', '--json']))
     const id = created.task_id
     json(run(cwd, ['approve', id, '--expect-revision', '1', '--reason', 'approved', '--json']))
     json(run(cwd, ['verify', id, '--expect-revision', '2', '--name', 'gate', '--json']))
-    json(run(cwd, ['submit', id, '--expect-revision', '3', '--changes', 'first', '--unverified', '', '--knowledge-impact-file', 'impact.json', '--json']))
+    json(run(cwd, ['submit', id, '--expect-revision', '3', '--changes', 'first', '--unverified', '', '--knowledge-impact-file', '.latch/impact.json', '--json']))
     json(run(cwd, ['approve', id, '--expect-revision', '4', '--feedback', 'correction', '--json']))
     json(run(cwd, ['verify', id, '--expect-revision', '5', '--name', 'gate', '--json']))
-    json(run(cwd, ['submit', id, '--expect-revision', '6', '--changes', 'second', '--unverified', '', '--knowledge-impact-file', 'impact.json', '--json']))
+    json(run(cwd, ['submit', id, '--expect-revision', '6', '--changes', 'second', '--unverified', '', '--knowledge-impact-file', '.latch/impact.json', '--json']))
     const done = json(run(cwd, ['done', id, '--expect-revision', '7', '--followup', 'none', '--json']))
     assert.equal(done.outcome, 'done')
     const month = readdirSync(join(cwd, '.latch', 'archive'))[0]

@@ -66,6 +66,7 @@ function json(result) {
 function plan() {
   return {
     goal: '验证 Record 来源 task',
+    workspace_scope: { paths: ['src/'] },
     scope: ['src/core/record-store.ts'],
     acceptance: ['record tests pass'],
     approach: ['使用 project-local Record'],

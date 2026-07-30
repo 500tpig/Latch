@@ -48,6 +48,7 @@ function runAsync(cwd, args, actor) {
 function plan(overrides = {}) {
   return {
     goal: '实现 Slice 3',
+    workspace_scope: { paths: ['src/'] },
     scope: ['src/core/progress.ts'],
     acceptance: ['lifecycle tests pass'],
     approach: ['使用 per-task 短锁'],

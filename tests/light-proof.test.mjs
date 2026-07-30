@@ -23,6 +23,7 @@ let fileIndex = 0
 
 function temporaryDirectory() {
   const directory = mkdtempSync(join(tmpdir(), 'latch-v3-light-'))
+  spawnSync('git', ['init'], { cwd: directory, encoding: 'utf8' })
   temporaryDirectories.push(directory)
   return directory
 }
@@ -38,6 +39,7 @@ function run(cwd, args) {
 function plan(overrides = {}) {
   return {
     goal: '验证 Light 证明包',
+    workspace_scope: { paths: ['src/'] },
     scope: ['src/core/progress.ts'],
     acceptance: ['Light proof tests pass'],
     approach: ['使用 schema 3 临时 fixture'],
@@ -84,8 +86,9 @@ function impactNone() {
 
 function writeJson(cwd, value, prefix) {
   const name = `${prefix}-${fileIndex += 1}.json`
-  writeFileSync(join(cwd, name), `${JSON.stringify(value, null, 2)}\n`)
-  return name
+  const path = join('.latch', name)
+  writeFileSync(join(cwd, path), `${JSON.stringify(value, null, 2)}\n`)
+  return path
 }
 
 function taskPath(cwd, id) {

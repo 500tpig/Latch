@@ -77,6 +77,11 @@ schema 合法；创建 task 前仍需根据实际请求补全语义，并按 A/B
 期望类型、实际类型、最小合法值和模板命令。同标题 task 不覆盖。`use` 只修改当前
 actor 的索引。
 
+新建或更新 plan 必须提供 `workspace_scope.paths`。该字段只接受 repo-relative POSIX
+精确文件路径或以 `/` 结尾的目录前缀；不接受绝对路径、repo escape、glob 或 Git
+pathspec magic。它是 gate scope 分类的唯一机器来源，`plan.scope`、work basis 和
+artifact 均不替代该字段。
+
 无新增参数时，`checkpoint` 创建 standard plan task。`--authorization-file` 只接受
 `source: user_request`，并原子创建 light task、写入 work basis、进入 dev 且将
 `work_revision` 设为 1。`--retrospective-file` 默认创建 standard retrospective
@@ -96,7 +101,12 @@ latch claim <task-id> --expect-revision 3 --reason "继续该 task"
 
 `context --json --brief` 不返回完整 `plan`，但 `task.verification_plan` 会列出每项计划验证的 `name`、`command`、`kind` 和 `status`。`status` 为 `pending`、`stale`、`pass` 或 `fail`；`task.verification` 继续保留执行结果的完整记录。
 
-`context --json --status` 是最小状态入口，只返回 phase、revision、授权、writer、blocked、gate 计数和 `next_action`。`context --json --since-revision <revision>` 返回该 revision 之后的 event，以及当前最小状态；调用方必须已有对应 baseline，delta 不能替代完整 context。`--brief`、`--status` 和 `--since-revision` 互斥。
+`context --json --status` 是最小状态入口，返回 phase、revision、授权、writer、
+blocked、gate 计数、workspace proof 摘要和 `next_action`。存在 proof baseline 时，
+`workspace_proof.live_status` 为 `match`、`mismatch` 或 `unknown`；该值只读计算，
+不会推进 generation 或写 evidence。`context --json --since-revision <revision>`
+返回该 revision 之后的 event，以及当前最小状态；调用方必须已有对应 baseline，
+delta 不能替代完整 context。`--brief`、`--status` 和 `--since-revision` 互斥。
 
 显式提供 Task ID 时，`context` 依次检查同 ID 的 open task、同 ID 的 archive；
 两者都不存在时才尝试既有的 open unique-prefix 解析。archive 不接受前缀、模糊
@@ -198,7 +208,25 @@ latch verify-all <task-id> --expect-revision 10
 
 `echo`、`printf`、`true` 和只输出操作说明的命令不得配置为 gate。这类命令返回 0 只能证明命令成功退出，不能证明手工步骤已经执行。需要在 plan 中保留手工步骤时，将其标为 diagnostic；diagnostic 的执行结果不构成手工验收事实。手工验收尚未完成时，在 submit 的 `submission.unverified` 中写明待验收内容。
 
-`verify-all` 按 plan 顺序执行当前 work revision 中尚未通过的 named gate，不执行 diagnostic。每个 gate 继续独立写入 `verification_run` 并增加 revision；首个失败 gate 写入结果后停止。全部 gate 已通过时返回空执行摘要，不修改 task。
+named gate 启动前和子进程退出后都会采集 covered workspace evidence。command
+outcome、workspace effect 和 proof status 是三组独立事实；只有命令成功、before/after
+evidence 完整、covered workspace 无净 mutation、结果绑定当前 work revision 与
+proof generation，且没有 unresolved violation 时，gate 才能 pass。
+
+evidence 覆盖 Git-visible staged、unstaged、untracked、delete、rename、mode、symlink
+和 submodule 状态，以及 scope 或 artifact 精确引用的 ignored 文件。ignored 目录不
+递归扫描。完整 before、after 和 delta 保存在 task 的 `evidence/` sidecar；human
+输出和 brief JSON 最多显示稳定排序后的 8 个样本，但正确性判断使用完整集合。
+
+scope 内 mutation 拒绝当前 gate pass，并推进 generation，使旧 generation 的全部
+named gate proof stale。scope 外 mutation 还会创建 unresolved violation，在路径恢复
+或 plan 扩 scope 并重新批准前阻止 submit。Latch 保留工作区现状，不自动 rollback、
+reset、clean 或 stash；人工恢复也不会让旧 proof 自动恢复。
+
+`verify-all` 按 plan 顺序动态选择当前 generation 中第一个非 current gate，不执行
+diagnostic。command failure、evidence error、workspace mutation、scope violation 或
+gate 间 baseline mismatch 都会拒绝继续。首个失败 gate 写入当前事实后立即停止，
+不执行后续 gate。全部 gate 已通过时返回空执行摘要，不修改 task。
 
 ### 提交 review
 
@@ -234,6 +262,10 @@ latch submit <task-id> --expect-revision 4 \
 ```
 
 schema 3 submission 必须通过 `impact.json` 提供 `knowledge_impact`，使用 `none` 时 reason 需说明为何不更新模块知识。submission 绑定当前 work revision，verified 摘要由结构化 gate 结果生成。
+
+submit 还会检查 live snapshot、evidence sidecar 完整性、work revision、proof
+generation 和 unresolved violation。live baseline mismatch 会先写入新的 generation
+并使旧 proof stale，再拒绝 submit；该过程不会自动执行 gate。
 
 context 会在 `artifact_delivery` 中标记 task 已声明 artifact 的 Git 状态：`tracked`、`untracked`、`ignored`、`missing` 或 `unknown`。submit 对非 `tracked` artifact 继续逐项返回非阻断 warning。worktree 中的 untracked 文件默认合并为一条 warning，包含总数和稳定排序后的最多 8 个样本；`submit --verbose-warnings` 返回完整逐文件清单。两种形式都不自动推断文件归属或迁移原因。Git 状态不把 ignored 文件自动解释为「本地知识」，也不增加 submit 或 done 门禁。
 
@@ -302,18 +334,28 @@ latch downgrade-v2 \
   --confirm-data-loss
 ```
 
-命令支持 open 或 archived task，并在改写前将完整 task 目录复制到 `.latch/archive/v3-backup/<task-id>-<utc-ts>/`。主 `task.json` 投影为 schema 2，主 `events.jsonl` 只保留 v2 event 并将 revision 重写为 `1..n`；`state.json` 不改写。失败时保留 `.latch` 和已创建的 backup。
+命令支持 open 或 archived task，并在改写前将完整 task 目录复制到
+`.latch/archive/v3-backup/<task-id>-<utc-ts>/`。完整 backup 保留 workspace scope、
+proof、generation、violation 和 evidence ref；schema 2 主 `task.json` 的 plan 与
+verification，以及主 `events.jsonl`，会剥离这些 v3-only 字段。主 event 只保留 v2
+类型并将 revision 重写为 `1..n`；`state.json` 不改写。失败时保留 `.latch` 和已创建的
+backup。
 
 ## 并发与文件
 
 - task：`.latch/tasks/<task-id>/task.json`；
 - event：`.latch/tasks/<task-id>/events.jsonl`；
+- workspace evidence：`.latch/tasks/<task-id>/evidence/*.json`；
 - actor current：`.latch/state.json`；
 - archive：`.latch/archive/YYYY-MM/<task-id>/`。
 - Record 索引：`.latch/records/index.json`；
 - Record 正文：`.latch/records/bodies/<record-id>/<revision>.md`。
 
-所有 task 更新需要 `--expect-revision`。task 使用独立短锁；需要组合锁时顺序固定为 `task -> state`。Record mutation 使用独立 store 短锁，不与 task 或 state 组合。Latch 不跟踪 task 的文件归属，验证命令针对整个 worktree；需要代码隔离时由用户使用外部 Git worktree，Latch 不负责创建或合并它。
+所有 task 更新需要 `--expect-revision`。task 使用独立短锁；需要组合锁时顺序固定为
+`task -> state`。Record mutation 使用独立 store 短锁，不与 task 或 state 组合。
+Latch 使用批准 plan 的 `workspace_scope.paths` 分类 gate mutation，但不自动认领文件
+归属或隔离不同 task。验证命令针对整个 worktree；需要代码隔离时由用户使用外部 Git
+worktree，Latch 不负责创建或合并它。
 
 同一连续写入流程中，成功 mutation 的 JSON 返回值包含新的 `revision`。下一条命令直接使用该值作为 `--expect-revision`，不得只为获取 revision 重读 context。发生 revision conflict、进入新的用户输入边界、warning 需要重新判断或任务语义变化时，再刷新 status；冲突 mutation 不得自动重试。
 
@@ -364,6 +406,9 @@ latch benchmark context --case-file case.json --run-file run.json \
 
 `benchmark context` 只校验 case/run 并计算主成功和 30% 次目标，不执行检索、CodeGraph 或模型判断，也不成为 task gate。
 
-schema 3 event 文件允许可选的首行 `events_meta`；未知 v3 event 会被跳过并以 `warnings` 返回，schema 2 reader 仍对未知 event fail closed。schema 3 的 `min_cli_version` 为 `0.2.0`。
+schema 3 event 文件允许可选的首行 `events_meta`；未知 v3 event 会被跳过并以
+`warnings` 返回，schema 2 reader 仍对未知 event fail closed。当前包含 workspace
+scope、proof 或 verification evidence 的 schema 3 task，其 `min_cli_version` 为
+`0.3.0`；`0.2.0` 仅表示引入 writer、profile 和 work basis 时的 schema 3 基线。
 
 最终产品契约已全面 current；v2 中未被最终分章覆盖的条款继续作为历史基线有效。

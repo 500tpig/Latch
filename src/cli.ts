@@ -26,7 +26,10 @@ import {
   type KnowledgeCheckResult,
 } from './core/knowledge.js'
 import { discoverWorkspaceRoot } from './core/paths.js'
-import { lightPlanTemplate } from './core/plan-schema.js'
+import {
+  assertWritableTaskPlan,
+  lightPlanTemplate,
+} from './core/plan-schema.js'
 import {
   archiveProjectRecordV1,
   createProjectRecordV1,
@@ -286,7 +289,9 @@ function artifactChanges(
 
 function readPlan(cwd: string, planFile: string | undefined) {
   if (!planFile) fail('invalid_arguments', '--plan-file is required.')
-  return readJsonFile<TaskPlan>(resolve(cwd, planFile))
+  const plan = readJsonFile<TaskPlan>(resolve(cwd, planFile))
+  assertWritableTaskPlan(plan, planFile)
+  return plan
 }
 
 function readInputFile<T>(cwd: string, path: string | undefined, option: string) {
@@ -1606,16 +1611,25 @@ function runVerifyAll(args: string[], cwd: string, actor: string) {
     expectRevision,
     actor,
   })
-  const executed = result.verifications.map((verification, index) => ({
+  const executed = result.executions.map(({ verification, revision }) => ({
     name: verification.name,
     status: verification.status,
-    revision: expectRevision + index + 1,
+    revision,
+    ...(verification.failure_reason
+      ? { failure_reason: verification.failure_reason }
+      : {}),
   }))
   if (parsed.values.json)
     json({
       ...mutationJson(result.task, result.warnings, expectRevision),
       executed,
       failed: result.failed?.name ?? null,
+      stopped_reason: result.stoppedReason ?? null,
+      stopped_gate: result.stoppedGate ?? null,
+      remaining: result.remaining,
+      proof_generation: result.task.workspace_proof?.generation ?? null,
+      unresolved_violations:
+        result.task.workspace_proof?.unresolved_violations.length ?? 0,
     })
   else {
     process.stdout.write(
@@ -1625,7 +1639,7 @@ function runVerifyAll(args: string[], cwd: string, actor: string) {
     )
     printWarnings(result.warnings)
   }
-  if (result.failed) process.exitCode = 1
+  if (result.failed || result.stoppedReason) process.exitCode = 1
 }
 
 function runArtifact(args: string[], cwd: string, actor: string) {

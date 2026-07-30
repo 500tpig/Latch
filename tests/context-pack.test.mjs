@@ -48,6 +48,7 @@ function run(cwd, args) {
 function plan() {
   return {
     goal: '验证 Context pack',
+    workspace_scope: { paths: ['src/'] },
     scope: ['src/core/context-pack.ts'],
     acceptance: ['context pack tests pass'],
     approach: ['使用 schema 3 fixture'],
