@@ -23,7 +23,9 @@ pnpm skill:check
 `latch --help` 应显示 `claim`、`patch-submission-knowledge-impact` 和 `downgrade-v2`；
 `latch checkpoint --help` 应显示 `--profile`、`--authorize-request`、
 `--scope-summary`、`--scope-path`、`--authorization-file` 和
-`--retrospective-file`；`latch submit --help` 应显示 `--knowledge-impact-none`；
+`--retrospective-file`，以及只读入口
+`latch checkpoint --print-plan-template light`；`latch submit --help` 应显示
+`--knowledge-impact-none`；
 `latch save --help` 应显示 `--provenance`。接入状态与来源 commit 见
 [接入状态](ADOPTER_SYNC.md)。
 

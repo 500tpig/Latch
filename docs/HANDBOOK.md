@@ -49,6 +49,7 @@ v2 不迁移或覆盖 v1 `.latch`。
 ### 创建与选择
 
 ```bash
+latch checkpoint --print-plan-template light
 latch checkpoint "任务标题" --plan-file plan.json
 latch checkpoint "低风险任务" --plan-file plan.json \
   --authorize-request "用户请求完成明确修正" \
@@ -67,7 +68,14 @@ latch context [task-id] --json --status
 latch context [task-id] --json --since-revision <revision>
 ```
 
-`checkpoint` 必须读取完整 plan 文件。同标题 task 不覆盖。`use` 只修改当前 actor 的索引。
+`checkpoint --print-plan-template light` 向 stdout 写入最小合法 JSON，不创建
+`.latch`，也不要求 `title`、`--plan-file` 或 canonical actor。该模板只保证
+schema 合法；创建 task 前仍需根据实际请求补全语义，并按 A/B/C 规则判断 profile
+和授权。本入口当前只支持 `light`，且不能与 task 创建参数组合。
+
+创建 task 时，`checkpoint` 必须读取完整 plan 文件。plan 校验失败时，错误会列出
+期望类型、实际类型、最小合法值和模板命令。同标题 task 不覆盖。`use` 只修改当前
+actor 的索引。
 
 无新增参数时，`checkpoint` 创建 standard plan task。`--authorization-file` 只接受
 `source: user_request`，并原子创建 light task、写入 work basis、进入 dev 且将

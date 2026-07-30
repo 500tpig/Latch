@@ -14,6 +14,7 @@ import { randomBytes } from 'node:crypto'
 import { isAbsolute, join, normalize, relative, sep } from 'node:path'
 import { discoverWorkspaceRoot, pathsForWorkspace } from './paths.js'
 import type { LatchPathsV2 } from './paths.js'
+import { assertTaskPlan } from './plan-schema.js'
 import {
   now,
   readJsonFile,
@@ -315,58 +316,6 @@ export function assertKnowledgeImpact(
       throw new Error(
         `Knowledge impact artifact is not attached to the task: ${reference.kind}:${reference.path}.`,
       )
-  }
-}
-
-function assertTaskPlan(plan: unknown, path: string): asserts plan is TaskPlan {
-  if (!isRecord(plan)) throw new Error(`Invalid plan in ${path}.`)
-  const requiredFields = [
-    'goal',
-    'scope',
-    'acceptance',
-    'approach',
-    'api_assumptions',
-    'permission_assumptions',
-    'data_assumptions',
-    'user_flow',
-    'out_of_scope',
-    'verification_plan',
-    'open_questions',
-  ]
-  const missingFields = requiredFields.filter((field) => plan[field] === undefined)
-  if (missingFields.length > 0)
-    throw new Error(
-      `Missing required plan fields in ${path}: ${missingFields.map((field) => `plan.${field}`).join(', ')}.`,
-    )
-  requireString(plan.goal, 'plan.goal', path)
-  for (const field of [
-    'scope',
-    'acceptance',
-    'approach',
-    'api_assumptions',
-    'permission_assumptions',
-    'data_assumptions',
-    'user_flow',
-    'out_of_scope',
-    'open_questions',
-  ])
-    requireStringArray(plan[field], `plan.${field}`, path)
-
-  if (!Array.isArray(plan.verification_plan))
-    throw new Error(`Invalid plan.verification_plan in ${path}.`)
-  const verificationNames = new Set<string>()
-  for (const verification of plan.verification_plan) {
-    if (!isRecord(verification))
-      throw new Error(`Invalid plan.verification_plan in ${path}.`)
-    requireString(verification.name, 'verification_plan.name', path)
-    requireStringArray(verification.command, 'verification_plan.command', path)
-    if (verification.command.length === 0)
-      throw new Error(`Invalid empty verification_plan.command in ${path}.`)
-    if (verificationNames.has(verification.name))
-      throw new Error(`Duplicate verification_plan.name in ${path}: ${verification.name}.`)
-    verificationNames.add(verification.name)
-    if (verification.kind !== 'gate' && verification.kind !== 'diagnostic')
-      throw new Error(`Invalid verification_plan.kind in ${path}.`)
   }
 }
 

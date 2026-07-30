@@ -269,6 +269,35 @@ test('checkpoint accepts inline request authorization and explains invalid plan 
   assert.notEqual(missingPlan.status, 0)
   assert.match(missingPlan.stderr, /plan\.scope/)
   assert.match(missingPlan.stderr, /plan\.verification_plan/)
+  assert.match(missingPlan.stderr, /Expected schema/)
+  assert.match(missingPlan.stderr, /Minimal legal plan/)
+  assert.match(
+    missingPlan.stderr,
+    /checkpoint --print-plan-template light/,
+  )
+
+  for (const [scope, actual] of [
+    ['src/cli.ts', 'string'],
+    [{ in: ['src/cli.ts'] }, 'object'],
+  ]) {
+    const invalidScopePlan = writeJson(
+      cwd,
+      plan({ scope }),
+      `invalid-scope-${actual}`,
+    )
+    const invalidScope = run(cwd, [
+      'checkpoint',
+      `invalid scope ${actual}`,
+      '--plan-file',
+      invalidScopePlan,
+      '--authorize-request',
+      '用户请求完成明确修正',
+    ])
+    assert.notEqual(invalidScope.status, 0)
+    assert.match(invalidScope.stderr, /expected string\[\]/)
+    assert.match(invalidScope.stderr, new RegExp(`got ${actual}`))
+    assert.match(invalidScope.stderr, /Minimal legal value: \[\]/)
+  }
 
   const invalidAuthorization = writeJson(cwd, {
     kind: 'implementation_authorization',

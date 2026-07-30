@@ -119,6 +119,14 @@ test('top-level and command help have no side effects', () => {
   assert.match(checkpointHelp.stdout, /--authorization-file/)
   assert.match(checkpointHelp.stdout, /--retrospective-file/)
   assert.match(checkpointHelp.stdout, /--source-record/)
+  assert.match(
+    checkpointHelp.stdout,
+    /checkpoint --print-plan-template light/,
+  )
+  assert.match(
+    run(temporaryDirectory(), ['--help']).stdout,
+    /checkpoint --print-plan-template light/,
+  )
   assert.match(run(temporaryDirectory(), ['record', '--help']).stdout, /record create/)
   const saveHelp = run(temporaryDirectory(), ['save', '--help'])
   assert.match(saveHelp.stdout, /--provenance <clean\|mixed>/)
@@ -128,6 +136,72 @@ test('top-level and command help have no side effects', () => {
   assert.match(contextHelp.stdout, /--since-revision/)
   assert.match(contextHelp.stdout, /--history <timeline\|events\|both>/)
   assert.match(run(temporaryDirectory(), ['submit', '--help']).stdout, /--verbose-warnings/)
+})
+
+test('checkpoint prints a side-effect-free Light plan template that round-trips', () => {
+  const cwd = temporaryDirectory()
+  const printed = run(
+    cwd,
+    ['checkpoint', '--print-plan-template', 'light'],
+    { actor: '' },
+  )
+  assert.equal(printed.status, 0, printed.stderr)
+  assert.equal(existsSync(join(cwd, '.latch')), false)
+  const template = JSON.parse(printed.stdout)
+  assert.deepEqual(template, {
+    goal: 'Describe the intended outcome.',
+    scope: [],
+    acceptance: [],
+    approach: [],
+    api_assumptions: [],
+    permission_assumptions: [],
+    data_assumptions: [],
+    user_flow: [],
+    out_of_scope: [],
+    verification_plan: [],
+    open_questions: [],
+  })
+
+  const unsupported = run(
+    cwd,
+    ['checkpoint', '--print-plan-template', 'standard'],
+    { actor: '' },
+  )
+  assert.notEqual(unsupported.status, 0)
+  assert.match(unsupported.stderr, /only supports light/)
+  assert.equal(existsSync(join(cwd, '.latch')), false)
+
+  const mixed = run(
+    cwd,
+    [
+      'checkpoint',
+      'mixed',
+      '--print-plan-template',
+      'light',
+      '--plan-file',
+      'plan.json',
+    ],
+    { actor: '' },
+  )
+  assert.notEqual(mixed.status, 0)
+  assert.match(mixed.stderr, /cannot be combined/)
+  assert.equal(existsSync(join(cwd, '.latch')), false)
+
+  init(cwd)
+  const planFile = writePlan(cwd, template, 'template.json')
+  const created = run(cwd, [
+    'checkpoint',
+    'Template task',
+    '--plan-file',
+    planFile,
+    '--authorize-request',
+    '用户请求执行明确的低风险变更',
+    '--json',
+  ])
+  assert.equal(created.status, 0, created.stderr)
+  const task = readTask(cwd, JSON.parse(created.stdout).task_id)
+  assert.equal(task.profile, 'light')
+  assert.equal(task.phase, 'dev')
 })
 
 test('unknown command and flag fail before creating .latch', () => {
@@ -231,6 +305,134 @@ test('checkpoint rejects missing or invalid plan without creating task', () => {
   assert.notEqual(invalid.status, 0)
   assert.match(invalid.stderr, /Missing required plan fields/)
   assert.match(invalid.stderr, /plan\.scope/)
+  assert.match(invalid.stderr, /Expected schema/)
+  assert.match(invalid.stderr, /Minimal legal plan/)
+  assert.match(invalid.stderr, /checkpoint --print-plan-template light/)
+
+  for (const [value, actual] of [
+    ['src/cli.ts', 'string'],
+    [{ in: ['src/cli.ts'] }, 'object'],
+  ]) {
+    const invalidScope = writePlan(
+      cwd,
+      plan({ scope: value }),
+      `invalid-scope-${actual}.json`,
+    )
+    const result = run(cwd, [
+      'checkpoint',
+      `Invalid scope ${actual}`,
+      '--plan-file',
+      invalidScope,
+    ])
+    assert.notEqual(result.status, 0)
+    assert.match(result.stderr, /Invalid plan\.scope/)
+    assert.match(result.stderr, /expected string\[\]/)
+    assert.match(result.stderr, new RegExp(`got ${actual}`))
+    assert.match(result.stderr, /Minimal legal value: \[\]/)
+  }
+
+  const invalidScopeJson = run(cwd, [
+    'checkpoint',
+    'Invalid scope JSON',
+    '--plan-file',
+    writePlan(cwd, plan({ scope: 'src/cli.ts' }), 'invalid-scope-json.json'),
+    '--json',
+  ])
+  assert.notEqual(invalidScopeJson.status, 0)
+  const invalidScopeEnvelope = JSON.parse(invalidScopeJson.stderr)
+  assert.equal(invalidScopeEnvelope.schema_version, 2)
+  assert.equal(invalidScopeEnvelope.error.code, 'command_failed')
+  assert.match(invalidScopeEnvelope.error.message, /expected string\[\]/)
+  assert.match(
+    invalidScopeEnvelope.error.message,
+    /checkpoint --print-plan-template light/,
+  )
+
+  const invalidVerification = writePlan(
+    cwd,
+    plan({
+      verification_plan: [{
+        name: 'check',
+        command: 'pnpm check',
+        kind: 'gate',
+      }],
+    }),
+    'invalid-verification.json',
+  )
+  const invalidCommand = run(cwd, [
+    'checkpoint',
+    'Invalid verification command',
+    '--plan-file',
+    invalidVerification,
+  ])
+  assert.notEqual(invalidCommand.status, 0)
+  assert.match(invalidCommand.stderr, /Invalid verification_plan\.command/)
+  assert.match(invalidCommand.stderr, /expected string\[\]/)
+  assert.match(invalidCommand.stderr, /got string/)
+  assert.match(
+    invalidCommand.stderr,
+    /Minimal legal value: \["replace-with-real-command"\]/,
+  )
+
+  const invalidVerificationPlan = writePlan(
+    cwd,
+    plan({ verification_plan: {} }),
+    'invalid-verification-plan.json',
+  )
+  const invalidPlanType = run(cwd, [
+    'checkpoint',
+    'Invalid verification plan',
+    '--plan-file',
+    invalidVerificationPlan,
+  ])
+  assert.notEqual(invalidPlanType.status, 0)
+  assert.match(invalidPlanType.stderr, /Invalid plan\.verification_plan/)
+  assert.match(invalidPlanType.stderr, /expected Array<\{/)
+  assert.match(invalidPlanType.stderr, /got object/)
+
+  const invalidNamePlan = writePlan(
+    cwd,
+    plan({
+      verification_plan: [{
+        name: '',
+        command: ['pnpm', 'check'],
+        kind: 'gate',
+      }],
+    }),
+    'invalid-verification-name.json',
+  )
+  const invalidName = run(cwd, [
+    'checkpoint',
+    'Invalid verification name',
+    '--plan-file',
+    invalidNamePlan,
+  ])
+  assert.notEqual(invalidName.status, 0)
+  assert.match(invalidName.stderr, /Invalid verification_plan\.name/)
+  assert.match(invalidName.stderr, /expected non-empty string/)
+  assert.match(invalidName.stderr, /Minimal legal value: "check"/)
+
+  const invalidKindPlan = writePlan(
+    cwd,
+    plan({
+      verification_plan: [{
+        name: 'check',
+        command: ['pnpm', 'check'],
+        kind: 'check',
+      }],
+    }),
+    'invalid-verification-kind.json',
+  )
+  const invalidKind = run(cwd, [
+    'checkpoint',
+    'Invalid verification kind',
+    '--plan-file',
+    invalidKindPlan,
+  ])
+  assert.notEqual(invalidKind.status, 0)
+  assert.match(invalidKind.stderr, /Invalid verification_plan\.kind/)
+  assert.match(invalidKind.stderr, /expected "gate" \| "diagnostic"/)
+  assert.match(invalidKind.stderr, /Minimal legal value: "gate"/)
   assert.deepEqual(taskIds(cwd), [])
 })
 

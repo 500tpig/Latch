@@ -47,6 +47,50 @@ function text(path) {
   return readFileSync(join(root, path), 'utf8')
 }
 
+function estimatedInstructionTokens(content) {
+  let han = 0
+  let other = 0
+  for (const character of content) {
+    if (/\p{Script=Han}/u.test(character)) han += 1
+    else other += 1
+  }
+  return Math.round(han + other / 4)
+}
+
+test('high-frequency instruction growth requires a reviewed aggregate baseline', () => {
+  const fixturePath = 'tests/fixtures/instruction-budget-v1.json'
+  const budget = JSON.parse(text(fixturePath))
+
+  assert.equal(budget.schema_version, 1)
+  assert.equal(budget.estimator, 'unicode-han-1-other-0.25-v1')
+  assert.equal(budget.policy, 'reviewed-aggregate-ratchet')
+  assert.deepEqual(
+    budget.surfaces.map(({ name }) => name),
+    ['always-loaded', 'planning-path'],
+  )
+  assert.deepEqual(
+    budget.surfaces.map(({ paths }) => paths),
+    [
+      ['AGENTS.md', 'skills/latch/SKILL.md'],
+      ['AGENTS.md', 'skills/latch/SKILL.md', lifecycleReference],
+    ],
+  )
+
+  for (const surface of budget.surfaces) {
+    assert.equal(Number.isInteger(surface.reviewed_baseline), true)
+    assert.ok(surface.reviewed_baseline > 0)
+    assert.ok(surface.review_reason.trim().length >= 20)
+    const estimate = surface.paths.reduce(
+      (total, path) => total + estimatedInstructionTokens(text(path)),
+      0,
+    )
+    assert.ok(
+      estimate <= surface.reviewed_baseline,
+      `${surface.name} estimate ${estimate} exceeds reviewed baseline ${surface.reviewed_baseline}; keep required safety and product rules, review the growth, then update ${fixturePath} with the new baseline and reason`,
+    )
+  }
+})
+
 test('canonical skill has valid minimal frontmatter', () => {
   const content = text('skills/latch/SKILL.md')
   const match = content.match(/^---\n([\s\S]*?)\n---\n/)
@@ -76,7 +120,7 @@ test('canonical skill routes every low-frequency reference without hiding core s
   assert.match(text(actorReference), /Grok and Codex are equal writable hosts/)
   assert.match(text(actorReference), /GROK_SESSION_ID/)
   assert.match(text(actorReference), /do not invent `LATCH_ACTOR`/i)
-  assert.match(skill, /Grok and Codex are equal hosts/)
+  assert.match(skill, /Grok and Codex are\s+equal hosts/)
   assert.match(text(groupsReference), /group_id/)
   assert.match(text(knowledgeReference), /knowledge fingerprint/)
   assert.match(text(knowledgeReference), /context pack/i)
@@ -128,9 +172,9 @@ test('current contract and instruction surface use the final A/B/C rules', () =>
   assert.match(index, /2026-07-15-latch-final-product-contract\.md/)
   assert.doesNotMatch(index, /Latch v2 PRD\]\(prd\/2026-07-10-latch-v2\.md\)[\s\S]*唯一产品契约/)
   for (const content of [handBook, agents, skill]) {
-    assert.match(content, /A[：:].*grill/i)
-    assert.match(content, /B[：:].*light/i)
-    assert.match(content, /C[：:].*standard/i)
+    assert.match(content, /A[：:][\s\S]{0,100}grill/i)
+    assert.match(content, /B[：:][\s\S]{0,100}light/i)
+    assert.match(content, /C[：:][\s\S]{0,220}standard/i)
   }
 })
 
@@ -158,45 +202,46 @@ test('A/B/C profile classification follows acceptance semantics instead of gate 
     )
   }
 
-  assert.match(skill, /Multiple mechanical lint, typecheck, build, documentation-index/)
-  assert.match(skill, /same bounded acceptance surface/)
-  assert.match(skill, /Gate count alone never decides the profile/)
+  assert.match(skill, /Mechanical lint, typecheck, build, or documentation-index/)
+  assert.match(skill, /do not alone\s+trigger C/)
+  assert.match(skill, /gate count never selects a profile/)
   assert.match(skill, /independent acceptance surfaces/)
-  assert.match(skill, /scope is fixed/)
+  assert.match(skill, /fixed, low-risk scope/)
   assert.match(skill, /a product choice/)
-  assert.match(skill, /a public contract change/)
+  assert.match(skill, /public\s+contract/)
   assert.match(skill, /migration/)
   assert.match(skill, /authentication/)
   assert.match(skill, /destructive data handling/)
-  assert.match(skill, /Light task gains a plan change[\s\S]*scope expansion[\s\S]*re-run A\/B\/C/)
-  assert.match(skill, /A: remain in `plan`[\s\S]*grill without implementing/)
-  assert.match(skill, /B: keep the Light profile[\s\S]*precise delta authorization/)
-  assert.match(skill, /C: upgrade to Standard[\s\S]*wait for explicit approval/)
-  assert.match(skill, /Core applies requested structure and revision changes/)
-  assert.match(skill, /never classifies or upgrades a task from gate count/)
+  assert.match(
+    skill,
+    /implementation reveals missing[\s\S]*plan change[\s\S]*scope\s+expansion[\s\S]*re-run A\/B\/C/,
+  )
+  assert.match(skill, /A stays in grill/)
+  assert.match(skill, /B needs a precise delta\s+authorization/)
+  assert.match(skill, /C shows the updated complete plan[\s\S]*reapproval/)
+  assert.match(skill, /Core applies structure and revision changes/)
+  assert.match(skill, /never classifies from gate count/)
   assert.doesNotMatch(skill, /disputed\/multiple gates/)
 })
 
-test('canonical skill keeps normal lifecycle safety rules in the main file', () => {
+test('canonical skill routes lifecycle safety without weakening it', () => {
   const skill = text('skills/latch/SKILL.md')
   const lifecycle = text(lifecycleReference)
-  assert.match(skill, /pure Q&A/)
+  const routed = `${skill}\n${lifecycle}`
+  assert.match(skill, /pure Q&A/i)
   assert.match(skill, /show the complete plan[\s\S]*explicit implementation authorization/)
   assert.match(
-    skill,
-    /implementation reveals missing information[\s\S]*changed root cause[\s\S]*new product choice[\s\S]*scope expansion[\s\S]*stop implementation[\s\S]*update the plan/,
+    routed,
+    /implementation reveals missing[\s\S]*changed root cause[\s\S]*new product choice[\s\S]*scope\s+expansion[\s\S]*stop/,
   )
-  assert.match(
-    skill,
-    /Standard task must show the updated complete plan and wait for explicit reapproval/,
-  )
-  assert.match(skill, /writer mismatch as fail closed/)
-  assert.match(skill, /takeover[\s\S]*never as implementation approval/)
+  assert.match(skill, /C shows the updated complete plan and waits for reapproval/)
+  assert.match(skill, /writer mismatch is fail closed/)
+  assert.match(skill, /Takeover transfers writer ownership only, never implementation approval/)
   assert.match(lifecycle, /implementation correction/)
   assert.match(lifecycle, /non-implementation-feedback/)
   assert.match(skill, /every named gate/)
-  assert.match(skill, /Run `done` only after explicit user authorization/)
-  assert.match(skill, /Run `abandon` only after explicit user authorization/)
+  assert.match(skill, /Run `done` only after explicit completion\/archive authorization/)
+  assert.match(skill, /`abandon`[\s\S]*only after explicit cancellation authorization/)
   assert.match(skill, /Never perform Git add, commit, push, branch, reset, checkout, or clean/)
 })
 
@@ -207,35 +252,39 @@ test('canonical skill provides three executable paths without weakening closeout
   assert.match(skill, /### Standard plan/)
   assert.match(skill, /approve <task-id> --expect-revision <n>/)
   assert.match(skill, /### Review closeout fast path/)
-  assert.match(skill, /phase: review[\s\S]*every gate is `pass`[\s\S]*`stale` and `pending` are zero/)
+  assert.match(
+    skill,
+    /phase: review[\s\S]*every gate is `pass`[\s\S]*`stale` and\s+`pending` are zero/,
+  )
   assert.match(skill, /context <task-id> --json --status/)
   assert.match(skill, /takeover <task-id> --expect-revision <n>/)
   assert.match(skill, /done <task-id> --expect-revision <n>/)
-  assert.match(skill, /Takeover only transfers writer ownership; it does not reapprove a plan or authorize `done`/)
-  assert.match(skill, /Run `done` only when the user explicitly authorizes completion\/archive/)
-  assert.match(skill, /Git delivery remains separate/)
-  assert.match(skill, /Do not load `--brief --history timeline`[\s\S]*gates are missing, stale, pending, or failed/)
+  assert.match(skill, /Takeover transfers writer ownership only, never implementation approval/)
+  assert.match(skill, /Run `done` only with explicit completion or archive authorization/)
+  assert.match(skill, /Git\s+delivery remains separate/)
+  assert.match(skill, /Read the bounded brief and reconcile `submission\.unverified`/)
+  assert.match(skill, /Do not rerun an already passed, non-stale full build/)
 })
 
 test('canonical skill bounds large command output without creating a new workflow', () => {
   const skill = text('skills/latch/SKILL.md')
-  assert.match(skill, /above 50 entries/i)
-  assert.match(skill, /total, status counts, and at most eight representative paths/)
-  assert.match(skill, /unless the full list is explicitly requested/)
-  assert.match(skill, /Avoid a full `git diff` unless code review or exact patch evidence/)
-  assert.match(skill, /never join them with `;` into one tool result/)
+  assert.match(skill, /above 50 (?:worktree )?entries/i)
+  assert.match(skill, /totals, status counts, and at most eight paths/)
+  assert.match(skill, /unless the full list is requested/)
+  assert.match(skill, /Avoid a full `git diff` unless review or exact\s+patch evidence/)
+  assert.match(skill, /never join high-output commands with `;`/)
   assert.match(skill, /Do not rerun an already passed, non-stale full build/)
 })
 
 test('canonical skill keeps high-frequency scope and isolation rules in the main file', () => {
   const skill = text('skills/latch/SKILL.md')
-  assert.match(skill, /do not read other Codex conversations/)
+  assert.match(skill, /do not read other Codex conversations/i)
   assert.match(
     skill,
-    /Do not read or write Records during session startup, task recovery, or ordinary discussion without explicit Record intent/,
+    /Do not read or write\s+Records during startup, task recovery, or ordinary discussion without explicit\s+Record intent/,
   )
   assert.match(skill, /every task mutation/)
-  assert.match(skill, /one uninterrupted mutation flow/)
+  assert.match(skill, /one uninterrupted mutation\s+flow/)
   assert.match(skill, /successful JSON response's `revision`/)
   assert.match(skill, /Refresh status after a revision conflict/)
   assert.match(skill, /`verify-all` for pending gates/)
@@ -256,7 +305,7 @@ test('descriptive commands cannot stand in for automatic or manual gate evidence
   const lifecycle = text(lifecycleReference)
   const handBook = text('docs/HANDBOOK.md')
 
-  for (const content of [skill, lifecycle, handBook]) {
+  for (const content of [lifecycle, handBook]) {
     assert.match(content, /`echo`/)
     assert.match(content, /`printf`/)
     assert.match(content, /`true`/)
@@ -264,7 +313,7 @@ test('descriptive commands cannot stand in for automatic or manual gate evidence
     assert.match(content, /submission\.unverified/)
   }
 
-  assert.match(skill, /instruction-only command as a gate/)
+  assert.match(skill, /instruction-only commands[\s\S]*are not evidence/)
   assert.match(lifecycle, /zero exit code[\s\S]*does not prove that a manual step occurred/)
   assert.match(lifecycle, /diagnostic success never verifies the manual action/)
   assert.match(handBook, /只输出操作说明的命令不得配置为 gate/)
@@ -301,8 +350,8 @@ test('Record contract stays explicit, project-local, and metadata-first', () => 
     assert.match(content, /task/)
     assert.match(content, /repo|项目/)
   }
-  assert.match(agents, /普通对话、task 恢复和语义相似不得触发读写/)
-  assert.match(agents, /不作为 AI 指令/)
+  assert.match(agents, /Record 只在明确保存、召回或 CRUD 意图/)
+  assert.match(agents, /项目数据而非 AI 指令/)
   assert.match(handBook, /默认及最大返回 5 条/)
   assert.match(handBook, /不得保存密码/)
   assert.match(contract, /`index\.json`[\s\S]*不保存正文/)
@@ -339,6 +388,19 @@ test('inline Light shortcuts stay consistent across instructions and current doc
   assert.match(migration, /--authorization-file[\s\S]*complex authorization/)
 })
 
+test('Light plan template entry stays consistent across CLI-facing instructions', () => {
+  const skill = text('skills/latch/SKILL.md')
+  const install = text('docs/AI_INSTALL.md')
+  const handBook = text('docs/HANDBOOK.md')
+
+  for (const content of [skill, install, handBook])
+    assert.match(content, /latch checkpoint --print-plan-template light/)
+  assert.match(skill, /scaffold[\s\S]*schema validity/)
+  assert.match(skill, /choose A\/B\/C/)
+  assert.match(handBook, /最小合法 JSON/)
+  assert.match(handBook, /期望类型、实际类型、最小合法值/)
+})
+
 test('startup reads context and project docs only when conditions require them', () => {
   const skill = text('skills/latch/SKILL.md')
   const agents = text('AGENTS.md')
@@ -350,10 +412,13 @@ test('startup reads context and project docs only when conditions require them',
     assert.match(content, /docs\/INDEX\.md/)
   }
   assert.match(skill, /if neither exists, do not call/i)
-  assert.match(agents, /两者都没有时，不得调用/)
+  assert.match(agents, /两者都没有时[，,]?\s*不得调用/)
   assert.match(handBook, /不含 `current_task_id`[\s\S]*不得调用/)
-  assert.match(skill, /only when the task affects product contracts/)
-  assert.match(agents, /只有任务涉及产品契约/)
+  assert.match(
+    skill,
+    /only when the task affects product contracts|only when[\s\S]{0,80}affects product contracts/,
+  )
+  assert.match(agents, /仅在产品契约/)
   assert.match(handBook, /简单且证据充分的改动不固定读取项目文档/)
 })
 
@@ -366,8 +431,8 @@ test('continuous mutation flows reuse returned revision without redundant contex
     assert.match(content, /JSON[\s\S]*`revision`/)
     assert.match(content, /--expect-revision/)
     assert.match(content, /revision conflict/)
-    assert.match(content, /user input boundary|用户输入边界/)
-    assert.match(content, /do not reread context|不得只为获取 revision 重读 context/)
+    assert.match(content, /user input\s+boundary|用户输入边界/)
+    assert.match(content, /do not reread context|不得只为(?:获取)?\s*revision 重读 context/)
   }
 })
 
@@ -389,9 +454,9 @@ test('cross-session planning recovery stays artifact-first and bounded', () => {
   assert.match(handoff, /Read-only orientation does not authorize claim, takeover/)
   assert.match(handoff, /Starting a different task.*is not a takeover/)
   assert.match(groups, /Do not create a planning or anchor task solely/)
-  assert.match(agents, /不得只为保存聊天连续性创建 planning 或 anchor task/)
+  assert.match(agents, /不得只为(?:保存)?聊天连续性创建 planning 或 anchor task/)
   assert.match(lifecycle, /concrete next task\/action in `followup`/)
-  assert.match(agents, /`followup` 必须写具体下一张 task、下一项动作/)
+  assert.match(agents, /`followup` 必须写具体后续动作/)
   assert.match(groups, /Group membership does not encode task order/)
   assert.match(groups, /do not generate an automatic group-level next task/)
 })
@@ -404,7 +469,7 @@ test('review closeout reconciles unverified evidence before archive', () => {
   for (const content of [skill, lifecycle, handBook])
     assert.match(content, /submission\.unverified/)
 
-  assert.match(skill, /archive intent alone\s+is not risk acceptance/i)
+  assert.match(skill, /archive intent alone[\s\S]{0,30}is not risk[\s\S]{0,20}acceptance/i)
   assert.match(lifecycle, /latest explicit review acceptance/)
   assert.match(lifecycle, /owner and next action/)
   assert.match(lifecycle, /manual verification completed after submit/)
@@ -426,7 +491,7 @@ test('cross-session handoff requires takeover separate from implementation appro
     assert.match(content, /implementation approval|implementation approval|实施批准/)
     assert.match(content, /provenance.*clean|`provenance: clean`/)
   }
-  assert.match(skill, /takeover as ownership transfer only, never as implementation approval/)
+  assert.match(skill, /Takeover transfers writer ownership only, never implementation approval/)
   assert.match(skill, /references\/session-actors-and-handoff\.md/)
   assert.match(handoff, /task-id/)
   assert.match(handoff, /phase\/revision/)

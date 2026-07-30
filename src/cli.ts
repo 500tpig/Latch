@@ -26,6 +26,7 @@ import {
   type KnowledgeCheckResult,
 } from './core/knowledge.js'
 import { discoverWorkspaceRoot } from './core/paths.js'
+import { lightPlanTemplate } from './core/plan-schema.js'
 import {
   archiveProjectRecordV1,
   createProjectRecordV1,
@@ -88,6 +89,7 @@ const usage = `Usage: latch <command> [options]
 Commands:
   init
   checkpoint <title> --plan-file <path> [--profile <light|standard>] [--authorize-request <reason> [--scope-summary <summary>] [--scope-path <path>...] | --authorization-file <path> | --retrospective-file <path>] [--source-record <id> --source-record-revision <revision>]
+  checkpoint --print-plan-template light
   use <task-id>
   list [--group <id> [--include-archive]] [--json] [--brief]
   context [task-id] [--json] [--brief | --status | --since-revision <revision>] [--history <timeline|events|both>]
@@ -111,7 +113,7 @@ Commands:
 const commandUsage: Record<string, string> = {
   init: 'Usage: latch init [--json]',
   checkpoint:
-    'Usage: latch checkpoint <title> --plan-file <path> [--profile <light|standard>] [--authorize-request <reason> [--scope-summary <summary>] [--scope-path <path>...] | --authorization-file <path> | --retrospective-file <path>] [--source-record <id> --source-record-revision <revision>] [--artifact <kind>:<path>] [--json]',
+    'Usage: latch checkpoint <title> --plan-file <path> [--profile <light|standard>] [--authorize-request <reason> [--scope-summary <summary>] [--scope-path <path>...] | --authorization-file <path> | --retrospective-file <path>] [--source-record <id> --source-record-revision <revision>] [--artifact <kind>:<path>] [--json]\n       latch checkpoint --print-plan-template light',
   use: 'Usage: latch use <task-id> [--json]',
   list:
     'Usage: latch list [--group <id> [--include-archive]] [--json] [--brief]',
@@ -346,6 +348,7 @@ function runCheckpoint(args: string[], cwd: string, actor: string) {
   const parsed = parseCommand(args, {
     ...commonOptions(),
     'plan-file': { type: 'string' },
+    'print-plan-template': { type: 'string' },
     profile: { type: 'string' },
     'authorize-request': { type: 'string' },
     'scope-summary': { type: 'string' },
@@ -357,6 +360,37 @@ function runCheckpoint(args: string[], cwd: string, actor: string) {
     artifact: { type: 'string', multiple: true },
   })
   if (parsed.values.help) return process.stdout.write(`${commandUsage.checkpoint}\n`)
+  const templateProfile = parsed.values['print-plan-template']
+  if (templateProfile !== undefined) {
+    if (templateProfile !== 'light')
+      fail(
+        'invalid_arguments',
+        '--print-plan-template only supports light.',
+      )
+    const incompatibleOptions = [
+      ['--plan-file', parsed.values['plan-file']],
+      ['--profile', parsed.values.profile],
+      ['--authorize-request', parsed.values['authorize-request']],
+      ['--scope-summary', parsed.values['scope-summary']],
+      ['--scope-path', parsed.values['scope-path']],
+      ['--authorization-file', parsed.values['authorization-file']],
+      ['--retrospective-file', parsed.values['retrospective-file']],
+      ['--source-record', parsed.values['source-record']],
+      ['--source-record-revision', parsed.values['source-record-revision']],
+      ['--artifact', parsed.values.artifact],
+    ]
+      .filter(([, value]) => value !== undefined)
+      .map(([option]) => option)
+    if (parsed.positionals.length > 0 || incompatibleOptions.length > 0)
+      fail(
+        'invalid_arguments',
+        '--print-plan-template cannot be combined with a title or task creation options' +
+          (incompatibleOptions.length > 0
+            ? `: ${incompatibleOptions.join(', ')}.`
+            : '.'),
+      )
+    return json(lightPlanTemplate())
+  }
   requirePositionals('checkpoint', parsed.positionals, 1)
   if (parsed.values.profile !== undefined &&
       parsed.values.profile !== 'light' &&
@@ -1847,10 +1881,18 @@ function run(argv: string[], cwd: string) {
   const args = argv.slice(1)
   injectHostActor()
   const actor = actorId()
+  const printsCheckpointTemplate =
+    command === 'checkpoint' &&
+    args.some(
+      (arg) =>
+        arg === '--print-plan-template' ||
+        arg.startsWith('--print-plan-template='),
+    )
   if (
     actorRequiredCommands.has(command) &&
     !args.includes('--help') &&
-    !args.includes('-h')
+    !args.includes('-h') &&
+    !printsCheckpointTemplate
   )
     assertWritableActor(actor)
   switch (command) {
