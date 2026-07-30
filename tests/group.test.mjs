@@ -13,7 +13,7 @@ import { spawnSync } from 'node:child_process'
 import {
   archiveTaskV2,
   createTaskV2,
-  createTaskV3,
+  createTaskV4,
   initTaskStoreV2,
   readArchivedTaskV2,
   readTaskV2,
@@ -72,7 +72,7 @@ function authorization(paths = ['src/core/task-view.ts']) {
 }
 
 function createV3(store, title, options = {}) {
-  return createTaskV3(store, {
+  return createTaskV4(store, {
     title,
     plan: options.plan ?? plan(),
     profile: options.profile ?? 'standard',
@@ -108,7 +108,7 @@ test.afterEach(() => {
     rmSync(directory, { recursive: true, force: true })
 })
 
-test('schema 3 validates optional group ids without changing their exact value', () => {
+test('schema 4 validates optional group ids without changing their exact value', () => {
   const cwd = temporaryDirectory()
   const store = initTaskStoreV2(cwd)
   const grouped = createV3(store, 'grouped', { groupId: ' Wave:Alpha ' })
@@ -144,7 +144,7 @@ test('schema 3 validates optional group ids without changing their exact value',
   const v2 = createTaskV2(store, { title: 'v2', plan: plan() }, actor).task
   v2.group_id = 'wave:alpha'
   writeFileSync(taskPath(cwd, v2.id), `${JSON.stringify(v2, null, 2)}\n`)
-  assert.throws(() => readTaskV2(store, v2.id), /schema_version 3 is required/)
+  assert.throws(() => readTaskV2(store, v2.id), /schema_version 3 or 4 is required/)
 })
 
 test('save changes or clears group metadata without changing lifecycle facts', () => {
@@ -208,12 +208,12 @@ test('save changes or clears group metadata without changing lifecycle facts', (
     'save', v2.id, '--expect-revision', '1', '--group', 'Wave:Alpha',
   ])
   assert.notEqual(denied.status, 0)
-  assert.match(denied.stderr, /Schema 3 update requires schema_version 3/)
+  assert.match(denied.stderr, /legacy_unclaimed/)
   const deniedClear = run(cwd, [
     'save', v2.id, '--expect-revision', '1', '--clear-group',
   ])
   assert.notEqual(deniedClear.status, 0)
-  assert.match(deniedClear.stderr, /Schema 3 update requires schema_version 3/)
+  assert.match(deniedClear.stderr, /legacy_unclaimed/)
 })
 
 test('list filters exact group members and includes archive only on request', () => {

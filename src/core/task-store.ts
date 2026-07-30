@@ -35,7 +35,12 @@ import {
   validateTaskEventV3,
 } from './notes-events.js'
 import { downgradeTaskEvents, downgradeTaskValue } from './migration.js'
-import { TASK_EVENT_TYPES, TASK_EVENT_TYPES_V3 } from './types.js'
+import {
+  SCHEMA_V4_MIN_WRITER_VERSION,
+  TASK_EVENT_TYPES,
+  TASK_EVENT_TYPES_V3,
+} from './types.js'
+import { readWorkspaceEvidence } from './workspace-evidence.js'
 import type {
   ImplementationAuthorization,
   ImplementationAuthorizationInput,
@@ -59,6 +64,7 @@ import type {
 
 const V2_SCHEMA_VERSION = 2 as const
 const V3_SCHEMA_VERSION = 3 as const
+const V4_SCHEMA_VERSION = 4 as const
 const STALE_LOCK_MILLISECONDS = 60_000
 const CANONICAL_TASK_ID =
   /^\d{17}-[a-z0-9\u4e00-\u9fa5]+(?:-[a-z0-9\u4e00-\u9fa5]+)*-[a-f0-9]{6}$/
@@ -90,6 +96,8 @@ export type CreateTaskV3Input = CreateTaskV2Input & {
   sourceRecord?: TaskSourceRecord
   workBasis?: WorkBasisInput
 }
+
+export type CreateTaskV4Input = CreateTaskV3Input
 
 export type TaskWriteResultV2 = {
   task: TaskV2
@@ -137,12 +145,32 @@ export type TakeoverTaskV3Options = {
   reason: string
 }
 
+export type UpgradeTaskV4Options = {
+  expectRevision: number
+  actor: string
+}
+
 export type DowngradeTaskV2Result = TaskWriteResultV2 & {
   backupPath: string
 }
 
+export class DowngradeTaskV2Error extends Error {
+  constructor(
+    message: string,
+    readonly backupPath: string,
+    readonly warnings: string[],
+  ) {
+    super(message)
+    this.name = 'DowngradeTaskV2Error'
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isStructuredTaskSchema(schemaVersion: unknown): schemaVersion is 3 | 4 {
+  return schemaVersion === V3_SCHEMA_VERSION || schemaVersion === V4_SCHEMA_VERSION
 }
 
 function requireString(
@@ -477,12 +505,29 @@ function assertTaskV2(value: unknown, path: string): asserts value is TaskV2 {
   if (
     !isRecord(value) ||
     (value.schema_version !== V2_SCHEMA_VERSION &&
-      value.schema_version !== V3_SCHEMA_VERSION)
+      value.schema_version !== V3_SCHEMA_VERSION &&
+      value.schema_version !== V4_SCHEMA_VERSION)
   )
     throw new Error(`Unsupported or invalid Latch task schema in ${path}.`)
+  if (value.schema_version === V4_SCHEMA_VERSION) {
+    if (value.min_writer_version !== SCHEMA_V4_MIN_WRITER_VERSION)
+      throw new Error(
+        `Invalid min_writer_version in ${path}: schema_version 4 requires ${SCHEMA_V4_MIN_WRITER_VERSION}.`,
+      )
+    if (!Object.hasOwn(value, 'primary_writer'))
+      throw new Error(`Invalid primary_writer in ${path}: schema_version 4 requires a writer.`)
+    if (!Object.hasOwn(value, 'profile'))
+      throw new Error(`Invalid profile in ${path}: schema_version 4 requires a profile.`)
+    if (!Object.hasOwn(value, 'provenance'))
+      throw new Error(`Invalid provenance in ${path}: schema_version 4 requires provenance.`)
+  } else if (Object.hasOwn(value, 'min_writer_version')) {
+    throw new Error(
+      `Invalid min_writer_version in ${path}: schema_version 4 is required.`,
+    )
+  }
   if (Object.hasOwn(value, 'primary_writer')) {
-    if (value.schema_version !== V3_SCHEMA_VERSION)
-      throw new Error(`Invalid primary_writer in ${path}: schema_version 3 is required.`)
+    if (!isStructuredTaskSchema(value.schema_version))
+      throw new Error(`Invalid primary_writer in ${path}: schema_version 3 or 4 is required.`)
     if (
       typeof value.primary_writer !== 'string' ||
       !isWritableActor(value.primary_writer)
@@ -490,25 +535,25 @@ function assertTaskV2(value: unknown, path: string): asserts value is TaskV2 {
       throw new Error(`Invalid primary_writer in ${path}.`)
   }
   if (value.profile !== undefined) {
-    if (value.schema_version !== V3_SCHEMA_VERSION)
-      throw new Error(`Invalid profile in ${path}: schema_version 3 is required.`)
+    if (!isStructuredTaskSchema(value.schema_version))
+      throw new Error(`Invalid profile in ${path}: schema_version 3 or 4 is required.`)
     if (value.profile !== 'light' && value.profile !== 'standard')
       throw new Error(`Invalid profile in ${path}.`)
   }
   if (Object.hasOwn(value, 'provenance')) {
-    if (value.schema_version !== V3_SCHEMA_VERSION)
-      throw new Error(`Invalid provenance in ${path}: schema_version 3 is required.`)
+    if (!isStructuredTaskSchema(value.schema_version))
+      throw new Error(`Invalid provenance in ${path}: schema_version 3 or 4 is required.`)
     if (value.provenance !== 'clean' && value.provenance !== 'mixed')
       throw new Error(`Invalid provenance in ${path}.`)
   }
   if (Object.hasOwn(value, 'group_id')) {
-    if (value.schema_version !== V3_SCHEMA_VERSION)
-      throw new Error(`Invalid group_id in ${path}: schema_version 3 is required.`)
+    if (!isStructuredTaskSchema(value.schema_version))
+      throw new Error(`Invalid group_id in ${path}: schema_version 3 or 4 is required.`)
     assertGroupIdV3(value.group_id, path)
   }
   if (Object.hasOwn(value, 'source_record')) {
-    if (value.schema_version !== V3_SCHEMA_VERSION)
-      throw new Error(`Invalid source_record in ${path}: schema_version 3 is required.`)
+    if (!isStructuredTaskSchema(value.schema_version))
+      throw new Error(`Invalid source_record in ${path}: schema_version 3 or 4 is required.`)
     if (!isRecord(value.source_record))
       throw new Error(`Invalid source_record in ${path}.`)
     requireString(value.source_record.record_id, 'source_record.record_id', path)
@@ -526,8 +571,8 @@ function assertTaskV2(value: unknown, path: string): asserts value is TaskV2 {
       throw new Error(`Invalid source_record.body_sha256 in ${path}.`)
   }
   if (value.work_basis !== undefined) {
-    if (value.schema_version !== V3_SCHEMA_VERSION)
-      throw new Error(`Invalid work_basis in ${path}: schema_version 3 is required.`)
+    if (!isStructuredTaskSchema(value.schema_version))
+      throw new Error(`Invalid work_basis in ${path}: schema_version 3 or 4 is required.`)
     assertWorkBasis(value.work_basis, path)
   }
   requireString(value.id, 'id', path)
@@ -607,9 +652,9 @@ function assertTaskV2(value: unknown, path: string): asserts value is TaskV2 {
       0,
     )
     if (value.submission.plan_revision !== undefined) {
-      if (value.schema_version !== V3_SCHEMA_VERSION)
+      if (!isStructuredTaskSchema(value.schema_version))
         throw new Error(
-          `Invalid submission.plan_revision in ${path}: schema_version 3 is required.`,
+          `Invalid submission.plan_revision in ${path}: schema_version 3 or 4 is required.`,
         )
       requireInteger(
         value.submission.plan_revision,
@@ -625,9 +670,9 @@ function assertTaskV2(value: unknown, path: string): asserts value is TaskV2 {
       throw new Error(`Invalid submission.unverified in ${path}.`)
     requireString(value.submission.submitted_at, 'submission.submitted_at', path)
     if (value.submission.knowledge_impact !== undefined) {
-      if (value.schema_version !== V3_SCHEMA_VERSION)
+      if (!isStructuredTaskSchema(value.schema_version))
         throw new Error(
-          `Invalid submission.knowledge_impact in ${path}: schema_version 3 is required.`,
+          `Invalid submission.knowledge_impact in ${path}: schema_version 3 or 4 is required.`,
         )
       assertKnowledgeImpact(value.submission.knowledge_impact, value.artifacts, path)
     }
@@ -878,7 +923,7 @@ export function readArchivedTaskV2(
 }
 
 function readTaskEventLogFromDirectory(task: TaskV2, directory: string) {
-  if (task.schema_version === V3_SCHEMA_VERSION)
+  if (isStructuredTaskSchema(task.schema_version))
     return readTaskEventLogV3(directory)
   return { events: readTaskEventsV2(directory), warnings: [] }
 }
@@ -1048,7 +1093,7 @@ function makeTaskEvent(
 }
 
 function validateTaskEventForTask(task: TaskV2, event: TaskEvent, path: string) {
-  if (task.schema_version === V3_SCHEMA_VERSION)
+  if (isStructuredTaskSchema(task.schema_version))
     validateTaskEventV3(event, path)
   else validateTaskEventV2(event, path)
 }
@@ -1058,7 +1103,7 @@ function appendTaskEventForTask(
   task: TaskV2,
   event: TaskEvent,
 ) {
-  if (task.schema_version === V3_SCHEMA_VERSION)
+  if (isStructuredTaskSchema(task.schema_version))
     appendTaskEventV3(taskDirectory, event)
   else appendTaskEventV2(taskDirectory, event)
 }
@@ -1070,13 +1115,13 @@ function eventWriteWarning(task: TaskV2, error: unknown) {
 
 function createTask(
   store: TaskStoreV2,
-  input: CreateTaskV2Input | CreateTaskV3Input,
+  input: CreateTaskV2Input | CreateTaskV3Input | CreateTaskV4Input,
   actor: string,
-  schemaVersion: 2 | 3,
+  schemaVersion: 2 | 3 | 4,
 ): TaskWriteResultV2 {
   assertWritableActor(actor)
   requireString(input.title, 'title', 'checkpoint input')
-  if (schemaVersion === V3_SCHEMA_VERSION)
+  if (isStructuredTaskSchema(schemaVersion))
     assertWritableTaskPlan(input.plan, 'checkpoint input')
   else assertTaskPlan(input.plan, 'checkpoint input')
   const artifacts = structuredClone(input.artifacts ?? [])
@@ -1088,18 +1133,18 @@ function createTask(
   let id = makeTaskId(input.title)
   while (existsSync(taskDirectoryV2(store, id))) id = makeTaskId(input.title)
   const timestamp = now()
-  const profile = schemaVersion === V3_SCHEMA_VERSION
+  const profile = isStructuredTaskSchema(schemaVersion)
     ? (input as CreateTaskV3Input).profile
     : undefined
-  if (schemaVersion === V3_SCHEMA_VERSION && !profile)
-    throw new Error('profile is required for schema_version 3 task creation.')
-  const workBasisInput = schemaVersion === V3_SCHEMA_VERSION
+  if (isStructuredTaskSchema(schemaVersion) && !profile)
+    throw new Error('profile is required for structured task creation.')
+  const workBasisInput = isStructuredTaskSchema(schemaVersion)
     ? (input as CreateTaskV3Input).workBasis
     : undefined
-  const groupId = schemaVersion === V3_SCHEMA_VERSION
+  const groupId = isStructuredTaskSchema(schemaVersion)
     ? (input as CreateTaskV3Input).groupId
     : undefined
-  const sourceRecord = schemaVersion === V3_SCHEMA_VERSION
+  const sourceRecord = isStructuredTaskSchema(schemaVersion)
     ? (input as CreateTaskV3Input).sourceRecord
     : undefined
   if (groupId !== undefined) assertGroupIdV3(groupId, 'checkpoint input')
@@ -1111,12 +1156,15 @@ function createTask(
     : undefined
   const task: TaskV2 = {
     schema_version: schemaVersion,
+    ...(schemaVersion === V4_SCHEMA_VERSION
+      ? { min_writer_version: SCHEMA_V4_MIN_WRITER_VERSION }
+      : {}),
     id,
     title: input.title.trim(),
     phase: workBasis ? 'dev' : 'plan',
-    ...(schemaVersion === V3_SCHEMA_VERSION ? { primary_writer: actor } : {}),
+    ...(isStructuredTaskSchema(schemaVersion) ? { primary_writer: actor } : {}),
     ...(profile ? { profile } : {}),
-    ...(schemaVersion === V3_SCHEMA_VERSION
+    ...(isStructuredTaskSchema(schemaVersion)
       ? { provenance: 'clean' as TaskProvenance }
       : {}),
     ...(groupId !== undefined ? { group_id: groupId } : {}),
@@ -1198,7 +1246,7 @@ function createTask(
   return { task, warnings }
 }
 
-// createTaskV2 只保留给 legacy fixture；CLI checkpoint 使用 schema 3。
+// createTaskV2/createTaskV3 只保留给 legacy fixture；CLI checkpoint 使用 schema 4。
 export function createTaskV2(
   store: TaskStoreV2,
   input: CreateTaskV2Input,
@@ -1213,6 +1261,14 @@ export function createTaskV3(
   actor: string,
 ): TaskWriteResultV2 {
   return createTask(store, input, actor, V3_SCHEMA_VERSION)
+}
+
+export function createTaskV4(
+  store: TaskStoreV2,
+  input: CreateTaskV4Input,
+  actor: string,
+): TaskWriteResultV2 {
+  return createTask(store, input, actor, V4_SCHEMA_VERSION)
 }
 
 export function currentTaskIdV2(store: TaskStoreV2, actor: string) {
@@ -1275,10 +1331,14 @@ function assertImmutableTaskFields(
     next.schema_version !== current.schema_version &&
       !(
         allowSchemaUpgrade &&
-        current.schema_version === V2_SCHEMA_VERSION &&
-        next.schema_version === V3_SCHEMA_VERSION
+        (current.schema_version === V2_SCHEMA_VERSION ||
+          current.schema_version === V3_SCHEMA_VERSION) &&
+        next.schema_version === V4_SCHEMA_VERSION
       ) &&
       'schema_version',
+    next.min_writer_version !== current.min_writer_version &&
+      !allowSchemaUpgrade &&
+      'min_writer_version',
     next.id !== current.id && 'id',
     next.revision !== current.revision && 'revision',
     !allowPrimaryWriterChange && primaryWriterChanged && 'primary_writer',
@@ -1321,6 +1381,19 @@ function assertPrimaryWriter(task: TaskV2, actor: string) {
     )
 }
 
+function assertCurrentWriterSchema(task: TaskV2) {
+  if (task.schema_version === V3_SCHEMA_VERSION)
+    throw new Error(
+      `Schema 3 task is read-only: run latch upgrade-v4 --task ${task.id} ` +
+        `--expect-revision ${task.revision} before writing.`,
+    )
+  if (task.schema_version !== V4_SCHEMA_VERSION)
+    throw new Error(
+      'Task is legacy_unclaimed: write denied.\n' +
+        'Claim this task after an explicit user continue/handle request for this task id.',
+    )
+}
+
 export function assertTaskWritableV2(
   store: TaskStoreV2,
   id: string,
@@ -1333,6 +1406,7 @@ export function assertTaskWritableV2(
   return withTaskLockV2(store, canonicalId, () => {
     const task = readCanonicalTaskV2(store, canonicalId)
     assertRevisionMatches(store, task, expectRevision)
+    assertCurrentWriterSchema(task)
     assertPrimaryWriter(task, actor)
     return task
   })
@@ -1414,7 +1488,10 @@ export function updateTaskV2(
   return commitTaskUpdate(store, id, {
     ...options,
     events: () => options.events,
-    authorize: (task) => assertPrimaryWriter(task, options.actor),
+    authorize(task) {
+      assertCurrentWriterSchema(task)
+      assertPrimaryWriter(task, options.actor)
+    },
   })
 }
 
@@ -1423,17 +1500,22 @@ export function updateTaskV3(
   id: string,
   options: UpdateTaskV3Options,
 ): TaskWriteResultV2 {
+  return updateTaskV4(store, id, options)
+}
+
+export function updateTaskV4(
+  store: TaskStoreV2,
+  id: string,
+  options: UpdateTaskV3Options,
+): TaskWriteResultV2 {
   for (const event of options.events)
     if (!taskEventTypesV3.has(event.type))
-      throw new Error(`Unknown schema 3 task event type: ${event.type}`)
+      throw new Error(`Unknown structured task event type: ${event.type}`)
   return commitTaskUpdate(store, id, {
     ...options,
     events: () => options.events,
     authorize(task) {
-      if (task.schema_version !== V3_SCHEMA_VERSION)
-        throw new Error(
-          'Schema 3 update requires schema_version 3; frozen v2 data was not modified.',
-        )
+      assertCurrentWriterSchema(task)
       assertPrimaryWriter(task, options.actor)
     },
   })
@@ -1456,25 +1538,80 @@ export function claimTaskV3(
       },
     ],
     authorize(task) {
-      if (
-        task.schema_version === V3_SCHEMA_VERSION &&
-        Object.hasOwn(task, 'primary_writer')
-      )
+      if (task.schema_version !== V2_SCHEMA_VERSION)
         throw new Error(
-          `Task already has primary_writer: ${task.primary_writer}. Use takeover, not claim.`,
+          task.schema_version === V3_SCHEMA_VERSION
+            ? `Schema 3 task already has a writer and requires upgrade-v4, not claim.`
+            : `Task already has primary_writer: ${task.primary_writer}. Use takeover, not claim.`,
         )
     },
     update(task) {
-      if (task.schema_version === V2_SCHEMA_VERSION) {
-        task.schema_version = V3_SCHEMA_VERSION
-        task.profile = 'standard'
-      } else if (!task.profile) {
-        task.profile = 'standard'
-      }
+      task.schema_version = V4_SCHEMA_VERSION
+      task.min_writer_version = SCHEMA_V4_MIN_WRITER_VERSION
+      task.profile = 'standard'
       task.provenance ??= 'clean'
       task.primary_writer = options.actor
     },
     allowPrimaryWriterChange: true,
+    allowSchemaUpgrade: true,
+  })
+}
+
+function collectWorkspaceEvidenceRefs(
+  value: unknown,
+  references = new Map<string, WorkspaceEvidenceRef>(),
+) {
+  if (Array.isArray(value)) {
+    for (const entry of value) collectWorkspaceEvidenceRefs(entry, references)
+    return references
+  }
+  if (!isRecord(value)) return references
+  if (
+    typeof value.path === 'string' &&
+    typeof value.sha256 === 'string' &&
+    Number.isInteger(value.entry_count)
+  ) {
+    const reference = value as WorkspaceEvidenceRef
+    references.set(
+      `${reference.path}\u0000${reference.sha256}\u0000${reference.entry_count}`,
+      reference,
+    )
+  }
+  for (const entry of Object.values(value))
+    collectWorkspaceEvidenceRefs(entry, references)
+  return references
+}
+
+export function upgradeTaskV4(
+  store: TaskStoreV2,
+  id: string,
+  options: UpgradeTaskV4Options,
+): TaskWriteResultV2 {
+  return commitTaskUpdate(store, id, {
+    expectRevision: options.expectRevision,
+    actor: options.actor,
+    events: () => [{
+      type: 'schema_upgraded',
+      fields: {
+        from_schema_version: V3_SCHEMA_VERSION,
+        to_schema_version: V4_SCHEMA_VERSION,
+        min_writer_version: SCHEMA_V4_MIN_WRITER_VERSION,
+      },
+    }],
+    authorize(task) {
+      if (task.schema_version !== V3_SCHEMA_VERSION)
+        throw new Error('upgrade-v4 requires an open schema_version 3 task.')
+      assertPrimaryWriter(task, options.actor)
+      const directory = taskDirectoryV2(store, task.id)
+      const eventLog = readTaskEventLogForTask(store, task)
+      const references = collectWorkspaceEvidenceRefs([task, eventLog.events])
+      for (const reference of references.values())
+        readWorkspaceEvidence(directory, reference)
+    },
+    update(task) {
+      task.schema_version = V4_SCHEMA_VERSION
+      task.min_writer_version = SCHEMA_V4_MIN_WRITER_VERSION
+    },
     allowSchemaUpgrade: true,
   })
 }
@@ -1499,10 +1636,7 @@ export function takeoverTaskV3(
       },
     ],
     authorize(task) {
-      if (task.schema_version !== V3_SCHEMA_VERSION)
-        throw new Error(
-          'Writer takeover requires schema_version 3; frozen v2 data was not modified.',
-        )
+      assertCurrentWriterSchema(task)
       if (!Object.hasOwn(task, 'primary_writer'))
         throw new Error('Task is legacy_unclaimed. Use claim, not takeover.')
       if (task.primary_writer === options.actor)
@@ -1535,9 +1669,10 @@ function resolveTaskIdForDowngrade(store: TaskStoreV2, id: string) {
 
 function taskDirectoryForDowngrade(store: TaskStoreV2, id: string) {
   const openDirectory = taskDirectoryV2(store, id)
-  if (existsSync(join(openDirectory, 'task.json'))) return openDirectory
+  if (existsSync(join(openDirectory, 'task.json')))
+    return { directory: openDirectory, archived: false }
   const archivedDirectory = archivedTaskDirectoryV2(store, id)
-  if (archivedDirectory) return archivedDirectory
+  if (archivedDirectory) return { directory: archivedDirectory, archived: true }
   throw new Error(`Task not found: ${id}`)
 }
 
@@ -1552,7 +1687,10 @@ export function downgradeTaskV2(
 
   return withTaskLockV2(store, canonicalId, () =>
     withStateLockV2(store, () => {
-      const directory = taskDirectoryForDowngrade(store, canonicalId)
+      const { directory, archived } = taskDirectoryForDowngrade(
+        store,
+        canonicalId,
+      )
       const taskPath = join(directory, 'task.json')
       const current = readTaskFromDirectory(store, canonicalId, directory)
       if (current.revision !== options.expectRevision) {
@@ -1563,8 +1701,9 @@ export function downgradeTaskV2(
             `Run latch context ${current.id} --json --brief and retry.`,
         )
       }
-      if (current.schema_version !== V3_SCHEMA_VERSION)
-        throw new Error('downgrade-v2 requires a schema_version 3 task.')
+      if (!isStructuredTaskSchema(current.schema_version))
+        throw new Error('downgrade-v2 requires a schema_version 3 or 4 task.')
+      if (!archived) assertPrimaryWriter(current, options.actor)
 
       const eventLog = readTaskEventLogFromDirectory(current, directory)
       const next = downgradeTaskValue(current)
@@ -1573,7 +1712,10 @@ export function downgradeTaskV2(
       for (const [index, event] of events.entries())
         validateTaskEventV2(event, `${join(directory, 'events.jsonl')}:${index + 1}`)
 
-      const backupRoot = join(store.paths.archiveDir, 'v3-backup')
+      const backupRoot = join(
+        store.paths.archiveDir,
+        `v${current.schema_version}-backup`,
+      )
       const timestamp = now().replace(/\D/g, '')
       const backupDirectory = join(backupRoot, `${canonicalId}-${timestamp}`)
       if (existsSync(backupDirectory))
@@ -1584,19 +1726,32 @@ export function downgradeTaskV2(
         errorOnExist: true,
         force: false,
       })
+      const backupPath = relative(store.paths.workspaceRoot, backupDirectory)
+        .split(sep)
+        .join('/')
 
       const serializedEvents = events.length > 0
         ? `${events.map((event) => JSON.stringify(event)).join('\n')}\n`
         : ''
-      writeTextAtomic(join(directory, 'events.jsonl'), serializedEvents)
-      writeJsonAtomic(taskPath, next)
+      try {
+        writeTextAtomic(join(directory, 'events.jsonl'), serializedEvents)
+        writeJsonAtomic(taskPath, next)
+      } catch (error) {
+        const cause = error instanceof Error ? error.message : String(error)
+        throw new DowngradeTaskV2Error(
+          `Downgrade stopped after backup creation at ${backupPath}: ${cause}`,
+          backupPath,
+          [
+            ...eventLog.warnings,
+            'Downgrade partially failed after backup creation; stop task mutations until the main task state is inspected.',
+          ],
+        )
+      }
 
       return {
         task: next,
         warnings: eventLog.warnings,
-        backupPath: relative(store.paths.workspaceRoot, backupDirectory)
-          .split(sep)
-          .join('/'),
+        backupPath,
       }
     }),
   )
@@ -1630,6 +1785,7 @@ export function archiveTaskV2(
   const archivedTask = withTaskLockV2(store, canonicalId, () => {
     const current = readCanonicalTaskV2(store, canonicalId)
     assertRevisionMatches(store, current, options.expectRevision)
+    assertCurrentWriterSchema(current)
     assertPrimaryWriter(current, options.actor)
     const next = structuredClone(current)
     options.update?.(next)

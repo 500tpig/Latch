@@ -2,10 +2,10 @@
 
 Latch 面向个人 macOS 开发环境。v1 备份在观察期结束前继续保留。
 
-当前 schema 3 workspace proof 写入要求 CLI 版本不低于 `0.3.0`。`0.2.0` 只支持引入
-writer、profile 和 work basis 时的 schema 3 基线，不得继续写入包含
-`workspace_scope`、`workspace_proof` 或 verification proof 扩展的 task。`0.3.0`
-继续使用 v2 JSON envelope；产品规则以
+当前 task writer 版本为 `0.4.0`。新 task 使用 schema 4，并在根节点保存
+`min_writer_version: "0.4.0"`。CLI 0.2.0 和 0.3.0 不支持 schema 4，会在读取
+`task.json` 时拒绝，不会继续 mutation 或追加 event。CLI JSON envelope 继续使用
+schema 2；产品规则以
 [最终产品契约](prd/2026-07-15-latch-final-product-contract.md)为准。
 
 ## 检查当前安装
@@ -24,7 +24,8 @@ pnpm list --global --depth -1
 pnpm skill:check
 ```
 
-`latch --help` 应显示 `claim`、`patch-submission-knowledge-impact` 和 `downgrade-v2`；
+`latch --help` 应显示 `claim`、`upgrade-v4`、
+`patch-submission-knowledge-impact` 和 `downgrade-v2`；
 `latch checkpoint --help` 应显示 `--profile`、`--authorize-request`、
 `--scope-summary`、`--scope-path`、`--authorization-file` 和
 `--retrospective-file`，以及只读入口
@@ -86,15 +87,18 @@ pnpm skill:link
 latch init
 ```
 
-初始化后的普通 `checkpoint` 创建 schema 3 standard task，并写入
-`provenance: clean`。plan 必须提供 `workspace_scope.paths`；精确文件使用
+初始化后的普通 `checkpoint` 创建 schema 4 standard task，并写入
+`min_writer_version: "0.4.0"` 和 `provenance: clean`。plan 必须提供
+`workspace_scope.paths`；精确文件使用
 repo-relative POSIX 路径，目录前缀以 `/` 结尾。普通 light request 使用
 `--authorize-request <reason>`，可选
 `--scope-summary` 和重复的 `--scope-path`；复杂 authorization 继续使用
 `--profile light --authorization-file`。提交无知识影响时使用
 `--knowledge-impact-none <reason>`，`updated` impact 继续使用
-`--knowledge-impact-file`。retrospective 创建使用 `--retrospective-file`。既有 schema 2/3 task 不批量改写；
-缺失 provenance 时按 `clean` 读取，明确继续具体 schema 2 task 后由 `claim` 完成升级。
+`--knowledge-impact-file`。retrospective 创建使用 `--retrospective-file`。既有
+schema 2/3 task 不批量改写；明确继续具体 schema 2 task 后由 `claim` 完成 2→4，
+明确继续 open schema 3 task 后由当前 primary writer 执行 `upgrade-v4`。两条路径
+都不推断 `workspace_scope`。
 
 v2 不迁移 v1。已有 `.latch` 时，先将原目录备份到 repo 外，记录来源和
 checksum，确认恢复方法，再移走旧目录并执行 `latch init`。备份位置记录在
@@ -104,9 +108,22 @@ checksum，确认恢复方法，再移走旧目录并执行 `latch init`。备�
 
 Grok 与 Codex 均可作为可写宿主。安装全局 `latch` 并 `pnpm build` 后，Grok 工具 shell 应自动获得 `grok:session:<id>`，无需手工 `export LATCH_ACTOR`。若写命令报 actor 不可写，先确认会话仍在运行且全局 CLI 指向当前构建；跨对话或跨工具续写同一 open task 仍需明确 `takeover`。
 
-## Schema 3 task 回退
+## Schema 3 升级与 schema 3/4 回退
 
-回退单张 task 前先停止该 task 的其它写入，并确认 v3 专用字段和 event 细节只保留在 backup：
+升级前先停止旧 writer，再逐张处理 open schema 3 task：
+
+```bash
+latch upgrade-v4 \
+  --task <task-id> \
+  --expect-revision <revision>
+```
+
+命令保留 plan/work revision、phase、approval、verification、proof generation 和
+evidence ref。升级在 `task.json` 原子写为 schema 4 时生效；在此之前，schema 3
+仍可能被旧 CLI 写入。命令不处理 archive，不提供批量或启动时自动升级。
+
+回退单张 task 前先停止该 task 的其它写入，并确认 schema 3/4 专用字段和 event
+细节只保留在 backup：
 
 ```bash
 latch downgrade-v2 \
@@ -115,11 +132,16 @@ latch downgrade-v2 \
   --confirm-data-loss
 ```
 
-成功后检查命令返回的 `.latch/archive/v3-backup/` 路径，并使用目标 v2 CLI 执行 `context <task-id> --json`。回退失败时不得删除 `.latch` 或已创建的 backup。
+成功后检查命令返回的 `.latch/archive/v3-backup/` 或
+`.latch/archive/v4-backup/` 路径，并使用目标 v2 CLI 执行
+`context <task-id> --json`。回退失败时不得删除 `.latch` 或已创建的 backup。若
+错误返回 `backup_path` 和部分失败 warning，先检查主 task 状态，再恢复后续
+mutation。
 
 完整 backup 保留 `workspace_scope`、`workspace_proof`、generation、violation 和
 evidence ref。schema 2 主 `task.json`、verification 与 `events.jsonl` 的显式投影会
-剥离这些 v3-only 字段；回退不提供自动升级或兼容回退。
+剥离 `min_writer_version`、workspace proof 扩展和 proof-only event；回退不提供
+schema 4→3、自动升级或兼容写入。
 
 ## 备份保留
 

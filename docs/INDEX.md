@@ -11,11 +11,11 @@
 
 ### [使用手册](HANDBOOK.md)
 
-v2 命令、phase、验证、review 和 archive 流程。
+schema 4 writer 边界、v2 命令、phase、验证、review 和 archive 流程。
 
 ### [设计边界](DESIGN.md)
 
-产品定位、当前事实、关键取舍和非目标。
+产品定位、schema 4 机器拒写、当前事实、关键取舍和非目标。
 
 ### [本机安装](AI_INSTALL.md)
 

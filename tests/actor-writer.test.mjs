@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
@@ -12,7 +13,7 @@ import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import {
   createTaskV2,
-  createTaskV3,
+  createTaskV4,
   initTaskStoreV2,
 } from '../dist/core/task-store.js'
 import {
@@ -91,15 +92,22 @@ function writeTask(cwd, task) {
   writeFileSync(taskPath(cwd, task.id), `${JSON.stringify(task, null, 2)}\n`)
 }
 
+function archivedTaskPath(cwd, id) {
+  const archiveRoot = join(cwd, '.latch', 'archive')
+  for (const month of readdirSync(archiveRoot)) {
+    const path = join(archiveRoot, month, id, 'task.json')
+    if (existsSync(path)) return path
+  }
+  throw new Error(`Archived task not found: ${id}`)
+}
+
 function createV3(cwd, actor = writerA) {
   const store = initTaskStoreV2(cwd)
-  const task = createTaskV3(
+  const task = createTaskV4(
     store,
     { title: 'actor fixture', plan: plan(), profile: 'standard' },
     actor,
   ).task
-  delete task.profile
-  writeTask(cwd, task)
   return task
 }
 
@@ -332,13 +340,13 @@ test('invalid actors cannot write or use current while explicit reads remain ava
   assert.equal(readTask(cwd, task.id).revision, 1)
 })
 
-test('default checkpoint creates schema 3 and claim promotes a legacy v2 task', () => {
+test('default checkpoint creates schema 4 and claim promotes a legacy v2 task', () => {
   const cwd = temporaryDirectory()
   assert.equal(run(cwd, ['init']).status, 0)
   writePlan(cwd)
   const created = run(cwd, [
     'checkpoint',
-    'schema 3 default',
+    'schema 4 default',
     '--plan-file',
     'plan.json',
     '--json',
@@ -346,7 +354,8 @@ test('default checkpoint creates schema 3 and claim promotes a legacy v2 task', 
   assert.equal(created.status, 0, created.stderr)
   const id = JSON.parse(created.stdout).task_id
   const task = readTask(cwd, id)
-  assert.equal(task.schema_version, 3)
+  assert.equal(task.schema_version, 4)
+  assert.equal(task.min_writer_version, '0.4.0')
   assert.equal(task.profile, 'standard')
   assert.equal(task.primary_writer, writerA)
 
@@ -379,17 +388,18 @@ test('default checkpoint creates schema 3 and claim promotes a legacy v2 task', 
   ])
   assert.equal(claim.status, 0, claim.stderr)
   const promoted = readTask(cwd, legacy.id)
-  assert.equal(promoted.schema_version, 3)
+  assert.equal(promoted.schema_version, 4)
+  assert.equal(promoted.min_writer_version, '0.4.0')
   assert.equal(promoted.profile, 'standard')
   assert.equal(promoted.primary_writer, writerA)
   assert.equal(promoted.revision, 2)
   assert.equal(readTaskEventsV3(taskDirectory(cwd, legacy.id)).at(-1).type, 'writer_claimed')
 })
 
-test('schema 3 creation binds the primary writer and use does not grant writes', () => {
+test('schema 4 creation binds the primary writer and use does not grant writes', () => {
   const cwd = temporaryDirectory()
   const task = createV3(cwd)
-  assert.equal(task.schema_version, 3)
+  assert.equal(task.schema_version, 4)
   assert.equal(task.primary_writer, writerA)
 
   const use = run(cwd, ['use', task.id], writerB)
@@ -436,7 +446,7 @@ test('schema 3 creation binds the primary writer and use does not grant writes',
   assert.equal(existsSync(sideEffect), false)
 })
 
-test('legacy schema 3 task requires claim and preserves lifecycle facts', () => {
+test('schema 3 task requires explicit upgrade-v4 and preserves lifecycle facts', () => {
   const cwd = temporaryDirectory()
   const task = createV3(cwd)
   assert.equal(run(cwd, [
@@ -456,13 +466,16 @@ test('legacy schema 3 task requires claim and preserves lifecycle facts', () => 
     'done',
     '--unverified',
     '',
+    '--knowledge-impact-none',
+    'fixture has no knowledge impact',
     '--no-verify',
     '--reason',
     'fixture',
   ]).status, 0)
 
   const legacy = readTask(cwd, task.id)
-  delete legacy.primary_writer
+  legacy.schema_version = 3
+  delete legacy.min_writer_version
   writeTask(cwd, legacy)
   const before = readTask(cwd, task.id)
 
@@ -475,48 +488,112 @@ test('legacy schema 3 task requires claim and preserves lifecycle facts', () => 
     'waiting',
     '--waiting-for',
     'user',
-  ], writerB)
+  ], writerA)
   assert.notEqual(denied.status, 0)
-  assert.match(denied.stderr, /legacy_unclaimed/)
+  assert.match(denied.stderr, /Schema 3 task is read-only/)
 
-  const claimed = run(cwd, [
-    'claim',
-    task.id,
+  const writerMismatch = run(cwd, [
+    'upgrade-v4',
+    '--task', task.id,
     '--expect-revision',
     '3',
-    '--reason',
-    'continue-request',
-    '--json',
   ], writerB)
-  assert.equal(claimed.status, 0, claimed.stderr)
+  assert.notEqual(writerMismatch.status, 0)
+  assert.match(writerMismatch.stderr, /Writer mismatch/)
+  assert.deepEqual(readTask(cwd, task.id), before)
+
+  const staleUpgrade = run(cwd, [
+    'upgrade-v4',
+    '--task', task.id,
+    '--expect-revision',
+    '2',
+  ], writerA)
+  assert.notEqual(staleUpgrade.status, 0)
+  assert.match(staleUpgrade.stderr, /expected revision 2, current revision 3/)
+  assert.deepEqual(readTask(cwd, task.id), before)
+
+  const upgraded = run(cwd, [
+    'upgrade-v4',
+    '--task', task.id,
+    '--expect-revision',
+    '3',
+    '--json',
+  ], writerA)
+  assert.equal(upgraded.status, 0, upgraded.stderr)
   const after = readTask(cwd, task.id)
-  assert.equal(after.primary_writer, writerB)
+  assert.equal(after.schema_version, 4)
+  assert.equal(after.min_writer_version, '0.4.0')
+  assert.equal(after.primary_writer, writerA)
   assert.equal(after.revision, 4)
   for (const field of ['phase', 'work_revision', 'implementation_approval', 'verification', 'submission'])
     assert.deepEqual(after[field], before[field])
 
   const events = readTaskEventsV3(taskDirectory(cwd, task.id))
   assert.deepEqual(events.at(-1), {
-    type: 'writer_claimed',
+    type: 'schema_upgraded',
     task_id: task.id,
-    actor: writerB,
+    actor: writerA,
     revision: 4,
     created_at: events.at(-1).created_at,
-    reason: 'continue-request',
+    from_schema_version: 3,
+    to_schema_version: 4,
+    min_writer_version: '0.4.0',
   })
   assert.throws(
     () => readTaskEventsV2(taskDirectory(cwd, task.id)),
     /Invalid event type/,
   )
 
-  const secondClaim = run(cwd, [
-    'claim',
-    task.id,
+  const secondUpgrade = run(cwd, [
+    'upgrade-v4',
+    '--task', task.id,
     '--expect-revision',
     '4',
-  ], writerC)
-  assert.notEqual(secondClaim.status, 0)
-  assert.match(secondClaim.stderr, /Use takeover, not claim/)
+  ], writerA)
+  assert.notEqual(secondUpgrade.status, 0)
+  assert.match(secondUpgrade.stderr, /requires an open schema_version 3 task/)
+
+  const schema2 = createTaskV2(
+    initTaskStoreV2(cwd),
+    { title: 'schema 2 upgrade rejection', plan: plan() },
+    writerA,
+  ).task
+  const schema2Upgrade = run(cwd, [
+    'upgrade-v4',
+    '--task', schema2.id,
+    '--expect-revision',
+    '1',
+  ], writerA)
+  assert.notEqual(schema2Upgrade.status, 0)
+  assert.match(schema2Upgrade.stderr, /requires an open schema_version 3 task/)
+
+  const archivedSource = createV3(cwd)
+  const archived = run(cwd, [
+    'abandon',
+    archivedSource.id,
+    '--expect-revision',
+    '1',
+    '--reason',
+    'archive upgrade rejection fixture',
+  ], writerA)
+  assert.equal(archived.status, 0, archived.stderr)
+  const archivedPath = archivedTaskPath(cwd, archivedSource.id)
+  const archivedSchema3 = JSON.parse(readFileSync(archivedPath, 'utf8'))
+  archivedSchema3.schema_version = 3
+  delete archivedSchema3.min_writer_version
+  writeFileSync(archivedPath, `${JSON.stringify(archivedSchema3, null, 2)}\n`)
+  const archivedUpgrade = run(cwd, [
+    'upgrade-v4',
+    '--task', archivedSource.id,
+    '--expect-revision',
+    '2',
+  ], writerA)
+  assert.notEqual(archivedUpgrade.status, 0)
+  assert.match(archivedUpgrade.stderr, /Task not found/)
+  assert.deepEqual(
+    JSON.parse(readFileSync(archivedPath, 'utf8')),
+    archivedSchema3,
+  )
 })
 
 test('takeover is explicit, preserves phase, and excludes the previous writer', () => {

@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import {
-  createTaskV3,
+  createTaskV4,
   initTaskStoreV2,
 } from '../dist/core/task-store.js'
 import { readTaskEventsV3 } from '../dist/core/notes-events.js'
@@ -113,7 +113,7 @@ function revision(cwd, id) {
 
 function createV3(cwd, options = {}) {
   const store = initTaskStoreV2(cwd)
-  return createTaskV3(store, {
+  return createTaskV4(store, {
     title: options.title ?? 'Light fixture',
     plan: options.plan ?? plan(),
     profile: options.profile ?? 'light',
@@ -165,7 +165,7 @@ test('checkpoint CLI atomically creates request and retrospective work basis', (
   ])
   assert.equal(request.status, 0, request.stderr)
   const requestTask = readTask(cwd, JSON.parse(request.stdout).task_id)
-  assert.equal(requestTask.schema_version, 3)
+  assert.equal(requestTask.schema_version, 4)
   assert.equal(requestTask.profile, 'light')
   assert.equal(requestTask.provenance, 'clean')
   assert.equal(requestTask.phase, 'dev')
@@ -335,7 +335,7 @@ test('light request authorization is atomic and submit stops in review', () => {
     artifacts: [{ kind: 'prd', path: 'docs/light.md' }],
   })
 
-  assert.equal(task.schema_version, 3)
+  assert.equal(task.schema_version, 4)
   assert.equal(task.profile, 'light')
   assert.equal(task.provenance, 'clean')
   assert.equal(task.phase, 'dev')

@@ -13,11 +13,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
 import {
-  createTaskV3,
+  createTaskV4,
   initTaskStoreV2,
   listTasksV2,
   readTaskV2,
-  updateTaskV3,
+  updateTaskV4,
 } from '../dist/core/task-store.js'
 import { downgradeTaskValue } from '../dist/core/migration.js'
 
@@ -122,7 +122,7 @@ test('Record reads require initialized Latch and do not initialize the store', (
 test('unlinked Record creation does not read unrelated task data', () => {
   const cwd = temporaryDirectory()
   const store = initTaskStoreV2(cwd)
-  const task = createTaskV3(
+  const task = createTaskV4(
     store,
     { title: 'unrelated task', plan: plan(), profile: 'standard' },
     actor,
@@ -320,7 +320,7 @@ test('concurrent Record edits commit at most one matching revision', async () =>
 test('Record delete requires exact confirmation and linked confirmation', () => {
   const cwd = temporaryDirectory()
   const store = initTaskStoreV2(cwd)
-  const task = createTaskV3(
+  const task = createTaskV4(
     store,
     { title: 'related task', plan: plan(), profile: 'standard' },
     actor,
@@ -552,7 +552,7 @@ test('task updates cannot rewrite or remove Record provenance', () => {
     revision: 1,
     body_sha256: 'a'.repeat(64),
   }
-  const task = createTaskV3(
+  const task = createTaskV4(
     store,
     {
       title: 'immutable Record provenance',
@@ -562,7 +562,7 @@ test('task updates cannot rewrite or remove Record provenance', () => {
     },
     actor,
   ).task
-  const update = (change) => updateTaskV3(store, task.id, {
+  const update = (change) => updateTaskV4(store, task.id, {
     expectRevision: 1,
     actor,
     events: [{

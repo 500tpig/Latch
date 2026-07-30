@@ -17,7 +17,7 @@ import {
   parseContextPackRequest,
 } from '../dist/core/context-pack.js'
 import {
-  createTaskV3,
+  createTaskV4,
   initTaskStoreV2,
 } from '../dist/core/task-store.js'
 
@@ -236,13 +236,13 @@ test('CLI combines task, freshness, siblings, and requested sources without writ
   write(cwd, 'src/expand.txt', 'expanded')
   write(cwd, 'docs/module.md', knowledgeDocument())
   const store = initTaskStoreV2(cwd)
-  const target = createTaskV3(store, {
+  const target = createTaskV4(store, {
     title: 'Context target',
     plan: plan(),
     profile: 'standard',
     groupId: 'Wave:Context',
   }, actor).task
-  createTaskV3(store, {
+  createTaskV4(store, {
     title: 'Context sibling',
     plan: plan(),
     profile: 'standard',

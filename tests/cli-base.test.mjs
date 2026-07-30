@@ -285,7 +285,8 @@ test('checkpoint is create-only, requires a full plan, and returns warnings', ()
   assert.notEqual(firstData.task_id, secondData.task_id)
   assert.equal(taskIds(cwd).length, 2)
   const firstTask = readTask(cwd, firstData.task_id)
-  assert.equal(firstTask.schema_version, 3)
+  assert.equal(firstTask.schema_version, 4)
+  assert.equal(firstTask.min_writer_version, '0.4.0')
   assert.equal(firstTask.profile, 'standard')
   assert.equal(firstTask.provenance, 'clean')
   assert.deepEqual(firstTask.artifacts, [
@@ -811,6 +812,7 @@ test('status keeps task writer state and caller capability independent', () => {
   const readOnlyLegacy = statusFor((task) => {
     delete task.primary_writer
     task.schema_version = 2
+    delete task.min_writer_version
     delete task.profile
     delete task.provenance
     task.blocked = { reason: '等待', waiting_for: '用户', blocked_at: task.updated_at }
@@ -822,11 +824,24 @@ test('status keeps task writer state and caller capability independent', () => {
 
   const writableLegacy = statusFor((task) => {
     delete task.primary_writer
+    task.schema_version = 2
+    delete task.min_writer_version
+    delete task.profile
+    delete task.provenance
     task.blocked = { reason: '等待', waiting_for: '用户', blocked_at: task.updated_at }
   })
   assert.equal(writableLegacy.writer.task_status, 'legacy_unclaimed')
   assert.equal(writableLegacy.writer.caller_capability, 'writable')
   assert.equal(writableLegacy.next_action, 'claim')
+
+  const upgradeRequired = statusFor((task) => {
+    task.schema_version = 3
+    delete task.min_writer_version
+  })
+  assert.equal(upgradeRequired.task_schema_version, 3)
+  assert.equal(upgradeRequired.upgrade_required, true)
+  assert.equal(upgradeRequired.writer.task_status, 'schema_upgrade_required')
+  assert.equal(upgradeRequired.next_action, 'upgrade_v4')
 
   const mismatch = statusFor((task) => {
     task.blocked = { reason: '等待', waiting_for: '用户', blocked_at: task.updated_at }

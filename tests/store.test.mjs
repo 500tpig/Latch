@@ -18,8 +18,10 @@ import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import {
   archiveTaskV2,
+  assertTaskWritableV2,
   createTaskV2,
   createTaskV3,
+  createTaskV4,
   currentTaskIdV2,
   downgradeTaskV2,
   initTaskStoreV2,
@@ -30,8 +32,9 @@ import {
   readTaskV2,
   selectCurrentTaskV2,
   taskHistoryIncompleteV2,
+  takeoverTaskV3,
   updateTaskV2,
-  updateTaskV3,
+  updateTaskV4,
   withStateLockV2,
   withTaskLockV2,
 } from '../dist/core/task-store.js'
@@ -69,7 +72,7 @@ function plan(overrides = {}) {
 }
 
 function create(store, title = '相同标题', actor = 'codex:session:a') {
-  return createTaskV3(
+  return createTaskV4(
     store,
     { title, plan: plan(), profile: 'standard' },
     actor,
@@ -105,6 +108,8 @@ test('provenance defaults on new and historical tasks without rewriting legacy f
 
   const path = join(taskDirectory(store, current.id), 'task.json')
   const historical = JSON.parse(readFileSync(path, 'utf8'))
+  historical.schema_version = 3
+  delete historical.min_writer_version
   delete historical.provenance
   writeFileSync(path, `${JSON.stringify(historical, null, 2)}\n`)
   assert.equal(readTaskV2(store, current.id).provenance, 'clean')
@@ -113,7 +118,7 @@ test('provenance defaults on new and historical tasks without rewriting legacy f
   const legacy = createV2(store, 'legacy provenance')
   assert.equal(readTaskV2(store, legacy.id).provenance, 'clean')
   assert.throws(
-    () => updateTaskV3(store, legacy.id, {
+    () => updateTaskV4(store, legacy.id, {
       expectRevision: 1,
       actor: 'codex:session:a',
       events: [{
@@ -122,8 +127,63 @@ test('provenance defaults on new and historical tasks without rewriting legacy f
       }],
       update(task) { task.provenance = 'mixed' },
     }),
-    /Schema 3 update requires schema_version 3/,
+    /legacy_unclaimed/,
   )
+})
+
+test('schema 3 is read-only across shared update, writer, and archive entry points', () => {
+  const cwd = temporaryDirectory()
+  const store = initTaskStoreV2(cwd)
+  const task = createTaskV3(
+    store,
+    { title: 'frozen schema 3', plan: plan(), profile: 'standard' },
+    'codex:session:a',
+  ).task
+  const expected = /Schema 3 task is read-only/
+  assert.throws(
+    () => assertTaskWritableV2(
+      store,
+      task.id,
+      'codex:session:a',
+      task.revision,
+    ),
+    expected,
+  )
+  assert.throws(
+    () => updateTaskV2(store, task.id, {
+      expectRevision: task.revision,
+      actor: 'codex:session:a',
+      events: [{ type: 'decision_recorded' }],
+      update() {},
+    }),
+    expected,
+  )
+  assert.throws(
+    () => updateTaskV4(store, task.id, {
+      expectRevision: task.revision,
+      actor: 'codex:session:a',
+      events: [{ type: 'group_changed' }],
+      update() {},
+    }),
+    expected,
+  )
+  assert.throws(
+    () => takeoverTaskV3(store, task.id, {
+      expectRevision: task.revision,
+      actor: 'codex:session:b',
+      reason: 'handoff',
+    }),
+    expected,
+  )
+  assert.throws(
+    () => archiveTaskV2(store, task.id, {
+      expectRevision: task.revision,
+      actor: 'codex:session:a',
+      outcome: 'abandoned',
+    }),
+    expected,
+  )
+  assert.equal(readTaskV2(store, task.id).revision, task.revision)
 })
 
 test('schema v2 使用毫秒时间和随机后缀，重复标题不覆盖且不创建 notes', () => {
@@ -243,12 +303,12 @@ test('archive 清除所有 actor 的 current 并保留 v2 task 与 events', () =
   assert.equal(monthDirectories.length, 1)
   const archivedDirectory = join(store.paths.archiveDir, monthDirectories[0], task.id)
   const archivedJson = JSON.parse(readFileSync(join(archivedDirectory, 'task.json'), 'utf8'))
-  assert.equal(archivedJson.schema_version, 3)
+  assert.equal(archivedJson.schema_version, 4)
   assert.equal(existsSync(join(archivedDirectory, 'notes.md')), false)
   assert.equal(readTaskEventsV3(archivedDirectory).at(-1).type, 'done')
 })
 
-test('Context reader 优先 open，并按精确 ID 读取 schema 2/3 archive 与 events', () => {
+test('Context reader 优先 open，并按精确 ID 读取 schema 2/4 archive 与 events', () => {
   const root = temporaryDirectory()
   const store = initTaskStoreV2(root)
   const open = create(store, 'open 优先')
@@ -266,22 +326,22 @@ test('Context reader 优先 open，并按精确 ID 读取 schema 2/3 archive 与
   assert.equal(selectedOpen.task.title, 'open 优先')
   assert.equal(selectedOpen.eventLog.events.at(-1).type, 'task_created')
 
-  const schema3 = create(store, 'schema 3 archive')
-  const archivedSchema3 = archiveTaskV2(store, schema3.id, {
-    expectRevision: schema3.revision,
+  const schema4 = create(store, 'schema 4 archive')
+  const archivedSchema4 = archiveTaskV2(store, schema4.id, {
+    expectRevision: schema4.revision,
     actor: 'codex:session:a',
     outcome: 'done',
   }).task
-  const selectedSchema3 = readContextTaskV2(store, schema3.id)
-  assert.equal(selectedSchema3.archived, true)
-  assert.equal(selectedSchema3.task.schema_version, 3)
-  assert.equal(selectedSchema3.task.outcome, 'done')
-  assert.equal(selectedSchema3.eventLog.events.at(-1).type, 'done')
-  assert.equal(selectedSchema3.eventLog.events.at(-1).revision, archivedSchema3.revision)
+  const selectedSchema4 = readContextTaskV2(store, schema4.id)
+  assert.equal(selectedSchema4.archived, true)
+  assert.equal(selectedSchema4.task.schema_version, 4)
+  assert.equal(selectedSchema4.task.outcome, 'done')
+  assert.equal(selectedSchema4.eventLog.events.at(-1).type, 'done')
+  assert.equal(selectedSchema4.eventLog.events.at(-1).revision, archivedSchema4.revision)
 
   const prefixOpen = create(store, 'archive ID 的更长 open 前缀')
   const prefixOpenDirectory = taskDirectory(store, prefixOpen.id)
-  const longerOpenId = `${schema3.id}-open-abcdef`
+  const longerOpenId = `${schema4.id}-open-abcdef`
   const longerOpenDirectory = taskDirectory(store, longerOpenId)
   renameSync(prefixOpenDirectory, longerOpenDirectory)
   const longerOpenTaskPath = join(longerOpenDirectory, 'task.json')
@@ -297,11 +357,11 @@ test('Context reader 优先 open，并按精确 ID 读取 schema 2/3 archive 与
     longerOpenEventsPath,
     `${longerOpenEvents.map((event) => JSON.stringify(event)).join('\n')}\n`,
   )
-  const exactArchiveBeforePrefix = readContextTaskV2(store, schema3.id)
+  const exactArchiveBeforePrefix = readContextTaskV2(store, schema4.id)
   assert.equal(exactArchiveBeforePrefix.archived, true)
-  assert.equal(exactArchiveBeforePrefix.task.id, schema3.id)
+  assert.equal(exactArchiveBeforePrefix.task.id, schema4.id)
 
-  const selectedOpenPrefix = readContextTaskV2(store, schema3.id.slice(0, -1))
+  const selectedOpenPrefix = readContextTaskV2(store, schema4.id.slice(0, -1))
   assert.equal(selectedOpenPrefix.archived, false)
   assert.equal(selectedOpenPrefix.task.id, longerOpenId)
 
@@ -492,7 +552,7 @@ test('无效 schema 或结构化 event 在持久化前失败', () => {
 
   assert.throws(
     () =>
-      updateTaskV3(store, task.id, {
+      updateTaskV4(store, task.id, {
         expectRevision: 1,
         actor: 'codex:session:a',
         events: [{
@@ -506,6 +566,22 @@ test('无效 schema 或结构化 event 在持久化前失败', () => {
     /Invalid provenance/,
   )
   assert.equal(readFileSync(taskPath, 'utf8'), beforeInvalidEvent.task)
+
+  const missingMinimumWriter = JSON.parse(beforeInvalidEvent.task)
+  delete missingMinimumWriter.min_writer_version
+  writeFileSync(taskPath, `${JSON.stringify(missingMinimumWriter, null, 2)}\n`)
+  assert.throws(
+    () => readTaskV2(store, task.id),
+    /schema_version 4 requires 0\.4\.0/,
+  )
+
+  const invalidMinimumWriter = JSON.parse(beforeInvalidEvent.task)
+  invalidMinimumWriter.min_writer_version = '0.3.0'
+  writeFileSync(taskPath, `${JSON.stringify(invalidMinimumWriter, null, 2)}\n`)
+  assert.throws(
+    () => readTaskV2(store, task.id),
+    /schema_version 4 requires 0\.4\.0/,
+  )
 })
 
 test('plan 拒绝空 argv 和重复 verification name', () => {

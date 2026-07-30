@@ -55,8 +55,9 @@ import {
 import {
   assertGroupIdV3,
   claimTaskV3,
-  createTaskV3,
+  createTaskV4,
   currentTaskIdV2,
+  DowngradeTaskV2Error,
   downgradeTaskV2,
   initTaskStoreV2,
   openTaskStoreV2,
@@ -65,8 +66,9 @@ import {
   readTaskV2,
   selectCurrentTaskV2,
   takeoverTaskV3,
+  upgradeTaskV4,
   updateTaskV2,
-  updateTaskV3,
+  updateTaskV4,
 } from './core/task-store.js'
 import type {
   ImplementationAuthorizationInput,
@@ -111,6 +113,7 @@ Commands:
   artifact <add|remove> <task-id> --expect-revision <revision> <kind:path>...
   submit <task-id> --expect-revision <revision> --changes <text> --unverified <text> [--knowledge-impact-none <reason> | --knowledge-impact-file <path>] [--no-verify --reason <text>] [--verbose-warnings]
   patch-submission-knowledge-impact <task-id> --expect-revision <revision> --knowledge-impact-file <path> [--reason <text>]
+  upgrade-v4 --task <task-id> --expect-revision <revision>
   downgrade-v2 --task <task-id> --expect-revision <revision> --confirm-data-loss
   done <task-id> --expect-revision <revision> --followup <text>
   abandon <task-id> --expect-revision <revision> --reason <text>`
@@ -149,6 +152,8 @@ const commandUsage: Record<string, string> = {
     'Usage: latch submit <task-id> --expect-revision <revision> --changes <text> --unverified <text> [--knowledge-impact-none <reason> | --knowledge-impact-file <path>] [--no-verify --reason <text>] [--verbose-warnings] [--json]',
   'patch-submission-knowledge-impact':
     'Usage: latch patch-submission-knowledge-impact <task-id> --expect-revision <revision> --knowledge-impact-file <path> [--reason <text>] [--json]',
+  'upgrade-v4':
+    'Usage: latch upgrade-v4 --task <task-id> --expect-revision <revision> [--json]',
   'downgrade-v2':
     'Usage: latch downgrade-v2 --task <task-id> --expect-revision <revision> --confirm-data-loss [--json]',
   done:
@@ -169,6 +174,7 @@ const actorRequiredCommands = new Set([
   'artifact',
   'submit',
   'patch-submission-knowledge-impact',
+  'upgrade-v4',
   'downgrade-v2',
   'done',
   'abandon',
@@ -511,7 +517,7 @@ function runCheckpoint(args: string[], cwd: string, actor: string) {
       `Record revision conflict for ${sourceRecord.record.id}: expected ${sourceRecordRevision}, current ${sourceRecord.record.revision}.`,
     )
   const store = openTaskStoreV2(cwd)
-  const result = createTaskV3(
+  const result = createTaskV4(
     store,
     {
       title: parsed.positionals[0],
@@ -1167,7 +1173,9 @@ function runClaim(args: string[], cwd: string, actor: string) {
   })
   if (parsed.values.json)
     return json(mutationJson(result.task, result.warnings, expectRevision))
-  process.stdout.write(`Claimed ${result.task.id} for ${actor}.\n`)
+  process.stdout.write(
+    `Claimed ${result.task.id} for ${actor} and upgraded it to schema v4.\n`,
+  )
   printWarnings(result.warnings)
 }
 
@@ -1263,7 +1271,7 @@ function runSave(args: string[], cwd: string, actor: string) {
     if (previousProvenance === selectedProvenance)
       fail('invalid_arguments', 'save did not change provenance.')
     const reason = parsed.values['provenance-reason']
-    const result = updateTaskV3(store, current.id, {
+    const result = updateTaskV4(store, current.id, {
       expectRevision,
       actor,
       events: [{
@@ -1310,9 +1318,9 @@ function runSave(args: string[], cwd: string, actor: string) {
     const store = openTaskStoreV2(cwd)
     const current = readTaskV2(store, parsed.positionals[0])
     const nextGroup = clearGroup ? undefined : selectedGroup
-    if (current.schema_version === 3 && current.group_id === nextGroup)
+    if (current.schema_version === 4 && current.group_id === nextGroup)
       fail('invalid_arguments', 'save did not change group_id.')
-    const result = updateTaskV3(store, current.id, {
+    const result = updateTaskV4(store, current.id, {
       expectRevision,
       actor,
       events: [{
@@ -1809,7 +1817,7 @@ function runDowngradeV2(args: string[], cwd: string, actor: string) {
   if (!parsed.values['confirm-data-loss'])
     fail(
       'invalid_arguments',
-      '--confirm-data-loss is required because v3-only fields and events move to backup.',
+      '--confirm-data-loss is required because schema 3/4-only fields and events move to backup.',
     )
   const expectRevision = positiveInteger(
     parsed.values['expect-revision'],
@@ -1827,6 +1835,34 @@ function runDowngradeV2(args: string[], cwd: string, actor: string) {
     })
   process.stdout.write(
     `Downgraded ${result.task.id} to schema v2. Backup: ${result.backupPath}\n`,
+  )
+  printWarnings(result.warnings)
+}
+
+function runUpgradeV4(args: string[], cwd: string, actor: string) {
+  const parsed = parseCommand(args, {
+    ...commonOptions(),
+    task: { type: 'string' },
+    'expect-revision': { type: 'string' },
+  })
+  if (parsed.values.help)
+    return process.stdout.write(`${commandUsage['upgrade-v4']}\n`)
+  requirePositionals('upgrade-v4', parsed.positionals, 0)
+  if (!parsed.values.task)
+    fail('invalid_arguments', '--task is required.')
+  const expectRevision = positiveInteger(
+    parsed.values['expect-revision'],
+    '--expect-revision',
+  )
+  const store = openTaskStoreV2(cwd)
+  const result = upgradeTaskV4(store, parsed.values.task, {
+    expectRevision,
+    actor,
+  })
+  if (parsed.values.json)
+    return json(mutationJson(result.task, result.warnings, expectRevision))
+  process.stdout.write(
+    `Upgraded ${result.task.id} to schema v4; minimum writer is 0.4.0.\n`,
   )
   printWarnings(result.warnings)
 }
@@ -1949,6 +1985,8 @@ function run(argv: string[], cwd: string) {
       return runSubmit(args, cwd, actor)
     case 'patch-submission-knowledge-impact':
       return runPatchSubmissionKnowledgeImpact(args, cwd, actor)
+    case 'upgrade-v4':
+      return runUpgradeV4(args, cwd, actor)
     case 'downgrade-v2':
       return runDowngradeV2(args, cwd, actor)
     case 'done':
@@ -1969,6 +2007,12 @@ try {
     process.stderr.write(
       `${JSON.stringify({
         ...(process.argv[2] === 'record' ? recordJsonEnvelope() : jsonEnvelopeV2()),
+        ...(error instanceof DowngradeTaskV2Error
+          ? {
+              backup_path: error.backupPath,
+              warnings: error.warnings,
+            }
+          : {}),
         error: { code, message },
       }, null, 2)}\n`,
     )

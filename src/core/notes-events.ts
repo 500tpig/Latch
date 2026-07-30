@@ -207,6 +207,14 @@ function validateTaskEvent(
     if (value.resolution !== 'restored' && value.resolution !== 'reclassified')
       throw new Error(`Invalid workspace violation resolution in ${path}.`)
   }
+  if (value.type === 'schema_upgraded') {
+    if (
+      value.from_schema_version !== 3 ||
+      value.to_schema_version !== 4 ||
+      value.min_writer_version !== '0.4.0'
+    )
+      throw new Error(`Invalid schema upgrade event in ${path}.`)
+  }
 }
 
 export function validateTaskEventV2(

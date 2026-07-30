@@ -14,7 +14,7 @@ import {
   readArchivedTaskV2,
   readTaskV2,
   updateTaskV2,
-  updateTaskV3,
+  updateTaskV4,
   listTasksV2,
 } from './task-store.js'
 import type { TaskStoreV2, TaskWriteResultV2 } from './task-store.js'
@@ -96,7 +96,7 @@ function profileOf(task: TaskV2): TaskProfile {
 }
 
 function usesLightProofPackage(task: TaskV2) {
-  return task.schema_version === 3 && task.profile !== undefined
+  return task.schema_version !== 2 && task.profile !== undefined
 }
 
 function hasValidLegacyApproval(task: TaskV2) {
@@ -174,10 +174,10 @@ export function approveTaskV2(
       !input.retrospective
     if (usesLightProofPackage(current) && !legacyStandardApproval) {
       if (input.reason)
-        throw new Error('--reason cannot replace structured schema 3 work_basis input.')
+        throw new Error('--reason cannot replace structured schema 4 work_basis input.')
       if (!input.authorization && !input.retrospective)
         throw new Error(
-          'Schema 3 approval requires --authorization-file or --retrospective-file.',
+          'Schema 4 approval requires --authorization-file or --retrospective-file.',
         )
       if (input.authorization) {
         const workRevision = current.work_revision + 1
@@ -186,7 +186,7 @@ export function approveTaskV2(
           current.plan_revision,
           workRevision,
         )
-        return withWarnings(updateTaskV3(store, current.id, {
+        return withWarnings(updateTaskV4(store, current.id, {
           expectRevision: input.expectRevision,
           actor: input.actor,
           events: [
@@ -233,7 +233,7 @@ export function approveTaskV2(
         current.plan_revision,
         workRevision,
       )
-      return withWarnings(updateTaskV3(store, current.id, {
+      return withWarnings(updateTaskV4(store, current.id, {
         expectRevision: input.expectRevision,
         actor: input.actor,
         events: [
@@ -262,7 +262,7 @@ export function approveTaskV2(
     }
 
     if (input.authorization || input.retrospective)
-      throw new Error('Structured work_basis requires schema_version 3 with profile.')
+      throw new Error('Structured work_basis requires schema_version 4 with profile.')
     const reason = requireText(input.reason, '--reason is required in plan.')
     return withWarnings(updateTaskV2(store, current.id, {
       expectRevision: input.expectRevision,
@@ -298,9 +298,9 @@ export function approveTaskV2(
 
   if (current.phase === 'review') {
     if (input.nonImplementationFeedback !== undefined) {
-      if (current.schema_version !== 3)
+      if (current.schema_version !== 4)
         throw new Error(
-          'Non-implementation feedback requires schema_version 3; frozen v2 data was not modified.',
+          'Non-implementation feedback requires schema_version 4.',
         )
       if (input.reason || input.feedback || input.authorization || input.retrospective)
         throw new Error(
@@ -326,7 +326,7 @@ export function approveTaskV2(
         ],
         update() {},
       }
-      return withWarnings(updateTaskV3(store, current.id, update), warnings)
+      return withWarnings(updateTaskV4(store, current.id, update), warnings)
     }
     if (input.reason) throw new Error('--reason cannot be combined with --feedback.')
     if (input.retrospective)
@@ -349,7 +349,7 @@ export function approveTaskV2(
           'Retrospective work cannot continue after review feedback; authorize first.',
         )
       if (!nextBasis) assertValidWorkBasis(current)
-      return withWarnings(updateTaskV3(store, current.id, {
+      return withWarnings(updateTaskV4(store, current.id, {
         expectRevision: input.expectRevision,
         actor: input.actor,
         events: [
@@ -388,7 +388,7 @@ export function approveTaskV2(
     }
 
     if (input.authorization)
-      throw new Error('Structured authorization requires schema_version 3 with profile.')
+      throw new Error('Structured authorization requires schema_version 4 with profile.')
     if (
       current.implementation_approval?.approved_plan_revision !==
       current.plan_revision
@@ -623,7 +623,7 @@ function invalidateWorkspaceProof(
     nextGeneration,
     resolvedIds,
   )
-  return updateTaskV3(store, task.id, {
+  return updateTaskV4(store, task.id, {
     expectRevision: input.expectRevision,
     actor: input.actor,
     events: [
@@ -735,7 +735,7 @@ export function verifyTaskV2(
       work_revision: current.work_revision,
       created_at: now(),
     }
-    const written = updateTaskV3(store, current.id, {
+    const written = updateTaskV4(store, current.id, {
       expectRevision: input.expectRevision,
       actor: input.actor,
       events: [{
@@ -816,7 +816,7 @@ export function verifyTaskV2(
         command,
         failed,
       )
-      const written = updateTaskV3(store, workingTask.id, {
+      const written = updateTaskV4(store, workingTask.id, {
         expectRevision: revision,
         actor: input.actor,
         events: [{
@@ -944,7 +944,7 @@ export function verifyTaskV2(
       delta_ref: deltaRef,
     },
   }
-  const written = updateTaskV3(store, workingTask.id, {
+  const written = updateTaskV4(store, workingTask.id, {
     expectRevision: revision,
     actor: input.actor,
     events: [
@@ -1267,7 +1267,7 @@ export function submitTaskV2(
   }
   if (usesLightProofPackage(current)) {
     if (!input.knowledgeImpact)
-      throw new Error('--knowledge-impact-file is required for schema 3 submission.')
+      throw new Error('--knowledge-impact-file is required for schema 4 submission.')
     if (
       input.knowledgeImpact.kind === 'updated' &&
       Array.isArray(input.knowledgeImpact.artifact_refs) &&
@@ -1301,7 +1301,7 @@ export function submitTaskV2(
     assertKnowledgeImpact(input.knowledgeImpact, current.artifacts, 'submit input')
   } else if (input.knowledgeImpact) {
     throw new Error(
-      'Knowledge impact requires schema_version 3; frozen v2 data was not modified.',
+      'Knowledge impact requires schema_version 4; legacy data was not modified.',
     )
   }
   const verified = verificationSummary(current)
@@ -1363,9 +1363,9 @@ export function changeTaskProfileV3(
   input: ChangeTaskProfileV3Input,
 ): TaskWriteResultV2 {
   const current = readTaskV2(store, id)
-  if (current.schema_version !== 3)
+  if (current.schema_version !== 4)
     throw new Error(
-      'Profile changes require schema_version 3; frozen v2 data was not modified.',
+      'Profile changes require schema_version 4.',
     )
   const from = profileOf(current)
   if (input.profile === from)
@@ -1384,7 +1384,7 @@ export function changeTaskProfileV3(
     throw new Error(
       'Standard to light requires explicit user-requested narrowing when authorization is active.',
     )
-  return updateTaskV3(store, current.id, {
+  return updateTaskV4(store, current.id, {
     expectRevision: input.expectRevision,
     actor: input.actor,
     events: [{
@@ -1417,7 +1417,7 @@ export function patchSubmissionKnowledgeImpactV3(
   const current = readTaskV2(store, id)
   if (!usesLightProofPackage(current))
     throw new Error(
-      'Submission patch requires a schema 3 profile; frozen v2 data was not modified.',
+      'Submission patch requires a schema 4 profile; legacy data was not modified.',
     )
   if (current.blocked) throw new Error(`Task is blocked: ${current.blocked.reason}`)
   if (current.phase !== 'review')
@@ -1442,7 +1442,7 @@ export function patchSubmissionKnowledgeImpactV3(
   assertSubmissionProof(current)
   assertKnowledgeImpact(input.knowledgeImpact, current.artifacts, 'patch input')
 
-  return updateTaskV3(store, current.id, {
+  return updateTaskV4(store, current.id, {
     expectRevision: input.expectRevision,
     actor: input.actor,
     events: [{

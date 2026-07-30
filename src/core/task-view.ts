@@ -40,6 +40,10 @@ function taskSummary(task: TaskV2, brief: boolean, grouped = false) {
     return {
       id: task.id,
       title: task.title,
+      task_schema_version: task.schema_version,
+      ...(task.min_writer_version
+        ? { min_writer_version: task.min_writer_version }
+        : {}),
       phase: task.phase,
       revision: task.revision,
       provenance: task.provenance ?? 'clean',
@@ -59,6 +63,10 @@ function taskSummary(task: TaskV2, brief: boolean, grouped = false) {
   return {
     id: task.id,
     title: task.title,
+    task_schema_version: task.schema_version,
+    ...(task.min_writer_version
+      ? { min_writer_version: task.min_writer_version }
+      : {}),
     phase: task.phase,
     revision: task.revision,
     plan_revision: task.plan_revision,
@@ -271,7 +279,11 @@ function authorizationState(task: TaskV2) {
 
 function writerState(task: TaskV2, actor: string) {
   const callerCapability = isWritableActor(actor) ? 'writable' : 'read_only'
-  const taskStatus = task.primary_writer ? 'assigned' : 'legacy_unclaimed'
+  const taskStatus = task.schema_version === 3
+    ? 'schema_upgrade_required'
+    : task.primary_writer
+      ? 'assigned'
+      : 'legacy_unclaimed'
   const status =
     callerCapability === 'read_only'
       ? 'read_only_actor'
@@ -655,6 +667,8 @@ function nextAction(
   const writer = writerState(task, actor)
   if (writer.caller_capability === 'read_only') return 'read_only'
   if (writer.task_status === 'legacy_unclaimed') return 'claim'
+  if (writer.task_status === 'schema_upgrade_required')
+    return writer.status === 'primary_writer' ? 'upgrade_v4' : 'read_only'
   if (writer.status === 'writer_mismatch') return 'takeover'
   if (task.blocked) return 'unblock'
   if (task.phase === 'plan')
@@ -676,6 +690,11 @@ function statusTask(
   return {
     id: task.id,
     title: task.title,
+    task_schema_version: task.schema_version,
+    ...(task.min_writer_version
+      ? { min_writer_version: task.min_writer_version }
+      : {}),
+    ...(task.schema_version === 3 ? { upgrade_required: true } : {}),
     phase: task.phase,
     revision: task.revision,
     plan_revision: task.plan_revision,
@@ -702,6 +721,11 @@ function briefTask(store: TaskStoreV2, task: TaskV2, archived = false) {
   return {
     id: task.id,
     title: task.title,
+    task_schema_version: task.schema_version,
+    ...(task.min_writer_version
+      ? { min_writer_version: task.min_writer_version }
+      : {}),
+    ...(task.schema_version === 3 ? { upgrade_required: true } : {}),
     phase: task.phase,
     revision: task.revision,
     plan_revision: task.plan_revision,
@@ -917,6 +941,9 @@ export function contextHumanV2(
     `Revision: ${task.revision}`,
     `Plan revision: ${task.plan_revision}`,
     `Work revision: ${task.work_revision}`,
+    `Task schema: ${task.schema_version}`,
+    `Minimum writer: ${task.min_writer_version ?? '-'}`,
+    `Schema upgrade required: ${task.schema_version === 3 ? 'yes' : 'no'}`,
     `Profile: ${task.profile ?? 'standard'}`,
     ...(task.group_id !== undefined ? [`Group: ${task.group_id}`] : []),
     ...(task.source_record !== undefined

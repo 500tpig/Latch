@@ -10,4 +10,4 @@ Read this reference before reading or changing `group_id`, listing group members
 - Do not create a planning or anchor task solely to preserve chat continuity; use a group only for a real related wave identified by the user.
 - Start with `list --group <id> --include-archive --json --brief`, then read `context <task-id> --json --status` only for relevant open members. Do not expand every member into a full context.
 - Group membership does not encode task order. Report explicit task state and `closure.followup`; do not generate an automatic group-level next task.
-- Create or mutate `group_id` only on schema 3 tasks; claim a legacy schema 2 task before changing it.
+- Create or mutate `group_id` only on schema 4 tasks. Explicitly run `upgrade-v4` for an open schema 3 task, or claim a legacy schema 2 task, before changing group membership.

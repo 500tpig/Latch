@@ -18,7 +18,7 @@ import {
   fingerprintKnowledgeDocument,
 } from '../dist/core/knowledge.js'
 import {
-  createTaskV3,
+  createTaskV4,
   initTaskStoreV2,
 } from '../dist/core/task-store.js'
 
@@ -219,7 +219,7 @@ test('CLI checks paths without initializing storage and follows updated task art
   assert.equal(readFileSync(join(cwd, 'docs/module.md'), 'utf8'), before)
 
   const store = initTaskStoreV2(cwd)
-  const task = createTaskV3(store, {
+  const task = createTaskV4(store, {
     title: 'Knowledge task',
     plan: plan(),
     profile: 'standard',

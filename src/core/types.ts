@@ -247,9 +247,12 @@ export type TaskSubmission = {
   submitted_at: string
 }
 
-// C6 后新 task 写 schema 3；schema 2 继续用于 legacy 读取和 R2 回退。
+export const SCHEMA_V4_MIN_WRITER_VERSION = '0.4.0' as const
+
+// schema 4 是 current writer 格式；schema 2/3 只用于 legacy 读取和显式迁移。
 export type TaskV2 = {
-  schema_version: 2 | 3
+  schema_version: 2 | 3 | 4
+  min_writer_version?: typeof SCHEMA_V4_MIN_WRITER_VERSION
   id: string
   title: string
   phase: TaskPhase
@@ -328,11 +331,14 @@ export const LIGHT_EVENT_TYPES = [
 
 export const GROUP_EVENT_TYPES = ['group_changed'] as const
 
+export const SCHEMA_EVENT_TYPES = ['schema_upgraded'] as const
+
 export const TASK_EVENT_TYPES_V3 = [
   ...TASK_EVENT_TYPES,
   ...WRITER_EVENT_TYPES,
   ...LIGHT_EVENT_TYPES,
   ...GROUP_EVENT_TYPES,
+  ...SCHEMA_EVENT_TYPES,
 ] as const
 
 export type TaskEventTypeV2 = (typeof TASK_EVENT_TYPES)[number]

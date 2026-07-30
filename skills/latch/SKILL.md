@@ -117,6 +117,10 @@ delivery remains separate and needs separate authorization.
   instruction-only commands such as `echo`, `printf`, and `true` are not evidence.
 - New and updated plans require repo-relative POSIX `workspace_scope.paths`; never
   infer machine scope from prose, authorization, or artifacts.
+- New tasks use schema 4 with minimum writer `0.4.0`. Schema 3 is read-only; after
+  explicit authorization, its current primary writer must run the single-task
+  `upgrade-v4` command before any ordinary mutation. Never upgrade during reads,
+  startup, build, or verification.
 - A gate pass requires successful command outcome, complete evidence, no covered
   mutation, current proof generation, and no unresolved violation. Preserve
   mutations for inspection; never reset, clean, stash, or auto-widen scope.
@@ -139,6 +143,6 @@ Read a selected reference completely:
 - [groups](references/groups.md): `group_id`, planning waves, or siblings.
 - [knowledge and context](references/knowledge-and-context.md): freshness,
   knowledge impact, Context packs, orientation, or benchmarks.
-- [migration](references/migration.md): schema 2, claim, legacy patching, minimum
-  writer versions, or `downgrade-v2`.
+- [migration](references/migration.md): schema 2/3, claim, `upgrade-v4`, legacy
+  patching, minimum writer versions, or `downgrade-v2`.
 - [records](references/records.md): explicit Record operations or task conversion.

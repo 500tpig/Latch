@@ -6,6 +6,7 @@ Read this reference for plan structure, checkpoint and approve details, feedback
 
 - Create a task only from a complete plan file. Keep paths, identifiers, keys, and commands in inline code, and keep each plan item to one sentence.
 - Every new or updated plan must include normalized repo-relative POSIX `workspace_scope.paths`; do not infer machine scope from prose, authorization scope, or artifacts.
+- New tasks use schema 4. Treat schema 3 as read-only and run the explicitly authorized single-task `upgrade-v4` before any lifecycle mutation; never upgrade during context, build, or verification.
 - Show every Standard plan before implementation. Run `approve` only after explicit implementation authorization; reject approval while `open_questions` is non-empty.
 - Use `source: user_request` for a complete low-risk request, `source: user_delta` for a precise low-risk addition to the current plan, and `source: user_approve` after explicit approval of a displayed Standard plan.
 - Use `checkpoint --retrospective-file` only for an honest after-the-fact record when no matching open task exists.

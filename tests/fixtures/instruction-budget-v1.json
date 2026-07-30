@@ -9,8 +9,8 @@
         "AGENTS.md",
         "skills/latch/SKILL.md"
       ],
-      "reviewed_baseline": 2778,
-      "review_reason": "加入机器 workspace scope、mutation proof 和禁止自动恢复的高频安全规则后，审查并接受普通写入路径的必要增长。"
+      "reviewed_baseline": 2851,
+      "review_reason": "加入 schema 4 最低 writer、schema 3 只读和禁止隐式升级的高频安全规则后，审查并接受普通写入路径的必要增长。"
     },
     {
       "name": "planning-path",
@@ -19,8 +19,8 @@
         "skills/latch/SKILL.md",
         "skills/latch/references/task-lifecycle.md"
       ],
-      "reviewed_baseline": 4133,
-      "review_reason": "加入 gate evidence、proof generation、verify-all 停止和 submit live preflight 规则后，审查并接受 lifecycle 路径的必要增长。"
+      "reviewed_baseline": 4255,
+      "review_reason": "加入 schema 4 lifecycle mutation 边界与显式 upgrade-v4 要求后，审查并接受 planning 路径的必要增长。"
     }
   ]
 }

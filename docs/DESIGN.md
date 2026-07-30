@@ -17,13 +17,14 @@ Latch 是个人 macOS 开发环境中的本地任务状态记录器。它帮助 
 - `state.json` 只保存各 actor 的 current task；
 - `.latch/records/index.json` 只保存 Record 元数据，正文位于独立 Markdown 文件；
 - 项目正式文档通过 artifact 关联，并从 `docs/INDEX.md` 发现。
-- 新 task 使用 schema 3 保存 `primary_writer` 和 `profile`；既有 schema 2 task 经显式 `claim` 单独升级。
-- schema 3 新 task 写入根 `provenance: clean`；历史 task 缺失该字段时按 `clean` 读取，只有明确的重叠并行或隔离恢复才显式修改。
+- 新 task 使用 schema 4，并保存 `min_writer_version: "0.4.0"`、`primary_writer` 和 `profile`；CLI 0.2.0 和 0.3.0 在 task 读盘时拒绝该格式。
+- schema 3 只作为历史读取和显式迁移来源；open schema 3 task 的普通 mutation 全部拒绝，当前 primary writer 通过单 task `upgrade-v4` 升级。
+- schema 4 新 task 写入根 `provenance: clean`；历史 schema 2/3 task 缺失该字段时按 `clean` 读取，只有明确的重叠并行或隔离恢复才显式修改。
 - light request 与 retrospective task 可在 `checkpoint` 时原子写入 work basis，不需要创建后再拼接生命周期状态。
 - 新 plan 使用 `workspace_scope.paths` 保存机器范围；自然语言 `plan.scope`、授权摘要和 artifact 不替代该字段。
 - named gate 保存 command outcome、before/after workspace evidence、workspace effect 和 proof generation；只有当前 generation 上的完整无 mutation proof 才能参与 submit。
 - workspace evidence 覆盖 Git-visible 脏路径、非 ignored untracked 路径，以及 scope 或 artifact 精确引用的 ignored 文件；不递归扫描 ignored 目录。
-- schema 3 task 可通过带完整 backup 的 `downgrade-v2` 投影回可写 schema 2；主投影剥离 workspace proof 扩展，完整数据只保留在 backup。
+- schema 3/4 task 可通过带完整 backup 的 `downgrade-v2` 投影回可写 schema 2；主投影剥离 writer 元数据和 workspace proof 扩展，完整数据只保留在来源 schema backup。
 - `docs/INDEX.md` 指向唯一 current 产品契约；既有七个分章与 Record 分章按主题覆盖历史 v2 基线。
 
 ## 关键取舍
@@ -40,6 +41,7 @@ Latch 是个人 macOS 开发环境中的本地任务状态记录器。它帮助 
 - archive 使用目录 rename 作为提交点。
 - 已知完整 Task ID 时，Context 先读 open task，再按精确 ID 只读回退 archive；所有 mutation 继续只解析 open task。
 - R2 回退先备份整个 task 目录，再重写 event，最后以 `task.json` 作为格式切换提交点。
+- schema 4 的机器拒写提交点是 `task.json`；event log 继续使用 forward-compatible 的 `events_schema_version: 3`，不承担 writer capability 判断。
 - workspace evidence sidecar 使用原子写和 SHA-256、entry count 校验；未引用、缺失、损坏或计数不一致的 sidecar 不构成 proof。
 - Record 与 task 完全分离，只复用 repo root、原子写和短锁；Record 关联不传播状态、writer 或授权。
 - Record 索引不含正文，AI 只在用户明确保存或召回时访问，默认最多返回 5 条候选。

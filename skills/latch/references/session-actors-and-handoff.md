@@ -37,12 +37,13 @@ The old session must stop writing this task. I explicitly authorize the new sess
 
 - Do not run takeover from handoff intent alone; require explicit user authorization for the named task and expected revision.
 - Treat takeover as ownership transfer, not implementation approval. When one user message explicitly authorizes both takeover and the current plan, run takeover first and use its returned JSON `revision` for `approve`; otherwise preserve the phase and wait for separate approval.
+- Schema 3 is read-only, including takeover. Its current primary writer must explicitly run `upgrade-v4` before handoff; do not use takeover, save, or another mutation as a schema 3 compatibility path.
 - Require the old session to stop task writes. Latch cannot prevent it from changing a shared Git worktree, so report the shared-worktree risk.
 - Keep a normal sequential handoff `provenance: clean`; use `mixed` only after the user explicitly accepts overlapping parallel work.
 
 ## Provenance
 
-- Treat missing task provenance as `clean`; write new schema 3 tasks with `provenance: clean`.
+- Treat missing task provenance as `clean`; write new schema 4 tasks with `provenance: clean`.
 - Set provenance to `mixed` only after explicit user acceptance of overlapping parallel work, using standalone `latch save <task-id> --expect-revision <n> --provenance mixed --provenance-reason <text> --json`.
 - Reset provenance to `clean` only after explicit user confirmation that isolation is restored, using the same standalone mutation with `--provenance clean` and a reason.
 - Never reset provenance through phase changes, submit, done, or takeover.
