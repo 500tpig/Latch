@@ -15,6 +15,7 @@ import { isAbsolute, join, normalize, relative, sep } from 'node:path'
 import { discoverWorkspaceRoot, pathsForWorkspace } from './paths.js'
 import type { LatchPathsV2 } from './paths.js'
 import {
+  assertAuthorizableTaskPlan,
   assertTaskPlan,
   assertWritableTaskPlan,
 } from './plan-schema.js'
@@ -1148,8 +1149,12 @@ function createTask(
     ? (input as CreateTaskV3Input).sourceRecord
     : undefined
   if (groupId !== undefined) assertGroupIdV3(groupId, 'checkpoint input')
-  if (workBasisInput && input.plan.open_questions.length > 0)
-    throw new Error('Cannot create work_basis while plan.open_questions is not empty.')
+  if (workBasisInput) {
+    if (schemaVersion === V4_SCHEMA_VERSION)
+      assertAuthorizableTaskPlan(input.plan, profile!, 'checkpoint input')
+    else if (input.plan.open_questions.length > 0)
+      throw new Error('Cannot create work_basis while plan.open_questions is not empty.')
+  }
   const workRevision = workBasisInput ? 1 : 0
   const workBasis = workBasisInput
     ? materializeWorkBasisV3(workBasisInput, 1, workRevision)

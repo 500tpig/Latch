@@ -50,6 +50,7 @@ v2 不迁移或覆盖 v1 `.latch`。
 
 ```bash
 latch checkpoint --print-plan-template light
+latch checkpoint --print-plan-template standard
 latch checkpoint "任务标题" --plan-file plan.json
 latch checkpoint "低风险任务" --plan-file plan.json \
   --authorize-request "用户请求完成明确修正" \
@@ -68,10 +69,17 @@ latch context [task-id] --json --status
 latch context [task-id] --json --since-revision <revision>
 ```
 
-`checkpoint --print-plan-template light` 向 stdout 写入最小合法 JSON，不创建
-`.latch`，也不要求 `title`、`--plan-file` 或 canonical actor。该模板只保证
-schema 合法；创建 task 前仍需根据实际请求补全语义，并按 A/B/C 规则判断 profile
-和授权。本入口当前只支持 `light`，且不能与 task 创建参数组合。
+`checkpoint --print-plan-template light|standard` 向 stdout 写入对应 profile
+的最小合法 JSON（shape scaffold），不创建 `.latch`，也不要求 `title`、`--plan-file` 或
+canonical actor。两个 scaffold 当前共用 `TaskPlan` shape，只保证结构合法；不能
+直接获得 work basis，也不替代 A/B/C 判断。模板入口不能与 task 创建参数组合。
+
+plan 校验分为三层：shape validation 保持历史 task 可读；writable validation 要求
+schema 4 plan 提供 `workspace_scope`；authorizable validation 只在创建或更新 work
+basis 前执行。授权要求 `workspace_scope.paths`、`scope`、`acceptance` 和 `approach`
+包含有效内容，且 `open_questions` 为空；Light 还必须至少包含一个 gate。Standard
+无 gate 时继续使用显式 `--no-verify` 提交流程。draft 可在 plan phase 保存，不触发
+授权完整性门禁。
 
 创建 task 时，`checkpoint` 必须读取完整 plan 文件。plan 校验失败时，错误会列出
 期望类型、实际类型、最小合法值和模板命令。同标题 task 不覆盖。`use` 只修改当前

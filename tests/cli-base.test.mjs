@@ -127,11 +127,11 @@ test('top-level and command help have no side effects', () => {
   assert.match(checkpointHelp.stdout, /--source-record/)
   assert.match(
     checkpointHelp.stdout,
-    /checkpoint --print-plan-template light/,
+    /checkpoint --print-plan-template <light\|standard>/,
   )
   assert.match(
     run(temporaryDirectory(), ['--help']).stdout,
-    /checkpoint --print-plan-template light/,
+    /checkpoint --print-plan-template <light\|standard>/,
   )
   assert.match(run(temporaryDirectory(), ['record', '--help']).stdout, /record create/)
   const saveHelp = run(temporaryDirectory(), ['save', '--help'])
@@ -144,17 +144,8 @@ test('top-level and command help have no side effects', () => {
   assert.match(run(temporaryDirectory(), ['submit', '--help']).stdout, /--verbose-warnings/)
 })
 
-test('checkpoint prints a side-effect-free Light plan template that round-trips', () => {
-  const cwd = temporaryDirectory()
-  const printed = run(
-    cwd,
-    ['checkpoint', '--print-plan-template', 'light'],
-    { actor: '' },
-  )
-  assert.equal(printed.status, 0, printed.stderr)
-  assert.equal(existsSync(join(cwd, '.latch')), false)
-  const template = JSON.parse(printed.stdout)
-  assert.deepEqual(template, {
+test('checkpoint templates are side-effect-free shape scaffolds that require completion', () => {
+  const expected = {
     goal: 'Describe the intended outcome.',
     workspace_scope: { paths: [] },
     scope: [],
@@ -167,19 +158,31 @@ test('checkpoint prints a side-effect-free Light plan template that round-trips'
     out_of_scope: [],
     verification_plan: [],
     open_questions: [],
-  })
+  }
 
-  const unsupported = run(
-    cwd,
-    ['checkpoint', '--print-plan-template', 'standard'],
+  for (const profile of ['light', 'standard']) {
+    const cwd = temporaryDirectory()
+    const printed = run(
+      cwd,
+      ['checkpoint', '--print-plan-template', profile],
+      { actor: '' },
+    )
+    assert.equal(printed.status, 0, printed.stderr)
+    assert.deepEqual(JSON.parse(printed.stdout), expected)
+    assert.equal(existsSync(join(cwd, '.latch')), false)
+  }
+
+  const invalid = run(
+    temporaryDirectory(),
+    ['checkpoint', '--print-plan-template', 'tiny'],
     { actor: '' },
   )
-  assert.notEqual(unsupported.status, 0)
-  assert.match(unsupported.stderr, /only supports light/)
-  assert.equal(existsSync(join(cwd, '.latch')), false)
+  assert.notEqual(invalid.status, 0)
+  assert.match(invalid.stderr, /must be light or standard/)
 
+  const mixedRoot = temporaryDirectory()
   const mixed = run(
-    cwd,
+    mixedRoot,
     [
       'checkpoint',
       'mixed',
@@ -192,15 +195,53 @@ test('checkpoint prints a side-effect-free Light plan template that round-trips'
   )
   assert.notEqual(mixed.status, 0)
   assert.match(mixed.stderr, /cannot be combined/)
-  assert.equal(existsSync(join(cwd, '.latch')), false)
+  assert.equal(existsSync(join(mixedRoot, '.latch')), false)
 
+  const cwd = temporaryDirectory()
   init(cwd)
-  const planFile = writePlan(cwd, template, 'template.json')
+  const templateFile = writePlan(cwd, expected, 'template.json')
+  const draft = run(cwd, [
+    'checkpoint',
+    'Template draft',
+    '--plan-file',
+    templateFile,
+    '--profile',
+    'light',
+    '--json',
+  ])
+  assert.equal(draft.status, 0, draft.stderr)
+  assert.equal(readTask(cwd, JSON.parse(draft.stdout).task_id).phase, 'plan')
+
+  const denied = run(cwd, [
+    'checkpoint',
+    'Template authorization denied',
+    '--plan-file',
+    templateFile,
+    '--authorize-request',
+    '用户请求执行明确的低风险变更',
+    '--json',
+  ])
+  assert.notEqual(denied.status, 0)
+  assert.match(denied.stderr, /not authorizable/)
+  assert.equal(taskIds(cwd).length, 1)
+
+  const completedFile = writePlan(cwd, {
+    ...expected,
+    workspace_scope: { paths: ['src/cli.ts'] },
+    scope: ['修改 src/cli.ts'],
+    acceptance: ['CLI tests pass'],
+    approach: ['使用现有 CLI 模式'],
+    verification_plan: [{
+      name: 'tests',
+      command: [process.execPath, '-e', 'process.exit(0)'],
+      kind: 'gate',
+    }],
+  }, 'completed-template.json')
   const created = run(cwd, [
     'checkpoint',
-    'Template task',
+    'Completed template task',
     '--plan-file',
-    planFile,
+    completedFile,
     '--authorize-request',
     '用户请求执行明确的低风险变更',
     '--json',

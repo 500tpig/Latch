@@ -1,56 +1,27 @@
-import type { TaskPlan } from './types.js'
 import { posix } from 'node:path'
+import type { TaskPlan, TaskProfile } from './types.js'
 
 export const LIGHT_PLAN_TEMPLATE_COMMAND =
   'latch checkpoint --print-plan-template light'
+export const STANDARD_PLAN_TEMPLATE_COMMAND =
+  'latch checkpoint --print-plan-template standard'
 
-const minimumLightPlanTemplate: TaskPlan = {
-  goal: 'Describe the intended outcome.',
-  workspace_scope: { paths: [] },
-  scope: [],
-  acceptance: [],
-  approach: [],
-  api_assumptions: [],
-  permission_assumptions: [],
-  data_assumptions: [],
-  user_flow: [],
-  out_of_scope: [],
-  verification_plan: [],
-  open_questions: [],
+const planTemplateHelp =
+  `Run \`${LIGHT_PLAN_TEMPLATE_COMMAND}\` or ` +
+  `\`${STANDARD_PLAN_TEMPLATE_COMMAND}\` for a shape-valid scaffold.`
+
+type WritableTaskPlan = TaskPlan & {
+  workspace_scope: NonNullable<TaskPlan['workspace_scope']>
 }
 
-const stringArrayPlanFields = [
-  'scope',
-  'acceptance',
-  'approach',
-  'api_assumptions',
-  'permission_assumptions',
-  'data_assumptions',
-  'user_flow',
-  'out_of_scope',
-  'open_questions',
-] as const
-
-const requiredPlanFields = [
-  'goal',
-  'scope',
-  'acceptance',
-  'approach',
-  'api_assumptions',
-  'permission_assumptions',
-  'data_assumptions',
-  'user_flow',
-  'out_of_scope',
-  'verification_plan',
-  'open_questions',
-] as const
-
-const planSchemaSummary = [
-  'plan.goal: non-empty string',
-  'plan.workspace_scope: { paths: repo-relative POSIX path[] }',
-  ...stringArrayPlanFields.map((field) => `plan.${field}: string[]`),
-  'plan.verification_plan: Array<{ name: non-empty string; command: non-empty string[]; kind: "gate" | "diagnostic" }>',
-].join('; ')
+type PlanFieldSpec = {
+  scaffold: unknown
+  shapeRequired: boolean
+  writableRequired: boolean
+  summary: string
+  validateShape: (value: unknown, path: string) => void
+  authorizable?: (value: unknown, profile: TaskProfile) => string | undefined
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -77,7 +48,7 @@ function invalidField(
   throw new Error(
     `Invalid ${field} in ${path}: expected ${expected}, got ${actualType(value)}. ` +
       `Minimal legal value: ${JSON.stringify(minimumLegalValue)}. ` +
-      `Run \`${LIGHT_PLAN_TEMPLATE_COMMAND}\` for a complete template.`,
+      planTemplateHelp,
   )
 }
 
@@ -125,69 +96,39 @@ function normalizeWorkspaceScopePath(value: string, path: string) {
   return directory ? `${normalized.replace(/\/+$/, '')}/` : normalized
 }
 
-function validateWorkspaceScope(plan: Record<string, unknown>, path: string) {
-  if (plan.workspace_scope === undefined) return
-  if (!isRecord(plan.workspace_scope))
+function validateWorkspaceScope(value: unknown, path: string) {
+  if (!isRecord(value))
     invalidField(
       'plan.workspace_scope',
       '{ paths: string[] }',
-      plan.workspace_scope,
+      value,
       { paths: [] },
       path,
     )
   requireStringArray(
-    plan.workspace_scope.paths,
+    value.paths,
     'plan.workspace_scope.paths',
     path,
   )
-  plan.workspace_scope.paths = [
+  value.paths = [
     ...new Set(
-      plan.workspace_scope.paths.map((entry) =>
-        normalizeWorkspaceScopePath(entry, path),
-      ),
+      value.paths.map((entry) => normalizeWorkspaceScopePath(entry, path)),
     ),
   ]
 }
 
-export function lightPlanTemplate(): TaskPlan {
-  return structuredClone(minimumLightPlanTemplate)
-}
-
-export function assertTaskPlan(
-  plan: unknown,
-  path: string,
-): asserts plan is TaskPlan {
-  if (!isRecord(plan))
-    invalidField('plan', 'object', plan, minimumLightPlanTemplate, path)
-
-  const missingFields = requiredPlanFields.filter(
-    (field) => plan[field] === undefined,
-  )
-  if (missingFields.length > 0)
-    throw new Error(
-      `Missing required plan fields in ${path}: ` +
-        `${missingFields.map((field) => `plan.${field}`).join(', ')}. ` +
-        `Expected schema: ${planSchemaSummary}. ` +
-        `Minimal legal plan: ${JSON.stringify(minimumLightPlanTemplate)}. ` +
-        `Run \`${LIGHT_PLAN_TEMPLATE_COMMAND}\` for a complete template.`,
-    )
-
-  requireString(plan.goal, 'plan.goal', path, minimumLightPlanTemplate.goal)
-  validateWorkspaceScope(plan, path)
-  for (const field of stringArrayPlanFields)
-    requireStringArray(plan[field], `plan.${field}`, path)
-
-  if (!Array.isArray(plan.verification_plan))
+function validateVerificationPlan(value: unknown, path: string) {
+  if (!Array.isArray(value))
     invalidField(
       'plan.verification_plan',
       'Array<{ name: non-empty string; command: non-empty string[]; kind: "gate" | "diagnostic" }>',
-      plan.verification_plan,
+      value,
       [],
       path,
     )
 
   const verificationNames = new Set<string>()
-  for (const verification of plan.verification_plan) {
+  for (const verification of value) {
     if (!isRecord(verification))
       invalidField(
         'plan.verification_plan[]',
@@ -216,7 +157,7 @@ export function assertTaskPlan(
       throw new Error(
         `Invalid empty verification_plan.command in ${path}: expected non-empty string[], got empty array. ` +
           'Minimal legal value: ["replace-with-real-command"]. ' +
-          `Run \`${LIGHT_PLAN_TEMPLATE_COMMAND}\` for a complete template.`,
+          planTemplateHelp,
       )
     if (verificationNames.has(verification.name))
       throw new Error(
@@ -234,14 +175,171 @@ export function assertTaskPlan(
   }
 }
 
-export function assertWritableTaskPlan(
+function stringArraySpec(
+  field: string,
+  authorizable?: PlanFieldSpec['authorizable'],
+): PlanFieldSpec {
+  return {
+    scaffold: [],
+    shapeRequired: true,
+    writableRequired: false,
+    summary: `plan.${field}: string[]`,
+    validateShape(value, path) {
+      requireStringArray(value, `plan.${field}`, path)
+    },
+    ...(authorizable ? { authorizable } : {}),
+  }
+}
+
+function requireMeaningfulItem(value: unknown) {
+  return (value as string[]).some((entry) => entry.trim() !== '')
+    ? undefined
+    : 'must contain at least one non-empty item'
+}
+
+const planFieldSpecs = {
+  goal: {
+    scaffold: 'Describe the intended outcome.',
+    shapeRequired: true,
+    writableRequired: false,
+    summary: 'plan.goal: non-empty string',
+    validateShape(value, path) {
+      requireString(value, 'plan.goal', path, 'Describe the intended outcome.')
+    },
+    authorizable(value) {
+      return typeof value === 'string' && value.trim() !== ''
+        ? undefined
+        : 'must be non-empty'
+    },
+  },
+  workspace_scope: {
+    scaffold: { paths: [] },
+    shapeRequired: false,
+    writableRequired: true,
+    summary: 'plan.workspace_scope: { paths: repo-relative POSIX path[] }',
+    validateShape: validateWorkspaceScope,
+    authorizable(value) {
+      return (value as NonNullable<TaskPlan['workspace_scope']>).paths.length > 0
+        ? undefined
+        : 'must contain at least one path'
+    },
+  },
+  scope: stringArraySpec('scope', requireMeaningfulItem),
+  acceptance: stringArraySpec('acceptance', requireMeaningfulItem),
+  approach: stringArraySpec('approach', requireMeaningfulItem),
+  api_assumptions: stringArraySpec('api_assumptions'),
+  permission_assumptions: stringArraySpec('permission_assumptions'),
+  data_assumptions: stringArraySpec('data_assumptions'),
+  user_flow: stringArraySpec('user_flow'),
+  out_of_scope: stringArraySpec('out_of_scope'),
+  verification_plan: {
+    scaffold: [],
+    shapeRequired: true,
+    writableRequired: false,
+    summary:
+      'plan.verification_plan: Array<{ name: non-empty string; command: non-empty string[]; kind: "gate" | "diagnostic" }>',
+    validateShape: validateVerificationPlan,
+    authorizable(value, profile) {
+      return profile === 'light' &&
+          !(value as TaskPlan['verification_plan']).some(
+            (verification) => verification.kind === 'gate',
+          )
+        ? 'must contain at least one gate'
+        : undefined
+    },
+  },
+  open_questions: stringArraySpec('open_questions', (value) =>
+    (value as string[]).length === 0 ? undefined : 'must be empty'),
+} satisfies Record<keyof TaskPlan, PlanFieldSpec>
+
+const planFieldEntries = Object.entries(planFieldSpecs) as Array<
+  [keyof TaskPlan, PlanFieldSpec]
+>
+const requiredPlanFields = planFieldEntries
+  .filter(([, spec]) => spec.shapeRequired)
+  .map(([field]) => field)
+const planSchemaSummary = planFieldEntries
+  .map(([, spec]) => spec.summary)
+  .join('; ')
+
+export function planTemplate(profile: TaskProfile): TaskPlan {
+  switch (profile) {
+    case 'light':
+    case 'standard':
+      return Object.fromEntries(
+        planFieldEntries.map(([field, spec]) => [
+          field,
+          structuredClone(spec.scaffold),
+        ]),
+      ) as TaskPlan
+  }
+}
+
+export function assertTaskPlan(
   plan: unknown,
   path: string,
 ): asserts plan is TaskPlan {
-  assertTaskPlan(plan, path)
-  if (!plan.workspace_scope)
+  const minimumPlan = planTemplate('light')
+  if (!isRecord(plan))
+    invalidField('plan', 'object', plan, minimumPlan, path)
+
+  const missingFields = requiredPlanFields.filter(
+    (field) => plan[field] === undefined,
+  )
+  if (missingFields.length > 0)
     throw new Error(
-      `Missing required plan field in ${path}: plan.workspace_scope. ` +
-        `Run \`${LIGHT_PLAN_TEMPLATE_COMMAND}\` for a complete template.`,
+      `Missing required plan fields in ${path}: ` +
+        `${missingFields.map((field) => `plan.${field}`).join(', ')}. ` +
+        `Expected schema: ${planSchemaSummary}. ` +
+        `Minimal legal plan: ${JSON.stringify(minimumPlan)}. ` +
+        planTemplateHelp,
     )
+
+  for (const [field, spec] of planFieldEntries) {
+    const value = plan[field]
+    if (value === undefined) continue
+    spec.validateShape(value, path)
+  }
+}
+
+export function assertWritableTaskPlan(
+  plan: unknown,
+  path: string,
+): asserts plan is WritableTaskPlan {
+  assertTaskPlan(plan, path)
+  const missingFields = planFieldEntries
+    .filter(([, spec]) => spec.writableRequired)
+    .map(([field]) => field)
+    .filter((field) => plan[field] === undefined)
+  if (missingFields.length > 0)
+    throw new Error(
+      `Missing required writable plan fields in ${path}: ` +
+        `${missingFields.map((field) => `plan.${field}`).join(', ')}. ` +
+        planTemplateHelp,
+    )
+}
+
+function notAuthorizable(
+  profile: TaskProfile,
+  field: string,
+  requirement: string,
+  path: string,
+): never {
+  throw new Error(
+    `Plan is not authorizable for profile=${profile} in ${path}: ` +
+      `plan.${field} ${requirement}. Printed scaffolds prove shape validity only; ` +
+      'complete the plan before creating work_basis.',
+  )
+}
+
+export function assertAuthorizableTaskPlan(
+  plan: unknown,
+  profile: TaskProfile,
+  path: string,
+): asserts plan is WritableTaskPlan {
+  assertWritableTaskPlan(plan, path)
+  for (const [field, spec] of planFieldEntries) {
+    const requirement = spec.authorizable?.(plan[field], profile)
+    if (requirement) notAuthorizable(profile, field, requirement, path)
+  }
 }

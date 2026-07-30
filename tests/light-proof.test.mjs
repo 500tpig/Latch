@@ -217,6 +217,19 @@ test('checkpoint rejects invalid basis options before task or state writes', () 
     plan({ open_questions: ['需要确认'] }),
     'open-plan',
   )
+  const incompletePlanFiles = [
+    ['empty workspace scope', writeJson(cwd, plan({ workspace_scope: { paths: [] } }), 'empty-workspace')],
+    ['empty scope', writeJson(cwd, plan({ scope: [] }), 'empty-scope')],
+    ['blank scope', writeJson(cwd, plan({ scope: [''] }), 'blank-scope')],
+    ['empty acceptance', writeJson(cwd, plan({ acceptance: [] }), 'empty-acceptance')],
+    ['empty approach', writeJson(cwd, plan({ approach: [] }), 'empty-approach')],
+    ['light without gate', writeJson(cwd, plan({ verification_plan: [] }), 'light-without-gate')],
+  ]
+  const retrospectiveIncompletePlan = writeJson(
+    cwd,
+    plan({ acceptance: [] }),
+    'retrospective-incomplete-plan',
+  )
   const nullFile = writeJson(cwd, null, 'null')
 
   const cases = [
@@ -225,8 +238,16 @@ test('checkpoint rejects invalid basis options before task or state writes', () 
     ['checkpoint', 'open questions', '--plan-file', openPlanFile, '--authorization-file', authorizationFile],
     ['checkpoint', 'invalid profile', '--plan-file', planFile, '--profile', 'tiny'],
     ['checkpoint', 'null basis', '--plan-file', planFile, '--authorization-file', nullFile],
+    ['checkpoint', 'retrospective incomplete', '--plan-file', retrospectiveIncompletePlan, '--profile', 'standard', '--retrospective-file', retrospectiveFile],
+    ...incompletePlanFiles.map(([title, incompletePlanFile]) => [
+      'checkpoint', title, '--plan-file', incompletePlanFile,
+      '--profile', 'light', '--authorization-file', authorizationFile,
+    ]),
   ]
-  for (const args of cases) assert.notEqual(run(cwd, args).status, 0, args[1])
+  for (const args of cases) {
+    const result = run(cwd, args)
+    assert.notEqual(result.status, 0, args[1])
+  }
 
   assert.deepEqual(readdirSync(join(cwd, '.latch', 'tasks')), [])
   assert.equal(readFileSync(statePath, 'utf8'), stateBefore)
@@ -396,7 +417,6 @@ test('submit accepts inline none knowledge impact and rejects ambiguous input', 
 test('light rejects no-verify and validates updated artifact references', () => {
   const noGateRoot = temporaryDirectory()
   const noGateTask = createV3(noGateRoot, {
-    plan: plan({ verification_plan: [] }),
     workBasis: authorization(),
   })
   const noVerify = submit(noGateRoot, noGateTask.id, impactNone(), [
@@ -736,6 +756,42 @@ test('done revalidates double binding, knowledge impact, and proof', () => {
   ])
   assert.equal(abandonedResult.status, 0, abandonedResult.stderr)
   assert.equal(JSON.parse(abandonedResult.stdout).archived, true)
+})
+
+test('schema 4 approve rejects incomplete drafts before task or event writes', () => {
+  const cases = [
+    ['empty workspace scope', 'light', { workspace_scope: { paths: [] } }, authorization()],
+    ['empty scope', 'light', { scope: [] }, authorization()],
+    ['blank acceptance', 'light', { acceptance: [''] }, authorization()],
+    ['empty approach', 'standard', { approach: [] }, authorization('user_approve')],
+    ['open questions', 'standard', { open_questions: ['需要确认'] }, authorization('user_approve')],
+    ['light without gate', 'light', { verification_plan: [] }, retrospective()],
+  ]
+
+  for (const [title, profile, overrides, basis] of cases) {
+    const cwd = temporaryDirectory()
+    const task = createV3(cwd, { profile, plan: plan(overrides) })
+    const beforeTask = readFileSync(taskPath(cwd, task.id), 'utf8')
+    const beforeEvents = readTaskEventsV3(taskDirectory(cwd, task.id))
+    const denied = approve(cwd, task.id, basis)
+    assert.notEqual(denied.status, 0, title)
+    assert.match(denied.stderr, /not authorizable/, title)
+    assert.equal(readFileSync(taskPath(cwd, task.id), 'utf8'), beforeTask, title)
+    assert.deepEqual(readTaskEventsV3(taskDirectory(cwd, task.id)), beforeEvents, title)
+  }
+
+  const standardRoot = temporaryDirectory()
+  const standard = createV3(standardRoot, {
+    profile: 'standard',
+    plan: plan({ verification_plan: [] }),
+  })
+  const approved = approve(
+    standardRoot,
+    standard.id,
+    authorization('user_approve'),
+  )
+  assert.equal(approved.status, 0, approved.stderr)
+  assert.equal(readTask(standardRoot, standard.id).phase, 'dev')
 })
 
 test('open questions and blocked state reject C2 implementation progress', () => {

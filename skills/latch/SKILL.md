@@ -43,8 +43,8 @@ expansion, stop and re-run A/B/C. A stays in grill, B needs a precise delta
 authorization, and C shows the updated complete plan and waits for reapproval.
 Core applies structure and revision changes; it never classifies from gate count.
 
-Creating or continuing a task requires an explicit write request. Task authority
-never implies group, batch, Git, archive, cancellation, claim, or takeover authority.
+Task creation or continuation requires an explicit write request and grants no
+group, batch, Git, archive, cancellation, claim, or takeover authority.
 
 ## Execute
 
@@ -58,26 +58,27 @@ latch checkpoint --print-plan-template light
 latch checkpoint "Task title" --plan-file plan.json --profile light --authorize-request "User requested this scoped change" --scope-summary "Bounded scope" --scope-path path/to/file --json
 ```
 
-The template proves schema validity only; it does not establish semantic
-completeness, choose A/B/C, or authorize work. Implement the scope, run every
+The scaffold proves schema validity only; it does not choose A/B/C or authorize
+work. Light also requires complete core fields and a gate. Implement, run every
 named gate, submit to `review`, and wait. Never auto-complete.
 
 ### Standard plan
 
-Prepare and show the complete plan, then create it:
+Complete the Standard scaffold, show the complete plan, then create:
 
 ```bash
+latch checkpoint --print-plan-template standard
 latch checkpoint "Task title" --plan-file plan.json --json
 ```
 
-Only after explicit implementation authorization and empty `open_questions`, run:
+After explicit implementation authorization and authorizable validation succeeds:
 
 ```bash
 latch approve <task-id> --expect-revision <n> --reason "User approved the current plan" --json
 ```
 
-Implement the approved scope, run every named gate, submit to `review`, and wait.
-Creation, claim, or takeover does not approve a plan.
+Implement, run every named gate, submit to `review`, and wait. Creation or
+ownership changes never approve a plan.
 
 ### Review closeout fast path
 
@@ -136,13 +137,13 @@ delivery remains separate and needs separate authorization.
 
 Read a selected reference completely:
 
-- [task lifecycle](references/task-lifecycle.md): plan, feedback, gates, submit,
-  `knowledge_impact`, unverified evidence, closeout, or abandon.
+- [task lifecycle](references/task-lifecycle.md): plan, feedback, gates,
+  `knowledge_impact`, submission, closeout, or abandon.
 - [session actors and handoff](references/session-actors-and-handoff.md): actor,
-  writer mismatch, takeover, handoff, or provenance.
-- [groups](references/groups.md): `group_id`, planning waves, or siblings.
+  mismatch, takeover, handoff, or provenance.
+- [groups](references/groups.md): `group_id`, planning, or siblings.
 - [knowledge and context](references/knowledge-and-context.md): freshness,
-  knowledge impact, Context packs, orientation, or benchmarks.
-- [migration](references/migration.md): schema 2/3, claim, `upgrade-v4`, legacy
-  patching, minimum writer versions, or `downgrade-v2`.
-- [records](references/records.md): explicit Record operations or task conversion.
+  knowledge impact, Context packs, or benchmarks.
+- [migration](references/migration.md): schema 2/3, claim, `upgrade-v4`, writer
+  versions, or `downgrade-v2`.
+- [records](references/records.md): explicit Record operations or conversion.

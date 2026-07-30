@@ -28,7 +28,7 @@ import {
 import { discoverWorkspaceRoot } from './core/paths.js'
 import {
   assertWritableTaskPlan,
-  lightPlanTemplate,
+  planTemplate,
 } from './core/plan-schema.js'
 import {
   archiveProjectRecordV1,
@@ -96,7 +96,7 @@ const usage = `Usage: latch <command> [options]
 Commands:
   init
   checkpoint <title> --plan-file <path> [--profile <light|standard>] [--authorize-request <reason> [--scope-summary <summary>] [--scope-path <path>...] | --authorization-file <path> | --retrospective-file <path>] [--source-record <id> --source-record-revision <revision>]
-  checkpoint --print-plan-template light
+  checkpoint --print-plan-template <light|standard>
   use <task-id>
   list [--group <id> [--include-archive]] [--json] [--brief]
   context [task-id] [--json] [--brief | --status | --since-revision <revision>] [--history <timeline|events|both>]
@@ -121,7 +121,7 @@ Commands:
 const commandUsage: Record<string, string> = {
   init: 'Usage: latch init [--json]',
   checkpoint:
-    'Usage: latch checkpoint <title> --plan-file <path> [--profile <light|standard>] [--authorize-request <reason> [--scope-summary <summary>] [--scope-path <path>...] | --authorization-file <path> | --retrospective-file <path>] [--source-record <id> --source-record-revision <revision>] [--artifact <kind>:<path>] [--json]\n       latch checkpoint --print-plan-template light',
+    'Usage: latch checkpoint <title> --plan-file <path> [--profile <light|standard>] [--authorize-request <reason> [--scope-summary <summary>] [--scope-path <path>...] | --authorization-file <path> | --retrospective-file <path>] [--source-record <id> --source-record-revision <revision>] [--artifact <kind>:<path>] [--json]\n       latch checkpoint --print-plan-template <light|standard>',
   use: 'Usage: latch use <task-id> [--json]',
   list:
     'Usage: latch list [--group <id> [--include-archive]] [--json] [--brief]',
@@ -375,10 +375,10 @@ function runCheckpoint(args: string[], cwd: string, actor: string) {
   if (parsed.values.help) return process.stdout.write(`${commandUsage.checkpoint}\n`)
   const templateProfile = parsed.values['print-plan-template']
   if (templateProfile !== undefined) {
-    if (templateProfile !== 'light')
+    if (templateProfile !== 'light' && templateProfile !== 'standard')
       fail(
         'invalid_arguments',
-        '--print-plan-template only supports light.',
+        '--print-plan-template must be light or standard.',
       )
     const incompatibleOptions = [
       ['--plan-file', parsed.values['plan-file']],
@@ -402,7 +402,7 @@ function runCheckpoint(args: string[], cwd: string, actor: string) {
             ? `: ${incompatibleOptions.join(', ')}.`
             : '.'),
       )
-    return json(lightPlanTemplate())
+    return json(planTemplate(templateProfile))
   }
   requirePositionals('checkpoint', parsed.positionals, 1)
   if (parsed.values.profile !== undefined &&

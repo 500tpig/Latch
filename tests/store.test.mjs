@@ -584,6 +584,31 @@ test('无效 schema 或结构化 event 在持久化前失败', () => {
   )
 })
 
+test('historical plan shape keeps empty arrays and missing workspace scope readable', () => {
+  const root = temporaryDirectory()
+  const store = initTaskStoreV2(root)
+  const historicalPlan = plan({
+    scope: [],
+    acceptance: [],
+    approach: [],
+    verification_plan: [],
+  })
+  delete historicalPlan.workspace_scope
+
+  const task = createTaskV2(
+    store,
+    { title: 'historical empty plan', plan: historicalPlan },
+    'codex:session:a',
+  ).task
+  const read = readTaskV2(store, task.id)
+  assert.equal(read.schema_version, 2)
+  assert.equal(read.plan.workspace_scope, undefined)
+  assert.deepEqual(read.plan.scope, [])
+  assert.deepEqual(read.plan.acceptance, [])
+  assert.deepEqual(read.plan.approach, [])
+  assert.deepEqual(read.plan.verification_plan, [])
+})
+
 test('plan 拒绝空 argv 和重复 verification name', () => {
   const root = temporaryDirectory()
   const store = initTaskStoreV2(root)

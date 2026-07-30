@@ -30,6 +30,7 @@ import type {
   WorkspaceSnapshot,
   WorkspaceViolation,
 } from './types.js'
+import { assertAuthorizableTaskPlan } from './plan-schema.js'
 import { now } from './utils.js'
 import {
   captureWorkspaceSnapshot,
@@ -158,8 +159,6 @@ export function approveTaskV2(
 ): TaskWriteResultV2 {
   const current = readTaskV2(store, id)
   if (current.blocked) throw new Error(`Task is blocked: ${current.blocked.reason}`)
-  if (current.plan.open_questions.length > 0)
-    throw new Error('Cannot approve while plan.open_questions is not empty.')
   if (input.authorization && input.retrospective)
     throw new Error('Authorization and retrospective inputs cannot be combined.')
   const warnings = sharedWorktreeWarnings(store, current.id)
@@ -167,6 +166,14 @@ export function approveTaskV2(
   if (current.phase === 'plan') {
     if (input.feedback || input.nonImplementationFeedback !== undefined)
       throw new Error('Review feedback requires a task in review.')
+    if (current.schema_version === 4)
+      assertAuthorizableTaskPlan(
+        current.plan,
+        profileOf(current),
+        `task ${current.id} plan`,
+      )
+    else if (current.plan.open_questions.length > 0)
+      throw new Error('Cannot approve while plan.open_questions is not empty.')
     const legacyStandardApproval =
       profileOf(current) === 'standard' &&
       input.reason !== undefined &&

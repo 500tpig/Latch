@@ -21,7 +21,9 @@ Latch 是个人 macOS 开发环境中的本地任务状态记录器。它帮助 
 - schema 3 只作为历史读取和显式迁移来源；open schema 3 task 的普通 mutation 全部拒绝，当前 primary writer 通过单 task `upgrade-v4` 升级。
 - schema 4 新 task 写入根 `provenance: clean`；历史 schema 2/3 task 缺失该字段时按 `clean` 读取，只有明确的重叠并行或隔离恢复才显式修改。
 - light request 与 retrospective task 可在 `checkpoint` 时原子写入 work basis，不需要创建后再拼接生命周期状态。
-- 新 plan 使用 `workspace_scope.paths` 保存机器范围；自然语言 `plan.scope`、授权摘要和 artifact 不替代该字段。
+- plan validation 分为历史可读 shape、schema 4 writable 和 authorizable 三层；只有第三层在创建或更新 work basis 前要求执行字段完整，并按 profile 检查 Light gate。
+- Light 与 Standard scaffold 共用 `TaskPlan` shape，只证明结构合法，不能直接获得 work basis。
+- 新 plan 使用 `workspace_scope.paths` 保存机器范围；自然语言 `plan.scope`、授权摘要和 artifact 不替代该字段，获得 work basis 前 paths 必须非空。
 - named gate 保存 command outcome、before/after workspace evidence、workspace effect 和 proof generation；只有当前 generation 上的完整无 mutation proof 才能参与 submit。
 - workspace evidence 覆盖 Git-visible 脏路径、非 ignored untracked 路径，以及 scope 或 artifact 精确引用的 ignored 文件；不递归扫描 ignored 目录。
 - schema 3/4 task 可通过带完整 backup 的 `downgrade-v2` 投影回可写 schema 2；主投影剥离 writer 元数据和 workspace proof 扩展，完整数据只保留在来源 schema backup。
