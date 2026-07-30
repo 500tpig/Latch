@@ -44,6 +44,16 @@ Latch、Latch-Board、appearance-sec 和 monitoring 的当前兼容状态。
 - 用途：记录固定 10 张样本的正式评估、扩大样本对照、证据边界和分层改进建议；
 - 边界：不修改 current 产品契约，不直接授权 CLI、Core、Skill 或外部 repo 变更。
 
+## 待评审设计
+
+### [Gate 工作区 mutation 证明与失效语义](briefs/2026-07-30-latch-gate-workspace-mutation-proof.md)
+
+- 状态：`proposed`；
+- Source-Task：`20260730040007379-设计-gate-工作区-mutation-证明与失效语义-2e68d9`；
+- Source-Record：`rec_41800a8d-00e2-413f-a730-3ead2e4e691b` revision 1；
+- 用途：定义 gate 前后工作区 evidence、mutation 分类、proof generation、`verify-all` 停止规则和只读 Git 边界；
+- 边界：不是 current 产品契约，不直接授权 Core、CLI、schema、测试或外部 repo 变更。
+
 ## 当前产品契约
 
 ### [Latch 最终产品契约](prd/2026-07-15-latch-final-product-contract.md)
