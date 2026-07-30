@@ -32,6 +32,7 @@ Latch 是个人 macOS 开发环境中的本地任务状态记录器。它帮助 
 - 原子写和短锁保护当前事实，不引入通用事务框架；
 - provenance 只保存在 task 根，不复制到 submission 或 closure；
 - archive 使用目录 rename 作为提交点。
+- 已知完整 Task ID 时，Context 先读 open task，再按精确 ID 只读回退 archive；所有 mutation 继续只解析 open task。
 - R2 回退先备份整个 task 目录，再重写 event，最后以 `task.json` 作为格式切换提交点。
 - Record 与 task 完全分离，只复用 repo root、原子写和短锁；Record 关联不传播状态、writer 或授权。
 - Record 索引不含正文，AI 只在用户明确保存或召回时访问，默认最多返回 5 条候选。

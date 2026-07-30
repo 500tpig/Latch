@@ -65,6 +65,15 @@ export type TaskStoreV2 = {
   paths: LatchPathsV2
 }
 
+export type ContextTaskReadV2 = {
+  task: TaskV2
+  archived: boolean
+  eventLog: {
+    events: TaskEvent[]
+    warnings: string[]
+  }
+}
+
 export type CreateTaskV2Input = {
   title: string
   plan: TaskPlan
@@ -708,13 +717,19 @@ export function openTaskIdsV2(store: TaskStoreV2) {
     .sort()
 }
 
-export function resolveOpenTaskIdV2(store: TaskStoreV2, id: string) {
-  assertTaskIdToken(id)
-  if (existsSync(taskJsonPathV2(store, id))) return id
+function resolveOpenTaskPrefixIfExistsV2(store: TaskStoreV2, id: string) {
   const matches = openTaskIdsV2(store).filter((taskId) => taskId.startsWith(id))
   if (matches.length === 1) return matches[0]
   if (matches.length > 1)
     throw new Error(`Task id is ambiguous: ${id}. Matches: ${matches.join(', ')}`)
+  return undefined
+}
+
+export function resolveOpenTaskIdV2(store: TaskStoreV2, id: string) {
+  assertTaskIdToken(id)
+  if (existsSync(taskJsonPathV2(store, id))) return id
+  const canonicalId = resolveOpenTaskPrefixIfExistsV2(store, id)
+  if (canonicalId !== undefined) return canonicalId
   throw new Error(`Task not found: ${id}`)
 }
 
@@ -771,6 +786,62 @@ function readTaskEventLogFromDirectory(task: TaskV2, directory: string) {
   return { events: readTaskEventsV2(directory), warnings: [] }
 }
 
+function readContextTaskFromDirectory(
+  store: TaskStoreV2,
+  id: string,
+  directory: string,
+  archived: boolean,
+): ContextTaskReadV2 {
+  const task = readTaskFromDirectory(store, id, directory)
+  if (archived && task.outcome === undefined)
+    throw new Error(`Archived task is missing outcome: ${id}`)
+  return {
+    task,
+    archived,
+    eventLog: readTaskEventLogFromDirectory(task, directory),
+  }
+}
+
+export function readOpenContextTaskV2(
+  store: TaskStoreV2,
+  id: string,
+): ContextTaskReadV2 {
+  const canonicalId = resolveOpenTaskIdV2(store, id)
+  return readContextTaskFromDirectory(
+    store,
+    canonicalId,
+    taskDirectoryV2(store, canonicalId),
+    false,
+  )
+}
+
+export function readContextTaskV2(
+  store: TaskStoreV2,
+  id: string,
+): ContextTaskReadV2 {
+  assertTaskIdToken(id)
+  if (existsSync(taskJsonPathV2(store, id)))
+    return readContextTaskFromDirectory(
+      store,
+      id,
+      taskDirectoryV2(store, id),
+      false,
+    )
+
+  const directory = archivedTaskDirectoryV2(store, id)
+  if (directory) return readContextTaskFromDirectory(store, id, directory, true)
+
+  const openId = resolveOpenTaskPrefixIfExistsV2(store, id)
+  if (openId !== undefined)
+    return readContextTaskFromDirectory(
+      store,
+      openId,
+      taskDirectoryV2(store, openId),
+      false,
+    )
+  throw new Error(`Task not found: ${id}`)
+}
+
 function readTaskEventLogForTask(store: TaskStoreV2, task: TaskV2) {
   const directory = taskDirectoryV2(store, task.id)
   return readTaskEventLogFromDirectory(task, directory)
@@ -787,6 +858,13 @@ export function taskHistoryIncompleteV2(
   events = taskEventLogV2(store, id).events,
 ) {
   const task = readTaskV2(store, id)
+  return taskHistoryIncompleteForTaskV2(task, events)
+}
+
+export function taskHistoryIncompleteForTaskV2(
+  task: TaskV2,
+  events: TaskEvent[],
+) {
   const revisions = new Set(events.map((entry) => entry.revision))
   for (let revision = 1; revision <= task.revision; revision += 1)
     if (!revisions.has(revision)) return true

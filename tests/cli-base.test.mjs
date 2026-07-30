@@ -14,6 +14,11 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import {
+  archiveTaskV2,
+  downgradeTaskV2,
+  openTaskStoreV2,
+} from '../dist/core/task-store.js'
 
 const cli = join(process.cwd(), 'dist/cli.js')
 const temporaryDirectories = []
@@ -495,6 +500,7 @@ test('list and context expose stable full and brief JSON', () => {
 
   const fullContext = JSON.parse(run(cwd, ['context', '--json']).stdout)
   assert.equal(fullContext.current, true)
+  assert.equal('archived' in fullContext, false)
   assert.equal(fullContext.task.id, created.task_id)
   assert.equal(fullContext.task.provenance, 'clean')
   assert.equal(fullContext.task.plan.approach[0], '使用 node:util.parseArgs')
@@ -552,6 +558,134 @@ test('list and context expose stable full and brief JSON', () => {
   assert.deepEqual(delta.events.map((event) => event.type), ['decision_recorded'])
   assert.deepEqual(delta.timeline.map((event) => event.title), ['记录决定'])
   assert.equal(delta.timeline[0].summary, '记录增量')
+})
+
+test('context 按精确 ID 只读归档 task 并保持 mutation 为 open-only', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const created = checkpoint(cwd, '归档 Context')
+  const store = openTaskStoreV2(cwd)
+  const archived = archiveTaskV2(store, created.task_id, {
+    expectRevision: 1,
+    actor: 'codex:session:test-session',
+    outcome: 'done',
+  }).task
+  const archivedDirectory = join(
+    cwd,
+    '.latch',
+    'archive',
+    archived.updated_at.slice(0, 7),
+    archived.id,
+  )
+  const taskJsonPath = join(archivedDirectory, 'task.json')
+  const eventsPath = join(archivedDirectory, 'events.jsonl')
+
+  const statusResult = run(cwd, [
+    'context',
+    archived.id,
+    '--json',
+    '--status',
+  ])
+  assert.equal(statusResult.status, 0, statusResult.stderr)
+  const status = JSON.parse(statusResult.stdout)
+  assert.equal(status.archived, true)
+  assert.equal(status.outcome, 'done')
+  assert.equal(status.last_open_phase, 'plan')
+  assert.equal(status.current, false)
+  assert.equal(status.task.next_action, 'read_only')
+
+  const brief = JSON.parse(run(cwd, [
+    'context',
+    archived.id,
+    '--json',
+    '--brief',
+    '--history',
+    'timeline',
+  ]).stdout)
+  assert.equal(brief.archived, true)
+  assert.equal(brief.history_view, 'timeline')
+  assert.equal(brief.timeline.at(-1).event_type, 'done')
+  assert.equal('recent_events' in brief, false)
+
+  const delta = JSON.parse(run(cwd, [
+    'context',
+    archived.id,
+    '--json',
+    '--since-revision',
+    '1',
+    '--history',
+    'events',
+  ]).stdout)
+  assert.equal(delta.archived, true)
+  assert.deepEqual(delta.events.map((event) => event.type), ['done'])
+
+  const human = run(cwd, ['context', archived.id])
+  assert.equal(human.status, 0, human.stderr)
+  assert.match(human.stdout, /Archived: yes/)
+  assert.match(human.stdout, /Outcome: done/)
+  assert.match(human.stdout, /Last open phase: plan/)
+
+  const taskBefore = readFileSync(taskJsonPath, 'utf8')
+  const eventsBefore = readFileSync(eventsPath, 'utf8')
+  const mutation = run(cwd, [
+    'save',
+    archived.id,
+    '--expect-revision',
+    String(archived.revision),
+    '--decision',
+    '不应写入 archive',
+    '--json',
+  ])
+  assert.notEqual(mutation.status, 0)
+  assert.match(mutation.stderr, /Task not found/)
+  assert.equal(readFileSync(taskJsonPath, 'utf8'), taskBefore)
+  assert.equal(readFileSync(eventsPath, 'utf8'), eventsBefore)
+
+  const prefix = run(cwd, [
+    'context',
+    archived.id.slice(0, -1),
+    '--json',
+    '--status',
+  ])
+  assert.notEqual(prefix.status, 0)
+  assert.match(prefix.stderr, /Task not found/)
+
+  const missing = run(cwd, [
+    'context',
+    '20260730000000000-missing-000000',
+    '--json',
+    '--status',
+  ])
+  assert.notEqual(missing.status, 0)
+  assert.match(missing.stderr, /Task not found/)
+})
+
+test('context 按精确 ID 兼容读取 schema 2 archive', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const created = checkpoint(cwd, 'schema 2 archive', {
+    verification_plan: [],
+  })
+  const store = openTaskStoreV2(cwd)
+  const archived = archiveTaskV2(store, created.task_id, {
+    expectRevision: 1,
+    actor: 'codex:session:test-session',
+    outcome: 'abandoned',
+  }).task
+  downgradeTaskV2(store, archived.id, {
+    expectRevision: archived.revision,
+    actor: 'codex:session:test-session',
+  })
+
+  const result = run(cwd, ['context', archived.id, '--json'])
+  assert.equal(result.status, 0, result.stderr)
+  const context = JSON.parse(result.stdout)
+  assert.equal(context.archived, true)
+  assert.equal(context.outcome, 'abandoned')
+  assert.equal(context.last_open_phase, 'plan')
+  assert.equal(context.task.schema_version, 2)
+  assert.equal(context.recent_events.at(-1).type, 'abandoned')
+  assert.equal(context.history_incomplete, false)
 })
 
 test('context history selector keeps defaults compatible and projects raw or readable history', () => {

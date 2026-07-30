@@ -1,4 +1,7 @@
-import type { TaskStoreV2 } from './task-store.js'
+import type {
+  ContextTaskReadV2,
+  TaskStoreV2,
+} from './task-store.js'
 import { isWritableActor } from './actor.js'
 import {
   artifactDelivery,
@@ -8,8 +11,7 @@ import {
   currentTaskIdV2,
   listGroupTasksV3,
   listTasksV2,
-  taskEventLogV2,
-  taskHistoryIncompleteV2,
+  taskHistoryIncompleteForTaskV2,
 } from './task-store.js'
 import type { TaskEvent, TaskV2 } from './types.js'
 import { now } from './utils.js'
@@ -525,7 +527,7 @@ function nextAction(task: TaskV2, actor: string) {
   return gates.total > 0 && gates.pass !== gates.total ? 'verify' : 'submit'
 }
 
-function statusTask(task: TaskV2, actor: string) {
+function statusTask(task: TaskV2, actor: string, archived = false) {
   return {
     id: task.id,
     title: task.title,
@@ -539,7 +541,7 @@ function statusTask(task: TaskV2, actor: string) {
     authorization: authorizationState(task),
     writer: writerState(task, actor),
     gates: gateSummary(task),
-    next_action: nextAction(task, actor),
+    next_action: archived ? 'read_only' : nextAction(task, actor),
     updated_at: task.updated_at,
   }
 }
@@ -620,14 +622,24 @@ type ContextJsonOptions = {
   history?: ContextHistoryView
 }
 
+function archivedContextMetadata(context: ContextTaskReadV2) {
+  return context.archived
+    ? {
+        archived: true as const,
+        outcome: context.task.outcome!,
+        last_open_phase: context.task.phase,
+      }
+    : {}
+}
+
 export function contextJsonV2(
   store: TaskStoreV2,
-  task: TaskV2,
+  context: ContextTaskReadV2,
   actor: string,
   input: boolean | ContextJsonOptions,
 ) {
+  const { task, eventLog } = context
   const options = typeof input === 'boolean' ? { brief: input } : input
-  const eventLog = taskEventLogV2(store, task.id)
   const events = eventLog.events
   const group = groupContext(store, task)
   const delivery = artifactDelivery(store.paths.workspaceRoot, task.artifacts)
@@ -641,9 +653,10 @@ export function contextJsonV2(
     const deltaEvents = events.filter((event) => event.revision > options.sinceRevision!)
     return {
       ...jsonEnvelopeV2(),
+      ...archivedContextMetadata(context),
       view: 'delta',
       current,
-      task: statusTask(task, actor),
+      task: statusTask(task, actor, context.archived),
       from_revision: options.sinceRevision,
       to_revision: task.revision,
       requires_baseline: true,
@@ -652,7 +665,7 @@ export function contextJsonV2(
         ? { timeline: timelineEvents(task, deltaEvents, includeTimelineDetails) }
         : {}),
       ...(historyView ? { history_view: historyView } : {}),
-      history_incomplete: taskHistoryIncompleteV2(store, task.id, events),
+      history_incomplete: taskHistoryIncompleteForTaskV2(task, events),
       artifact_delivery: delivery,
       ...([...eventLog.warnings, ...deliveryWarnings].length > 0
         ? { warnings: [...eventLog.warnings, ...deliveryWarnings] }
@@ -661,10 +674,11 @@ export function contextJsonV2(
   }
   return {
     ...jsonEnvelopeV2(),
+    ...archivedContextMetadata(context),
     view: options.status ? 'status' : options.brief ? 'brief' : 'full',
     current,
     task: options.status
-      ? statusTask(task, actor)
+      ? statusTask(task, actor, context.archived)
       : options.brief
         ? briefTask(task)
         : task,
@@ -681,7 +695,7 @@ export function contextJsonV2(
         }
       : {}),
     ...(!options.status && historyView ? { history_view: historyView } : {}),
-    history_incomplete: taskHistoryIncompleteV2(store, task.id, events),
+    history_incomplete: taskHistoryIncompleteForTaskV2(task, events),
     artifact_delivery: delivery,
     ...([...eventLog.warnings, ...deliveryWarnings].length > 0
       ? { warnings: [...eventLog.warnings, ...deliveryWarnings] }
@@ -722,20 +736,23 @@ export function listHumanV2(
 
 export function contextHumanV2(
   store: TaskStoreV2,
-  task: TaskV2,
+  context: ContextTaskReadV2,
   actor: string,
 ) {
+  const { task, eventLog } = context
   const current = currentTaskIdV2(store, actor) === task.id
-  const eventLog = taskEventLogV2(store, task.id)
-  const historyIncomplete = taskHistoryIncompleteV2(
-    store,
-    task.id,
-    eventLog.events,
-  )
+  const historyIncomplete = taskHistoryIncompleteForTaskV2(task, eventLog.events)
   const group = groupContext(store, task)
   const lines = [
     `Task: ${task.id}`,
     `Title: ${task.title}`,
+    ...(context.archived
+      ? [
+          'Archived: yes',
+          `Outcome: ${task.outcome}`,
+          `Last open phase: ${task.phase}`,
+        ]
+      : []),
     `Phase: ${task.phase}`,
     `Revision: ${task.revision}`,
     `Plan revision: ${task.plan_revision}`,

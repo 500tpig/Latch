@@ -57,6 +57,8 @@ import {
   downgradeTaskV2,
   initTaskStoreV2,
   openTaskStoreV2,
+  readContextTaskV2,
+  readOpenContextTaskV2,
   readTaskV2,
   selectCurrentTaskV2,
   takeoverTaskV3,
@@ -604,7 +606,7 @@ function targetTask(cwd: string, actor: string, id: string | undefined) {
   const store = openTaskStoreV2(cwd)
   const taskId = id ?? currentTaskIdV2(store, actor)
   if (!taskId) fail('task_not_found', 'No current Latch v2 task.')
-  return { store, task: readTaskV2(store, taskId) }
+  return { store, context: readContextTaskV2(store, taskId) }
 }
 
 function runContext(args: string[], cwd: string, actor: string) {
@@ -644,7 +646,8 @@ function runContext(args: string[], cwd: string, actor: string) {
       'Actor required for context without task id.\n' +
         'Pass an explicit task id or set a session actor.',
     )
-  const { store, task } = targetTask(cwd, actor, parsed.positionals[0])
+  const { store, context } = targetTask(cwd, actor, parsed.positionals[0])
+  const task = context.task
   const sinceRevision =
     parsed.values['since-revision'] !== undefined
       ? nonNegativeInteger(parsed.values['since-revision'], '--since-revision')
@@ -655,13 +658,13 @@ function runContext(args: string[], cwd: string, actor: string) {
       `--since-revision cannot exceed current task revision ${task.revision}.`,
     )
   if (parsed.values.json)
-    return json(contextJsonV2(store, task, actor, {
+    return json(contextJsonV2(store, context, actor, {
       brief: Boolean(parsed.values.brief),
       status: Boolean(parsed.values.status),
       sinceRevision,
       history,
     }))
-  process.stdout.write(`${contextHumanV2(store, task, actor)}\n`)
+  process.stdout.write(`${contextHumanV2(store, context, actor)}\n`)
 }
 
 function runContextPack(args: string[], cwd: string, actor: string) {
@@ -682,8 +685,9 @@ function runContextPack(args: string[], cwd: string, actor: string) {
   const automaticSections: ContextPackSectionInput[] = []
   if (request.task_id) {
     const store = openTaskStoreV2(cwd)
-    const task = readTaskV2(store, request.task_id)
-    const context = contextJsonV2(store, task, actor, true)
+    const contextTask = readOpenContextTaskV2(store, request.task_id)
+    const task = contextTask.task
+    const context = contextJsonV2(store, contextTask, actor, true)
     workspaceRoot = store.paths.workspaceRoot
     effectiveRequest = {
       ...request,

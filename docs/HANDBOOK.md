@@ -98,6 +98,17 @@ latch claim <task-id> --expect-revision 3 --reason "继续该 task"
 
 `context --json --status` 是最小状态入口，只返回 phase、revision、授权、writer、blocked、gate 计数和 `next_action`。`context --json --since-revision <revision>` 返回该 revision 之后的 event，以及当前最小状态；调用方必须已有对应 baseline，delta 不能替代完整 context。`--brief`、`--status` 和 `--since-revision` 互斥。
 
+显式提供 Task ID 时，`context` 依次检查同 ID 的 open task、同 ID 的 archive；
+两者都不存在时才尝试既有的 open unique-prefix 解析。archive 不接受前缀、模糊
+条件或其他搜索形式。open 与 archive 同时存在同 ID 数据时，以 open task 为准；
+所有解析都未命中时返回 `Task not found`。
+
+归档 Context 沿用 full、brief、status、delta 和 history selector，并从归档目录读取
+对应 event。JSON 顶层增加 `archived: true`、`outcome` 和 `last_open_phase`；
+`last_open_phase` 是归档时保留的 `task.phase`，不会把 `done` 或 `abandoned`
+加入 phase 枚举。human 输出会显示相同归档事实，status 的 `next_action` 固定为
+`read_only`。open Context 不增加 `archived: false`，保持既有响应 shape。
+
 context 的 `current` 只表示当前 actor 的 state 指针是否指向该 task。`task.writer.primary_writer` 是 task 主写方，`task.writer.task_status` 表示 task 是否已有 writer，`task.writer.caller_capability` 表示调用方是否可写；兼容字段 `task.writer.status` 继续给出调用方相对 task 的汇总状态。`task.authorization` 统一投影 schema 2 的 `implementation_approval` 与 schema 3 的 `work_basis`，但不改写 task 真源。
 
 省略 `--history` 时，`context --json`、`context --json --brief` 和 `context --json --since-revision` 保持既有响应：同时返回用户可读 `timeline` 与原始 `recent_events` 或 `events`，timeline item 也保留 `details`。既有 reader 无需改动。
@@ -274,6 +285,11 @@ latch abandon <task-id> --expect-revision 5 --reason "用户取消"
 
 两条命令的 JSON 响应都保留既有 `outcome` 与最后开放 phase，并增加
 `archived: true` 以明确目录已归档；不把 `done` 或 `abandoned` 加入 phase 枚举。
+
+归档 task 只能通过精确 ID 的 `context` 只读查看。`save`、`approve`、`verify`、
+`submit`、`done`、`abandon`、`claim`、`takeover` 和 `artifact` 等 mutation
+仍只解析 open task，不会把 archive 接回写路径。该入口也不开放无 group 的全局
+archive list、分页、时间范围或模糊搜索。
 
 ### Schema 3 回退
 

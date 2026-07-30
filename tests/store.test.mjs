@@ -2,12 +2,14 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   chmodSync,
+  cpSync,
   existsSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
   readdirSync,
   realpathSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
@@ -19,9 +21,11 @@ import {
   createTaskV2,
   createTaskV3,
   currentTaskIdV2,
+  downgradeTaskV2,
   initTaskStoreV2,
   listTasksV2,
   openTaskStoreV2,
+  readContextTaskV2,
   readStateV2,
   readTaskV2,
   selectCurrentTaskV2,
@@ -241,6 +245,85 @@ test('archive 清除所有 actor 的 current 并保留 v2 task 与 events', () =
   assert.equal(archivedJson.schema_version, 3)
   assert.equal(existsSync(join(archivedDirectory, 'notes.md')), false)
   assert.equal(readTaskEventsV3(archivedDirectory).at(-1).type, 'done')
+})
+
+test('Context reader 优先 open，并按精确 ID 读取 schema 2/3 archive 与 events', () => {
+  const root = temporaryDirectory()
+  const store = initTaskStoreV2(root)
+  const open = create(store, 'open 优先')
+  const shadowDirectory = join(store.paths.archiveDir, '2026-07', open.id)
+  mkdirSync(join(store.paths.archiveDir, '2026-07'), { recursive: true })
+  cpSync(taskDirectory(store, open.id), shadowDirectory, { recursive: true })
+  const shadowPath = join(shadowDirectory, 'task.json')
+  const shadow = JSON.parse(readFileSync(shadowPath, 'utf8'))
+  shadow.title = 'archive 同 ID'
+  shadow.outcome = 'done'
+  writeFileSync(shadowPath, `${JSON.stringify(shadow, null, 2)}\n`)
+
+  const selectedOpen = readContextTaskV2(store, open.id)
+  assert.equal(selectedOpen.archived, false)
+  assert.equal(selectedOpen.task.title, 'open 优先')
+  assert.equal(selectedOpen.eventLog.events.at(-1).type, 'task_created')
+
+  const schema3 = create(store, 'schema 3 archive')
+  const archivedSchema3 = archiveTaskV2(store, schema3.id, {
+    expectRevision: schema3.revision,
+    actor: 'codex:session:a',
+    outcome: 'done',
+  }).task
+  const selectedSchema3 = readContextTaskV2(store, schema3.id)
+  assert.equal(selectedSchema3.archived, true)
+  assert.equal(selectedSchema3.task.schema_version, 3)
+  assert.equal(selectedSchema3.task.outcome, 'done')
+  assert.equal(selectedSchema3.eventLog.events.at(-1).type, 'done')
+  assert.equal(selectedSchema3.eventLog.events.at(-1).revision, archivedSchema3.revision)
+
+  const prefixOpen = create(store, 'archive ID 的更长 open 前缀')
+  const prefixOpenDirectory = taskDirectory(store, prefixOpen.id)
+  const longerOpenId = `${schema3.id}-open-abcdef`
+  const longerOpenDirectory = taskDirectory(store, longerOpenId)
+  renameSync(prefixOpenDirectory, longerOpenDirectory)
+  const longerOpenTaskPath = join(longerOpenDirectory, 'task.json')
+  const longerOpenTask = JSON.parse(readFileSync(longerOpenTaskPath, 'utf8'))
+  longerOpenTask.id = longerOpenId
+  writeFileSync(longerOpenTaskPath, `${JSON.stringify(longerOpenTask, null, 2)}\n`)
+  const longerOpenEventsPath = join(longerOpenDirectory, 'events.jsonl')
+  const longerOpenEvents = readFileSync(longerOpenEventsPath, 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => ({ ...JSON.parse(line), task_id: longerOpenId }))
+  writeFileSync(
+    longerOpenEventsPath,
+    `${longerOpenEvents.map((event) => JSON.stringify(event)).join('\n')}\n`,
+  )
+  const exactArchiveBeforePrefix = readContextTaskV2(store, schema3.id)
+  assert.equal(exactArchiveBeforePrefix.archived, true)
+  assert.equal(exactArchiveBeforePrefix.task.id, schema3.id)
+
+  const selectedOpenPrefix = readContextTaskV2(store, schema3.id.slice(0, -1))
+  assert.equal(selectedOpenPrefix.archived, false)
+  assert.equal(selectedOpenPrefix.task.id, longerOpenId)
+
+  const schema2 = create(store, 'schema 2 archive')
+  const archivedSchema2 = archiveTaskV2(store, schema2.id, {
+    expectRevision: schema2.revision,
+    actor: 'codex:session:a',
+    outcome: 'abandoned',
+  }).task
+  downgradeTaskV2(store, archivedSchema2.id, {
+    expectRevision: archivedSchema2.revision,
+    actor: 'codex:session:a',
+  })
+  const selectedSchema2 = readContextTaskV2(store, schema2.id)
+  assert.equal(selectedSchema2.archived, true)
+  assert.equal(selectedSchema2.task.schema_version, 2)
+  assert.equal(selectedSchema2.task.outcome, 'abandoned')
+  assert.equal(selectedSchema2.eventLog.events.at(-1).type, 'abandoned')
+
+  assert.throws(
+    () => readContextTaskV2(store, '20260730000000000-missing-000000'),
+    /Task not found/,
+  )
 })
 
 test('create 的 current state 写失败时 task 仍创建并返回 warning', () => {
