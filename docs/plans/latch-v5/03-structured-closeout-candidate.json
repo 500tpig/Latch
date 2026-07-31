@@ -1,0 +1,143 @@
+{
+  "goal": "在不影响全局 Latch 0.4 current 的前提下，从 source baseline commit `35e6ff0f3fedc4753c04d8a599075c1d0621f411` 创建隔离 worktree，实现可独立运行的 schema 5 结构化 closeout candidate，并保证基础 task lifecycle、最小 Context、event validator 和指令面一致。",
+  "workspace_scope": {
+    "paths": [
+      "AGENTS.md",
+      "package.json",
+      "pnpm-lock.yaml",
+      "src/cli.ts",
+      "src/core/types.ts",
+      "src/core/progress.ts",
+      "src/core/task-store.ts",
+      "src/core/notes-events.ts",
+      "src/core/task-view.ts",
+      "skills/latch/SKILL.md",
+      "skills/latch/references/task-lifecycle.md",
+      "skills/latch/references/migration.md",
+      "tests/actor-writer.test.mjs",
+      "tests/cli-base.test.mjs",
+      "tests/docs-skill.test.mjs",
+      "tests/group.test.mjs",
+      "tests/integration.test.mjs",
+      "tests/knowledge-freshness.test.mjs",
+      "tests/light-proof.test.mjs",
+      "tests/migration.test.mjs",
+      "tests/review.test.mjs",
+      "tests/schema4-compat.test.mjs",
+      "tests/store.test.mjs",
+      "tests/workspace-evidence.test.mjs",
+      "tests/fixtures/context-v5-candidate.json"
+    ]
+  },
+  "scope": [
+    "定义 schema 5 task、结构化 unverified item、closeout resolution 和 minimum writer `0.5.0`。",
+    "让 schema 5 `checkpoint`、`approve`、`verify`、`status`、`context`、`submit` 和 `done` 使用同一可写类型边界。",
+    "实现 `resolved`、明确 user acceptance 和带稳定 owner 引用的 `followup` outcome。",
+    "实现 status、brief、full Context 和 human Context 的最低可操作投影，并用 `tests/fixtures/context-v5-candidate.json` 固定最小 lifecycle contract。",
+    "实现 schema 5 `submitted` 与 `done` event 的最小字段和专用 validator。",
+    "更新 candidate-local AGENTS 与 Skill，使 schema 4 和 schema 5 task 确定性选择不同 runner，并继承 source baseline 中最新的 Standard plan 展示规则。",
+    "保持 S3 schema 4 implementation task 始终由仓库外 immutable CLI `0.4.0` runner 管理。",
+    "将 package 标记为 `0.5.0`，但不更新全局安装或主仓库链接。"
+  ],
+  "acceptance": [
+    "隔离 worktree 必须从精确 source baseline commit `35e6ff0f3fedc4753c04d8a599075c1d0621f411` 创建，且在创建 S3 task 前完成路径、HEAD 和 clean 状态核验。",
+    "source baseline 只提供代码与 current `0.4.0` 契约，不包含本 candidate，且仍保存旧 `backlog/03-schema5-structured-closeout.json`；实施对话不得将 baseline worktree 内的旧 plan 作为 S3 实施输入。",
+    "准备阶段必须返回完整 handoff manifest，其中 `source_baseline_commit` 精确为 `35e6ff0f3fedc4753c04d8a599075c1d0621f411`，并记录 `candidate_plan_path: \"docs/plans/latch-v5/03-structured-closeout-candidate.json\"`、该文件完整内容的 SHA-256、包含相同字节的 40 位 `candidate_plan_delivery_commit`、Source-Task `20260731093527854-冻结-s3-结构化收尾-candidate-规划-258da4` 和 `source_task_plan_revision: 3`。",
+    "准备阶段必须验证 `candidate_plan_delivery_commit` 中指定路径的文件字节与 `candidate_plan_sha256` 一致；实施对话只从该已交付 artifact 读取 plan，并拒绝使用 source baseline worktree 内的 `backlog/03-schema5-structured-closeout.json`。",
+    "handoff manifest 还必须包含源 repo、candidate worktree 路径与状态、immutable runner 绝对路径与版本、只读权限、文件清单、全局 CLI 与 Skill realpath、主仓库 `dist/cli.js` 基准 hash、candidate Latch 根、runner 路由矩阵、停止条件、未授权动作和准备会话停止写入事实。",
+    "immutable runner 位于主仓库和 candidate worktree 之外，包含 `package.json`、完整 `dist/` 和 runtime `node_modules`，显示版本 `0.4.0`，文件清单与 SHA-256 匹配且文件只读。",
+    "immutable runner 的 provenance 必须记录核心文件 manifest 和比较结果，并证明 `package.json`、`dist/**` 与 runtime dependency 对应可信的 source baseline clean build 或 source baseline HEAD 下预先记录的主仓库 CLI `0.4.0` 基准 hash；仅记录 runner 制作后的 hash 不构成来源证明。",
+    "candidate plan 尚无 Git delivery commit、candidate plan hash 不匹配、runner provenance 无可信参照，或 candidate worktree、runner、全局链接、路由与基础 lifecycle 的任一停止条件不满足时，准备阶段必须停止且不得创建或继续 S3 task。",
+    "S3 schema 4 task 在源码切换后仍可由同一 immutable runner 完成 `approve`、`verify`、`verify-all`、`submit` 和后续另获授权的 `done`。",
+    "immutable CLI `0.4.0` 必须拒绝 schema 5 mutation，candidate CLI `0.5.0` 必须拒绝承载 S3 实施工作的 schema 4 task mutation，且拒绝过程不得部分写入 task、event 或 archive。",
+    "candidate `pnpm check` 只写 candidate worktree 的 `dist/`，不修改主仓库 `dist/cli.js`、全局 CLI 或全局 Skill。",
+    "schema 5 临时 workspace 可完整执行 `checkpoint → approve → verify → status/context → submit → status/context → done → archived context`。",
+    "status 正确显示 writer、phase、gate、`unverified_count`、`resolution_pending_count` 和下一步，且 review 存在未验证事项时 `next_action` 为 `prepare_closeout`。",
+    "full Context 在 review 返回全部 `unverified_items`，在 archive 返回全部 resolutions；brief 只返回计数和 bounded 摘要；human Context 至少显示 schema、phase、未验证数量和归档 outcome；这些最低投影由 `tests/fixtures/context-v5-candidate.json` 固定。",
+    "每个 unverified item 必须且只能有一个 resolution，未知、重复或缺失 `item_id` 时不得部分写入 task、event 或 archive。",
+    "`accepted_risk` 保存 `accepted_by: \"user\"`、用户明确接受陈述和 Core 生成的 `recorded_at`，且归档授权不能替代风险接受。",
+    "external owner 只接受指向具体账号或团队身份页的绝对 `https:` 或 `mailto:` `account_uri`，并拒绝普通角色文字、相对 URI、未知协议和带凭据 URL。",
+    "candidate Skill 对 schema 5 使用 `--closeout-file`，对 schema 4 S3 task 使用 immutable runner 和旧 `--followup`，并在无法确定 task schema 或 runner 时停止。",
+    "candidate 继承 source baseline 的 Standard plan 展示规则：完整 12 字段写入 plan file 和 task store；聊天默认只给 goal、关键 scope、风险或选择、blocking `open_questions`、task ID 与 Board/CLI 入口；仅在用户要求或字段本身是决策点时展开，且不默认粘贴完整 plan JSON。",
+    "schema 5 `submitted` event 保存 item ID 列表和数量但不复制 summary，`done` event 保存三种 outcome 的数量，task store 按 task schema 选择 v4 或 v5 validator。",
+    "`events_schema_version: 3` 保持不变，v2–v4 event 原值读取，timeline 继续使用现有通用标题；丰富 timeline 和独立的 Board/external-reader contract fixture 留给 S4，且不得复用 `tests/fixtures/context-v5-candidate.json`。",
+    "`pnpm check` 与 `git diff --check` 通过。"
+  ],
+  "approach": [
+    "在独立授权的准备阶段，先核对 candidate plan 的交付 commit、内容 SHA-256、Source-Task 和 Plan Revision 3，再从 commit `35e6ff0f3fedc4753c04d8a599075c1d0621f411` 创建隔离 worktree。",
+    "从可信 source baseline clean build 或预先记录的主仓库 CLI `0.4.0` 基准 hash 验证 runner provenance，并核对 runner 自包含文件、只读权限、全局 CLI realpath、Skill realpath 和主仓库 `dist/cli.js` hash。",
+    "准备会话返回完整 handoff manifest 后停止，由后续实现对话只读取 manifest 绑定的已交付 candidate plan，并使用 immutable `0.4.0` runner 创建 schema 4 S3 Standard task。",
+    "S3 Standard task 创建后，聊天只返回 source baseline 中规定的短决策重点、task ID 和 Board/CLI 入口，完整 12 字段 plan 保存在 task store 并等待明确批准。",
+    "批准后先建立 schema 5 类型、读盘 validator 和 writer 边界，再修改 CLI lifecycle。",
+    "随后实现结构化 submit、closeout 校验、accepted risk、owner 规则和原子写入边界。",
+    "补齐 task view、event validator 和 `tests/fixtures/context-v5-candidate.json` 的最低基础投影，不扩展丰富 timeline 或 Board/external-reader contract fixture。",
+    "更新 candidate-local AGENTS、Skill 和生命周期引用，固定双 runner 选择规则和 Standard plan 展示规则。",
+    "使用 candidate CLI 在临时 workspace 运行完整 schema 5 integration flow，并验证两个 runner 的双向拒写边界。",
+    "全部 named gate 仍由 immutable `0.4.0` runner 对 S3 task 执行并提交 review。"
+  ],
+  "api_assumptions": [
+    "candidate CLI 通过 `node <candidate-worktree>/dist/cli.js` 显式调用，不使用裸 `latch`。",
+    "新 checkpoint task 使用 `schema_version: 5` 和 `min_writer_version: \"0.5.0\"`。",
+    "submit 接受零个或多个可重复 unverified item，并生成当前 submission 内稳定的 `U1` 至 `Un`。",
+    "有未验证事项时 `done` 必须使用 `--closeout-file`，零事项时允许省略。",
+    "`accepted_risk` 使用 `user_acceptance` 对象，不接受普通 `reason` 代替。",
+    "external owner 使用绝对 `https:` 或 `mailto:` account URI。",
+    "JSON envelope 与 `events_schema_version` 保持现有版本，task schema 独立升级。"
+  ],
+  "permission_assumptions": [
+    "创建 worktree、初始化 candidate Latch 和创建 immutable runner 需要实施前的独立明确授权，批准本 candidate plan 不自动授予这些权限。",
+    "准备阶段只执行获准的隔离与核验动作，返回完整 handoff manifest 后停止，不创建或批准 S3 implementation task。",
+    "实现人员不创建、移除、合并或清理 worktree，不切换全局 CLI 或 Skill 链接。",
+    "所有 schema 4 S3 task mutation 只使用 handoff 指定的 immutable runner。",
+    "所有 schema 5 candidate mutation 只使用 candidate repo-local CLI。",
+    "S3 task 的 `done`、Git 操作、安装变更和外部 repo 写入均需要各自独立授权。"
+  ],
+  "data_assumptions": [
+    "source baseline commit `35e6ff0f3fedc4753c04d8a599075c1d0621f411` 包含当前 CLI `0.4.0`、schema 4 writer 和最新 Standard plan 展示规则，但不包含本 candidate，且仍保存完整的旧 backlog/03 plan。",
+    "S3 实施只以 handoff manifest 绑定的 Git delivery commit 中本 candidate 的精确字节为规划输入。",
+    "S3 implementation task 在任何代码修改前由 immutable runner 创建为 schema 4。",
+    "immutable runner 位于主仓库和 candidate worktree 之外，并包含运行 CLI 所需的全部依赖。",
+    "主仓库继续保存日常 current CLI `0.4.0` 和全局 canonical Skill `0.4`。",
+    "candidate-local Skill 不通过 `pnpm skill:link` 安装到全局。",
+    "v2–v4 task、event 和 archive 不迁移、不补写、不解释为 schema 5。",
+    "schema 5 数据只产生于 candidate 临时 workspace 或后续明确的 candidate task。"
+  ],
+  "user_flow": [
+    "准备会话在独立授权后验证 candidate plan delivery、创建 candidate worktree、immutable runner 和 candidate Latch，返回同时绑定 source baseline、planning artifact 和 runner provenance 的完整 handoff manifest 后停止。",
+    "实现对话核对 handoff manifest，只从其中指定的 delivery commit 读取 candidate plan，使用 immutable runner 创建 schema 4 S3 task，返回短决策重点、task ID 和 Board/CLI 入口后等待批准。",
+    "批准后在 candidate worktree 修改代码并运行定向测试。",
+    "candidate CLI 在临时 workspace 创建 schema 5 task 并跑通完整 lifecycle。",
+    "implementation task 的 named gate 由 immutable runner 执行，gate 内的 `pnpm check` 在 candidate worktree 运行。",
+    "immutable runner 将 S3 task submit 到 review，随后停止。",
+    "只有新的明确归档授权才能继续使用 immutable runner 完成 S3 task。",
+    "S4 丰富展示与 S5 正式发布继续等待独立规划和批准。"
+  ],
+  "out_of_scope": [
+    "不修改主仓库工作目录、全局 pnpm package、全局 CLI shim 或全局 Skill 链接。",
+    "不实现丰富 timeline 文案、S4 的 Board/external-reader contract fixture、external reader 或 UI。",
+    "不执行 schema 5 正式安装、tag、发布或 current 文档切换。",
+    "不迁移、重写或删除 v2–v4 task 与 archive。",
+    "不创建自动 follow-up task、issue、Record 或提醒。",
+    "不执行 Git add、commit、push、merge、rebase、branch 或 worktree 清理。"
+  ],
+  "verification_plan": [
+    {
+      "name": "project-check",
+      "command": [
+        "pnpm",
+        "check"
+      ],
+      "kind": "gate"
+    },
+    {
+      "name": "diff-integrity",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "kind": "gate"
+    }
+  ],
+  "open_questions": []
+}

@@ -56,17 +56,24 @@ Latch、Latch-Board、appearance-sec 和 monitoring 的当前兼容状态。
 
 ## 规划中设计
 
-### [Latch 工作流改进与候选 backlog](briefs/2026-07-31-latch-v5-workflow-contract.md)
+### [Latch 工作流改进与 S3 candidate](briefs/2026-07-31-latch-v5-workflow-contract.md)
 
 - 状态：`proposed`；
-- Source-Task：`20260731061812532-规划-latch-v5-工作流-current-contract-8de6da`；
+- Source-Task：`20260731093527854-冻结-s3-结构化收尾-candidate-规划-258da4`，Plan Revision 3；
+- 规划 source baseline：`35e6ff0f3fedc4753c04d8a599075c1d0621f411`；
 - 当前基线：S1 未初始化停止边界已完成、验收并通过 commit `d83fe11` 交付；
-- 唯一待决定项：schema 4 Light plan authoring 试点；
-- 暂停项：schema 5、结构化 closeout、event/view 和 current release 均保存在
-  candidate backlog；
+- 独立试点：schema 4 Light plan authoring 保持 proposed，尚未授权实施；
+- 已冻结 candidate：schema 5 结构化 closeout 方案 A，入口为
+  [S3 结构化 closeout candidate](plans/latch-v5/03-structured-closeout-candidate.json)；
+- 取代关系：`plans/latch-v5/backlog/03-schema5-structured-closeout.json` 仅保留
+  superseded 指针；
+- 交付边界：S3 handoff 必须绑定 candidate plan 的 path、SHA-256、Git delivery commit、
+  Source-Task、Plan Revision 3 和可信 runner provenance；
+- 切片边界：S3 保存最小 lifecycle fixture；丰富 timeline、独立 Board/external-reader
+  contract fixture 和 current release 继续保存在 candidate backlog；
 - 规划入口：[Latch 工作流改进计划与对话交接](plans/latch-v5/README.md)；
 - 边界：不修改当前 schema 4、CLI `0.4.0` 或 current 产品契约，不构成 S2 或
-  candidate backlog 的实施授权。
+  S3 的准备、实施或发布授权。
 
 ## 当前产品契约
 
