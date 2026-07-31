@@ -363,6 +363,19 @@ test('upgrade-v4 rejects corrupt evidence before changing task or events', () =>
   const beforeTask = readFileSync(taskPath(cwd, task.id), 'utf8')
   const beforeEvents = readFileSync(eventsPath(cwd, task.id), 'utf8')
 
+  const recoveryRejected = run(cwd, [
+    'upgrade-v4',
+    '--task', task.id,
+    '--expect-revision', '1',
+    '--recover-writer',
+    '--reason', 'corrupt evidence recovery',
+    '--json',
+  ], 'codex:session:replacement')
+  assert.notEqual(recoveryRejected.status, 0)
+  assert.match(recoveryRejected.stderr, /Workspace evidence is missing/)
+  assert.equal(readFileSync(taskPath(cwd, task.id), 'utf8'), beforeTask)
+  assert.equal(readFileSync(eventsPath(cwd, task.id), 'utf8'), beforeEvents)
+
   const rejected = run(cwd, [
     'upgrade-v4',
     '--task', task.id,

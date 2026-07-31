@@ -106,16 +106,29 @@ task；需要 light 证明规则时显式增加 `--profile light`。两种 basis
 `primary_writer`。CLI 0.2.0 和 0.3.0 不支持 schema 4，会在 task 读盘时拒绝，
 不会进入 mutation 或 event append。
 
-schema 3 保持只读。明确继续单张 open schema 3 task 后，由当前 primary writer 执行：
+schema 3 保持只读。明确继续单张 open schema 3 task 后，优先由当前 primary writer 执行：
 
 ```bash
 latch upgrade-v4 --task <task-id> --expect-revision 3
 ```
 
+原 primary writer 永久不可用时，新的 canonical session 只有在用户针对具体 task 和
+revision 明确授权 writer 恢复后，才可执行：
+
+```bash
+latch upgrade-v4 \
+  --task <task-id> \
+  --expect-revision 3 \
+  --recover-writer \
+  --reason "原 session 已不可用，授权当前 session 恢复"
+```
+
 升级只增加 task revision 和 `schema_upgraded` event，不改变 plan/work revision、
 phase、approval、verification、proof generation 或 evidence ref。保护从
 `task.json` 原子写成 schema 4 时生效；升级前的 schema 3 仍可能被旧 CLI 写入，
-不得描述为已受保护。
+不得描述为已受保护。恢复升级还会在同一 task revision 转移 `primary_writer`，
+并记录 `writer_taken_over`；该操作不构成 plan approval 或 implementation
+approval。`task.json` 仍是提交点，event 追加失败按现有规则返回 warning。
 
 既有 schema 2 task 保持可读，但普通写入会按 `legacy_unclaimed` 拒绝；明确继续该
 task 后，使用 `claim` 完成单 task 2→4 升级：
@@ -350,8 +363,10 @@ archive list、分页、时间范围或模糊搜索。
 
 ### Schema 3 升级与 schema 3/4 回退
 
-schema 3→4 只通过前述 `upgrade-v4` 单 task 命令完成。该命令不支持 archive、
-schema 2、schema 4、writer mismatch 或损坏的 evidence ref，也不提供批量模式。
+schema 3→4 只通过前述 `upgrade-v4` 单 task 命令完成。普通升级不支持 writer
+mismatch；原 writer 永久不可用时，仅允许使用显式
+`--recover-writer --reason <text>` 恢复。两种模式均不支持 archive、schema 2、
+schema 4、损坏的 evidence ref 或批量处理。
 
 需要让 schema 3/4 task 重新被 v2 CLI 读写时，先明确确认当前专用字段和 event 细节只保留在 backup，再执行：
 
@@ -407,6 +422,12 @@ latch takeover <task-id> --expect-revision <revision> --reason "用户明确授�
 ```
 
 takeover 不改变 phase、plan approval 或 gate，也不构成 implementation approval。若同一用户消息同时明确授权 takeover 和当前 plan，则先 takeover，再将其 JSON 返回的 `revision` 用于 `approve`；否则在 takeover 后等待单独批准。正常顺序交接保持 `provenance: clean`，只有明确允许重叠并行时才写入 `mixed`。
+
+schema 3 不使用普通 `takeover`。原 primary writer 可用时，必须先由其执行普通
+`upgrade-v4`；原 writer 永久不可用时，新的 canonical session 需要针对具体 task
+和 revision 的明确恢复授权，并执行
+`upgrade-v4 --recover-writer --reason <text>`。恢复 reason 是本地审计信息，不是
+session 存活或身份认证证明。
 
 ## 最终契约能力
 

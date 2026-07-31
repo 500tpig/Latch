@@ -118,9 +118,9 @@ delivery remains separate and needs separate authorization.
   instruction-only commands such as `echo`, `printf`, and `true` are not evidence.
 - New and updated plans require repo-relative POSIX `workspace_scope.paths`; never
   infer machine scope from prose, authorization, or artifacts.
-- New tasks use schema 4 with minimum writer `0.4.0`. Schema 3 is read-only; after
-  explicit authorization, its current primary writer must run the single-task
-  `upgrade-v4` command before any ordinary mutation. Never upgrade during reads,
+- New tasks use schema 4 with minimum writer `0.4.0`; schema 3 is read-only.
+  Run `upgrade-v4` only after explicit authorization; prefer its current writer.
+  Recovery needs explicit task/revision authorization. Never upgrade during reads,
   startup, build, or verification.
 - A gate pass requires successful command outcome, complete evidence, no covered
   mutation, current proof generation, and no unresolved violation. Preserve

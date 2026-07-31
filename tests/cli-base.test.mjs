@@ -112,6 +112,7 @@ test('top-level and command help have no side effects', () => {
     ['record', '--help'],
     ['record', 'create', '--help'],
     ['submit', '--help'],
+    ['upgrade-v4', '--help'],
   ]) {
     const cwd = temporaryDirectory()
     const result = run(cwd, args)
@@ -142,6 +143,9 @@ test('top-level and command help have no side effects', () => {
   assert.match(contextHelp.stdout, /--since-revision/)
   assert.match(contextHelp.stdout, /--history <timeline\|events\|both>/)
   assert.match(run(temporaryDirectory(), ['submit', '--help']).stdout, /--verbose-warnings/)
+  const upgradeHelp = run(temporaryDirectory(), ['upgrade-v4', '--help'])
+  assert.match(upgradeHelp.stdout, /--recover-writer/)
+  assert.match(upgradeHelp.stdout, /--reason <text>/)
 })
 
 test('checkpoint templates are side-effect-free shape scaffolds that require completion', () => {

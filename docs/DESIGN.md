@@ -18,7 +18,7 @@ Latch 是个人 macOS 开发环境中的本地任务状态记录器。它帮助 
 - `.latch/records/index.json` 只保存 Record 元数据，正文位于独立 Markdown 文件；
 - 项目正式文档通过 artifact 关联，并从 `docs/INDEX.md` 发现。
 - 新 task 使用 schema 4，并保存 `min_writer_version: "0.4.0"`、`primary_writer` 和 `profile`；CLI 0.2.0 和 0.3.0 在 task 读盘时拒绝该格式。
-- schema 3 只作为历史读取和显式迁移来源；open schema 3 task 的普通 mutation 全部拒绝，当前 primary writer 通过单 task `upgrade-v4` 升级。
+- schema 3 只作为历史读取和显式迁移来源；open schema 3 task 的普通 mutation 全部拒绝。当前 primary writer 通过单 task `upgrade-v4` 升级；原 writer 永久不可用时，获得具体 task 和 revision 的明确恢复授权后，新的 canonical session 可通过 `upgrade-v4 --recover-writer --reason <text>` 同时完成升级和 writer 转移。
 - schema 4 新 task 写入根 `provenance: clean`；历史 schema 2/3 task 缺失该字段时按 `clean` 读取，只有明确的重叠并行或隔离恢复才显式修改。
 - light request 与 retrospective task 可在 `checkpoint` 时原子写入 work basis，不需要创建后再拼接生命周期状态。
 - plan validation 分为历史可读 shape、schema 4 writable 和 authorizable 三层；只有第三层在创建或更新 work basis 前要求执行字段完整，并按 profile 检查 Light gate。

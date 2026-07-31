@@ -37,7 +37,8 @@ The old session must stop writing this task. I explicitly authorize the new sess
 
 - Do not run takeover from handoff intent alone; require explicit user authorization for the named task and expected revision.
 - Treat takeover as ownership transfer, not implementation approval. When one user message explicitly authorizes both takeover and the current plan, run takeover first and use its returned JSON `revision` for `approve`; otherwise preserve the phase and wait for separate approval.
-- Schema 3 is read-only, including takeover. Its current primary writer must explicitly run `upgrade-v4` before handoff; do not use takeover, save, or another mutation as a schema 3 compatibility path.
+- Schema 3 is read-only, including ordinary takeover. Prefer its current primary writer for the explicitly authorized `upgrade-v4` before handoff. If that writer is permanently unavailable, require explicit recovery authorization for the named task and revision, then let the new canonical session run `upgrade-v4 --recover-writer --reason <text>`. Do not use takeover, save, actor spoofing, or another mutation as a schema 3 compatibility path.
+- Treat recovery as ownership transfer plus schema upgrade, not plan or implementation approval. Keep sequential recovery provenance unchanged. The reason is local audit text, not proof of session liveness or identity.
 - Require the old session to stop task writes. Latch cannot prevent it from changing a shared Git worktree, so report the shared-worktree risk.
 - Keep a normal sequential handoff `provenance: clean`; use `mixed` only after the user explicitly accepts overlapping parallel work.
 

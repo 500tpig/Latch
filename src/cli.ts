@@ -113,7 +113,7 @@ Commands:
   artifact <add|remove> <task-id> --expect-revision <revision> <kind:path>...
   submit <task-id> --expect-revision <revision> --changes <text> --unverified <text> [--knowledge-impact-none <reason> | --knowledge-impact-file <path>] [--no-verify --reason <text>] [--verbose-warnings]
   patch-submission-knowledge-impact <task-id> --expect-revision <revision> --knowledge-impact-file <path> [--reason <text>]
-  upgrade-v4 --task <task-id> --expect-revision <revision>
+  upgrade-v4 --task <task-id> --expect-revision <revision> [--recover-writer --reason <text>]
   downgrade-v2 --task <task-id> --expect-revision <revision> --confirm-data-loss
   done <task-id> --expect-revision <revision> --followup <text>
   abandon <task-id> --expect-revision <revision> --reason <text>`
@@ -153,7 +153,7 @@ const commandUsage: Record<string, string> = {
   'patch-submission-knowledge-impact':
     'Usage: latch patch-submission-knowledge-impact <task-id> --expect-revision <revision> --knowledge-impact-file <path> [--reason <text>] [--json]',
   'upgrade-v4':
-    'Usage: latch upgrade-v4 --task <task-id> --expect-revision <revision> [--json]',
+    'Usage: latch upgrade-v4 --task <task-id> --expect-revision <revision> [--recover-writer --reason <text>] [--json]',
   'downgrade-v2':
     'Usage: latch downgrade-v2 --task <task-id> --expect-revision <revision> --confirm-data-loss [--json]',
   done:
@@ -1844,12 +1844,19 @@ function runUpgradeV4(args: string[], cwd: string, actor: string) {
     ...commonOptions(),
     task: { type: 'string' },
     'expect-revision': { type: 'string' },
+    'recover-writer': { type: 'boolean' },
+    reason: { type: 'string' },
   })
   if (parsed.values.help)
     return process.stdout.write(`${commandUsage['upgrade-v4']}\n`)
   requirePositionals('upgrade-v4', parsed.positionals, 0)
   if (!parsed.values.task)
     fail('invalid_arguments', '--task is required.')
+  const recoverWriter = parsed.values['recover-writer'] === true
+  if (recoverWriter && parsed.values.reason === undefined)
+    fail('invalid_arguments', '--reason is required with --recover-writer.')
+  if (!recoverWriter && parsed.values.reason !== undefined)
+    fail('invalid_arguments', '--reason requires --recover-writer.')
   const expectRevision = positiveInteger(
     parsed.values['expect-revision'],
     '--expect-revision',
@@ -1858,9 +1865,22 @@ function runUpgradeV4(args: string[], cwd: string, actor: string) {
   const result = upgradeTaskV4(store, parsed.values.task, {
     expectRevision,
     actor,
+    recoverWriter,
+    reason: parsed.values.reason,
   })
   if (parsed.values.json)
-    return json(mutationJson(result.task, result.warnings, expectRevision))
+    return json({
+      ...mutationJson(result.task, result.warnings, expectRevision),
+      task_schema_version: result.task.schema_version,
+      primary_writer: result.task.primary_writer,
+      writer_recovered: recoverWriter,
+    })
+  if (recoverWriter) {
+    process.stdout.write(
+      `Upgraded ${result.task.id} to schema v4 and recovered writer ownership as ${result.task.primary_writer}.\n`,
+    )
+    return printWarnings(result.warnings)
+  }
   process.stdout.write(
     `Upgraded ${result.task.id} to schema v4; minimum writer is 0.4.0.\n`,
   )

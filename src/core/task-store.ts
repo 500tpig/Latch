@@ -149,6 +149,8 @@ export type TakeoverTaskV3Options = {
 export type UpgradeTaskV4Options = {
   expectRevision: number
   actor: string
+  recoverWriter?: boolean
+  reason?: string
 }
 
 export type DowngradeTaskV2Result = TaskWriteResultV2 & {
@@ -1592,21 +1594,53 @@ export function upgradeTaskV4(
   id: string,
   options: UpgradeTaskV4Options,
 ): TaskWriteResultV2 {
-  return commitTaskUpdate(store, id, {
+  const recoverWriter = options.recoverWriter === true
+  const recoveryReason = options.reason?.trim()
+  if (recoverWriter)
+    requireString(recoveryReason, 'reason', 'upgrade-v4 recovery input')
+  else if (options.reason !== undefined)
+    throw new Error('upgrade-v4 reason requires recoverWriter.')
+
+  const result = commitTaskUpdate(store, id, {
     expectRevision: options.expectRevision,
     actor: options.actor,
-    events: () => [{
-      type: 'schema_upgraded',
-      fields: {
-        from_schema_version: V3_SCHEMA_VERSION,
-        to_schema_version: V4_SCHEMA_VERSION,
-        min_writer_version: SCHEMA_V4_MIN_WRITER_VERSION,
+    events: (task) => [
+      ...(recoverWriter
+        ? [{
+            type: 'writer_taken_over' as const,
+            fields: {
+              from: task.primary_writer,
+              to: options.actor,
+              reason: recoveryReason,
+            },
+          }]
+        : []),
+      {
+        type: 'schema_upgraded',
+        fields: {
+          from_schema_version: V3_SCHEMA_VERSION,
+          to_schema_version: V4_SCHEMA_VERSION,
+          min_writer_version: SCHEMA_V4_MIN_WRITER_VERSION,
+        },
       },
-    }],
+    ],
     authorize(task) {
       if (task.schema_version !== V3_SCHEMA_VERSION)
         throw new Error('upgrade-v4 requires an open schema_version 3 task.')
-      assertPrimaryWriter(task, options.actor)
+      if (recoverWriter) {
+        if (task.primary_writer === options.actor)
+          throw new Error(
+            `Task primary_writer is already ${options.actor}; ` +
+              'run upgrade-v4 without --recover-writer.',
+          )
+      } else {
+        if (task.primary_writer !== options.actor)
+          throw new Error(
+            `Writer mismatch: primary_writer is ${task.primary_writer}, caller is ${options.actor}.\n` +
+              'Ask the current writer to run upgrade-v4, or after explicit recovery authorization ' +
+              'retry with --recover-writer --reason <text>.',
+          )
+      }
       const directory = taskDirectoryV2(store, task.id)
       const eventLog = readTaskEventLogForTask(store, task)
       const references = collectWorkspaceEvidenceRefs([task, eventLog.events])
@@ -1616,9 +1650,16 @@ export function upgradeTaskV4(
     update(task) {
       task.schema_version = V4_SCHEMA_VERSION
       task.min_writer_version = SCHEMA_V4_MIN_WRITER_VERSION
+      if (recoverWriter) task.primary_writer = options.actor
     },
+    allowPrimaryWriterChange: recoverWriter,
     allowSchemaUpgrade: true,
   })
+  if (recoverWriter)
+    result.warnings.push(
+      'The previous writer may still modify the shared Git worktree; Latch only rejects its task writes.',
+    )
+  return result
 }
 
 export function takeoverTaskV3(

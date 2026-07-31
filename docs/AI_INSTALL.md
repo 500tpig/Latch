@@ -97,8 +97,10 @@ repo-relative POSIX 路径，目录前缀以 `/` 结尾。普通 light request �
 `--knowledge-impact-none <reason>`，`updated` impact 继续使用
 `--knowledge-impact-file`。retrospective 创建使用 `--retrospective-file`。既有
 schema 2/3 task 不批量改写；明确继续具体 schema 2 task 后由 `claim` 完成 2→4，
-明确继续 open schema 3 task 后由当前 primary writer 执行 `upgrade-v4`。两条路径
-都不推断 `workspace_scope`。
+明确继续 open schema 3 task 后优先由当前 primary writer 执行 `upgrade-v4`。
+原 writer 永久不可用时，新的 canonical session 只有在获得具体 task 和 revision
+的明确恢复授权后，才可使用 `upgrade-v4 --recover-writer --reason <text>`。
+这些路径都不推断 `workspace_scope`。
 
 v2 不迁移 v1。已有 `.latch` 时，先将原目录备份到 repo 外，记录来源和
 checksum，确认恢复方法，再移走旧目录并执行 `latch init`。备份位置记录在
@@ -110,7 +112,8 @@ Grok 与 Codex 均可作为可写宿主。安装全局 `latch` 并 `pnpm build` 
 
 ## Schema 3 升级与 schema 3/4 回退
 
-升级前先停止旧 writer，再逐张处理 open schema 3 task：
+升级前先停止旧 writer，再逐张处理 open schema 3 task。当前 primary writer
+可用时执行：
 
 ```bash
 latch upgrade-v4 \
@@ -121,6 +124,22 @@ latch upgrade-v4 \
 命令保留 plan/work revision、phase、approval、verification、proof generation 和
 evidence ref。升级在 `task.json` 原子写为 schema 4 时生效；在此之前，schema 3
 仍可能被旧 CLI 写入。命令不处理 archive，不提供批量或启动时自动升级。
+
+原 primary writer 永久不可用时，获得具体 task 和 revision 的明确恢复授权后，
+新的 canonical session 可执行：
+
+```bash
+latch upgrade-v4 \
+  --task <task-id> \
+  --expect-revision <revision> \
+  --recover-writer \
+  --reason "原 session 已不可用，授权当前 session 恢复"
+```
+
+恢复升级在同一次 `task.json` 提交中升级 schema 并转移 `primary_writer`，记录
+`writer_taken_over` 和 `schema_upgraded`。event 追加仍采用现有 warning 语义，
+不属于跨文件事务。恢复不代表 plan approval、implementation approval 或 Git
+授权，也不改变 `provenance`。
 
 回退单张 task 前先停止该 task 的其它写入，并确认 schema 3/4 专用字段和 event
 细节只保留在 backup：
