@@ -19,10 +19,12 @@ import {
 } from './task-store.js'
 import type { TaskStoreV2, TaskWriteResultV2 } from './task-store.js'
 import type {
+  CloseoutResolution,
   ImplementationAuthorizationInput,
   KnowledgeImpact,
   RetrospectiveRecordInput,
   TaskProfile,
+  TaskCloseoutInput,
   TaskV2,
   VerifyResult,
   WorkspaceDelta,
@@ -50,8 +52,8 @@ export type ApproveTaskV2Input = {
   retrospective?: RetrospectiveRecordInput
 }
 
-function requireText(value: string | undefined, message: string): string {
-  if (!value?.trim()) throw new Error(message)
+function requireText(value: unknown, message: string): string {
+  if (typeof value !== 'string' || !value.trim()) throw new Error(message)
   return value.trim()
 }
 
@@ -166,7 +168,7 @@ export function approveTaskV2(
   if (current.phase === 'plan') {
     if (input.feedback || input.nonImplementationFeedback !== undefined)
       throw new Error('Review feedback requires a task in review.')
-    if (current.schema_version === 4)
+    if (current.schema_version === 4 || current.schema_version === 5)
       assertAuthorizableTaskPlan(
         current.plan,
         profileOf(current),
@@ -181,10 +183,10 @@ export function approveTaskV2(
       !input.retrospective
     if (usesLightProofPackage(current) && !legacyStandardApproval) {
       if (input.reason)
-        throw new Error('--reason cannot replace structured schema 4 work_basis input.')
+        throw new Error('--reason cannot replace structured work_basis input.')
       if (!input.authorization && !input.retrospective)
         throw new Error(
-          'Schema 4 approval requires --authorization-file or --retrospective-file.',
+          'Structured approval requires --authorization-file or --retrospective-file.',
         )
       if (input.authorization) {
         const workRevision = current.work_revision + 1
@@ -305,9 +307,9 @@ export function approveTaskV2(
 
   if (current.phase === 'review') {
     if (input.nonImplementationFeedback !== undefined) {
-      if (current.schema_version !== 4)
+      if (current.schema_version !== 4 && current.schema_version !== 5)
         throw new Error(
-          'Non-implementation feedback requires schema_version 4.',
+          'Non-implementation feedback requires schema_version 4 or 5.',
         )
       if (input.reason || input.feedback || input.authorization || input.retrospective)
         throw new Error(
@@ -1175,7 +1177,8 @@ export type SubmitTaskV2Input = {
   expectRevision: number
   actor: string
   changes: string
-  unverified: string
+  unverified?: string
+  unverifiedItems?: string[]
   noVerify: boolean
   reason?: string
   knowledgeImpact?: KnowledgeImpact
@@ -1198,7 +1201,15 @@ export function submitTaskV2(
   if (current.plan.open_questions.length > 0)
     throw new Error('Cannot submit while plan.open_questions is not empty.')
   const changes = requireText(input.changes, '--changes is required.')
-  if (typeof input.unverified !== 'string')
+  const unverifiedItems = current.schema_version === 5
+    ? (input.unverifiedItems ?? []).map((summary, index) => ({
+        item_id: `U${index + 1}`,
+        summary: requireText(summary, '--unverified entries must be non-empty.'),
+      }))
+    : undefined
+  if (current.schema_version === 5 && input.unverified !== undefined)
+    throw new Error('Schema 5 submit uses unverifiedItems.')
+  if (current.schema_version !== 5 && typeof input.unverified !== 'string')
     throw new Error('--unverified is required.')
   const gates = gatePlan(current)
   let noVerifyReason: string | undefined
@@ -1274,7 +1285,7 @@ export function submitTaskV2(
   }
   if (usesLightProofPackage(current)) {
     if (!input.knowledgeImpact)
-      throw new Error('--knowledge-impact-file is required for schema 4 submission.')
+      throw new Error('--knowledge-impact-file is required for structured submission.')
     if (
       input.knowledgeImpact.kind === 'updated' &&
       Array.isArray(input.knowledgeImpact.artifact_refs) &&
@@ -1327,6 +1338,12 @@ export function submitTaskV2(
           ...(input.knowledgeImpact
             ? { knowledge_impact_kind: input.knowledgeImpact.kind }
             : {}),
+          ...(current.schema_version === 5
+            ? {
+                unverified_item_ids: unverifiedItems!.map((item) => item.item_id),
+                unverified_count: unverifiedItems!.length,
+              }
+            : {}),
         },
       },
     ],
@@ -1338,7 +1355,9 @@ export function submitTaskV2(
         work_revision: task.work_revision,
         changes,
         verified,
-        unverified: input.unverified,
+        ...(task.schema_version === 5
+          ? { unverified_items: structuredClone(unverifiedItems!) }
+          : { unverified: input.unverified! }),
         ...(input.knowledgeImpact
           ? { knowledge_impact: structuredClone(input.knowledgeImpact) }
           : {}),
@@ -1370,9 +1389,9 @@ export function changeTaskProfileV3(
   input: ChangeTaskProfileV3Input,
 ): TaskWriteResultV2 {
   const current = readTaskV2(store, id)
-  if (current.schema_version !== 4)
+  if (current.schema_version !== 4 && current.schema_version !== 5)
     throw new Error(
-      'Profile changes require schema_version 4.',
+      'Profile changes require schema_version 4 or 5.',
     )
   const from = profileOf(current)
   if (input.profile === from)
@@ -1424,7 +1443,7 @@ export function patchSubmissionKnowledgeImpactV3(
   const current = readTaskV2(store, id)
   if (!usesLightProofPackage(current))
     throw new Error(
-      'Submission patch requires a schema 4 profile; legacy data was not modified.',
+      'Submission patch requires a structured profile; legacy data was not modified.',
     )
   if (current.blocked) throw new Error(`Task is blocked: ${current.blocked.reason}`)
   if (current.phase !== 'review')
@@ -1478,7 +1497,130 @@ export function patchSubmissionKnowledgeImpactV3(
 export type DoneTaskV2Input = {
   expectRevision: number
   actor: string
-  followup: string
+  followup?: string
+  closeout?: TaskCloseoutInput
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function exactInputKeys(value: Record<string, unknown>, keys: string[]) {
+  const expected = new Set(keys)
+  return (
+    Object.keys(value).length === expected.size &&
+    Object.keys(value).every((key) => expected.has(key))
+  )
+}
+
+function validExternalAccountUri(value: unknown) {
+  if (typeof value !== 'string') return false
+  try {
+    const uri = new URL(value)
+    if (uri.username || uri.password) return false
+    if (uri.protocol === 'mailto:') {
+      const separator = uri.pathname.indexOf('@')
+      return (
+        separator > 0 &&
+        separator < uri.pathname.length - 1 &&
+        !uri.search &&
+        !uri.hash
+      )
+    }
+    return (
+      uri.protocol === 'https:' &&
+      Boolean(uri.hostname) &&
+      uri.pathname !== '/' &&
+      uri.pathname !== ''
+    )
+  } catch {
+    return false
+  }
+}
+
+function materializeCloseout(
+  input: unknown,
+  items: Array<{ item_id: string }>,
+): CloseoutResolution[] {
+  if (!isRecord(input) || !exactInputKeys(input, ['resolutions']))
+    throw new Error('Invalid --closeout-file: expected a resolutions array.')
+  if (!Array.isArray(input.resolutions))
+    throw new Error('Invalid --closeout-file: resolutions must be an array.')
+  const expected = new Set(items.map((item) => item.item_id))
+  const seen = new Set<string>()
+  const recordedAt = now()
+  const materialized = input.resolutions.map((entry): CloseoutResolution => {
+    if (!isRecord(entry) || typeof entry.item_id !== 'string')
+      throw new Error('Invalid closeout resolution item_id.')
+    if (!expected.has(entry.item_id))
+      throw new Error(`Unknown closeout resolution item_id: ${entry.item_id}.`)
+    if (seen.has(entry.item_id))
+      throw new Error(`Duplicate closeout resolution item_id: ${entry.item_id}.`)
+    seen.add(entry.item_id)
+    if (entry.outcome === 'resolved') {
+      if (!exactInputKeys(entry, ['item_id', 'outcome', 'resolution']))
+        throw new Error(`Invalid resolved closeout for ${entry.item_id}.`)
+      return {
+        item_id: entry.item_id,
+        outcome: 'resolved',
+        resolution: requireText(
+          entry.resolution as string | undefined,
+          `Resolved closeout for ${entry.item_id} requires resolution.`,
+        ),
+      }
+    }
+    if (entry.outcome === 'accepted_risk') {
+      if (
+        !exactInputKeys(entry, ['item_id', 'outcome', 'user_acceptance']) ||
+        !isRecord(entry.user_acceptance) ||
+        !exactInputKeys(entry.user_acceptance, ['statement'])
+      )
+        throw new Error(`Invalid accepted_risk closeout for ${entry.item_id}.`)
+      return {
+        item_id: entry.item_id,
+        outcome: 'accepted_risk',
+        user_acceptance: {
+          accepted_by: 'user',
+          statement: requireText(
+            entry.user_acceptance.statement as string | undefined,
+            `Accepted risk for ${entry.item_id} requires user_acceptance.statement.`,
+          ),
+          recorded_at: recordedAt,
+        },
+      }
+    }
+    if (entry.outcome === 'followup') {
+      if (
+        !exactInputKeys(entry, ['item_id', 'outcome', 'followup']) ||
+        !isRecord(entry.followup) ||
+        !exactInputKeys(entry.followup, ['action', 'owner']) ||
+        !isRecord(entry.followup.owner) ||
+        !exactInputKeys(entry.followup.owner, ['kind', 'account_uri']) ||
+        entry.followup.owner.kind !== 'external' ||
+        !validExternalAccountUri(entry.followup.owner.account_uri)
+      )
+        throw new Error(`Invalid followup closeout for ${entry.item_id}.`)
+      return {
+        item_id: entry.item_id,
+        outcome: 'followup',
+        followup: {
+          action: requireText(
+            entry.followup.action as string | undefined,
+            `Followup closeout for ${entry.item_id} requires action.`,
+          ),
+          owner: {
+            kind: 'external',
+            account_uri: entry.followup.owner.account_uri as string,
+          },
+        },
+      }
+    }
+    throw new Error(`Invalid closeout outcome for ${entry.item_id}.`)
+  })
+  const missing = [...expected].filter((itemId) => !seen.has(itemId))
+  if (missing.length > 0)
+    throw new Error(`Missing closeout resolution item_id: ${missing.join(', ')}.`)
+  return materialized
 }
 
 export function doneTaskV2(
@@ -1512,18 +1654,46 @@ export function doneTaskV2(
     assertValidWorkBasis(current)
   }
   assertSubmissionProof(current)
+  const unverifiedItems = current.schema_version === 5
+    ? (submission.unverified_items ?? [])
+    : []
+  if (current.schema_version === 5 && unverifiedItems.length > 0 && !input.closeout)
+    throw new Error('--closeout-file is required while unverified items remain.')
+  if (current.schema_version === 5 && input.followup !== undefined)
+    throw new Error('Schema 5 done uses --closeout-file, not --followup.')
+  if (current.schema_version !== 5 && input.closeout !== undefined)
+    throw new Error('--closeout-file requires schema_version 5.')
+  const resolutions = current.schema_version === 5
+    ? materializeCloseout(input.closeout ?? { resolutions: [] }, unverifiedItems)
+    : undefined
+  const outcomeCounts = resolutions
+    ? {
+        resolved_count: resolutions.filter((item) => item.outcome === 'resolved').length,
+        accepted_risk_count: resolutions.filter((item) => item.outcome === 'accepted_risk').length,
+        followup_count: resolutions.filter((item) => item.outcome === 'followup').length,
+      }
+    : undefined
   return archiveTaskV2(store, current.id, {
     expectRevision: input.expectRevision,
     actor: input.actor,
     outcome: 'done',
+    ...(outcomeCounts ? { eventFields: outcomeCounts } : {}),
     update(task) {
-      task.closure = {
-        changes: submission.changes,
-        verified: submission.verified,
-        unverified: submission.unverified,
-        followup: input.followup,
-        accepted_at: now(),
-      }
+      task.closure = task.schema_version === 5
+        ? {
+            changes: submission.changes,
+            verified: submission.verified,
+            unverified_items: structuredClone(unverifiedItems),
+            resolutions: structuredClone(resolutions!),
+            accepted_at: now(),
+          }
+        : {
+            changes: submission.changes,
+            verified: submission.verified,
+            unverified: submission.unverified!,
+            followup: input.followup ?? '',
+            accepted_at: now(),
+          }
     },
   })
 }

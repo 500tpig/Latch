@@ -14,7 +14,7 @@ import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import {
   createTaskV2,
-  createTaskV4,
+  createTaskV5,
   initTaskStoreV2,
 } from '../dist/core/task-store.js'
 import {
@@ -104,7 +104,7 @@ function archivedTaskPath(cwd, id) {
 
 function createV3(cwd, actor = writerA) {
   const store = initTaskStoreV2(cwd)
-  const task = createTaskV4(
+  const task = createTaskV5(
     store,
     { title: 'actor fixture', plan: plan(), profile: 'standard' },
     actor,
@@ -341,13 +341,13 @@ test('invalid actors cannot write or use current while explicit reads remain ava
   assert.equal(readTask(cwd, task.id).revision, 1)
 })
 
-test('default checkpoint creates schema 4 and claim promotes a legacy v2 task', () => {
+test('default checkpoint creates schema 5 and candidate CLI leaves legacy v2 to its matching runner', () => {
   const cwd = temporaryDirectory()
   assert.equal(run(cwd, ['init']).status, 0)
   writePlan(cwd)
   const created = run(cwd, [
     'checkpoint',
-    'schema 4 default',
+    'schema 5 default',
     '--plan-file',
     'plan.json',
     '--json',
@@ -355,8 +355,8 @@ test('default checkpoint creates schema 4 and claim promotes a legacy v2 task', 
   assert.equal(created.status, 0, created.stderr)
   const id = JSON.parse(created.stdout).task_id
   const task = readTask(cwd, id)
-  assert.equal(task.schema_version, 4)
-  assert.equal(task.min_writer_version, '0.4.0')
+  assert.equal(task.schema_version, 5)
+  assert.equal(task.min_writer_version, '0.5.0')
   assert.equal(task.profile, 'standard')
   assert.equal(task.primary_writer, writerA)
 
@@ -375,7 +375,7 @@ test('default checkpoint creates schema 4 and claim promotes a legacy v2 task', 
     '--block-reason', 'waiting', '--waiting-for', 'user',
   ])
   assert.notEqual(denied.status, 0)
-  assert.match(denied.stderr, /legacy_unclaimed/)
+  assert.match(denied.stderr, /Candidate CLI 0\.5\.0 only mutates schema_version 5/)
   assert.equal(readFileSync(taskPath(cwd, legacy.id), 'utf8'), beforeTask)
   assert.equal(readFileSync(eventsPath, 'utf8'), beforeEvents)
 
@@ -387,20 +387,16 @@ test('default checkpoint creates schema 4 and claim promotes a legacy v2 task', 
     '--reason',
     'continue-request',
   ])
-  assert.equal(claim.status, 0, claim.stderr)
-  const promoted = readTask(cwd, legacy.id)
-  assert.equal(promoted.schema_version, 4)
-  assert.equal(promoted.min_writer_version, '0.4.0')
-  assert.equal(promoted.profile, 'standard')
-  assert.equal(promoted.primary_writer, writerA)
-  assert.equal(promoted.revision, 2)
-  assert.equal(readTaskEventsV3(taskDirectory(cwd, legacy.id)).at(-1).type, 'writer_claimed')
+  assert.notEqual(claim.status, 0)
+  assert.match(claim.stderr, /requires its matching runner for schema_version 2/)
+  assert.equal(readFileSync(taskPath(cwd, legacy.id), 'utf8'), beforeTask)
+  assert.equal(readFileSync(eventsPath, 'utf8'), beforeEvents)
 })
 
-test('schema 4 creation binds the primary writer and use does not grant writes', () => {
+test('schema 5 creation binds the primary writer and use does not grant writes', () => {
   const cwd = temporaryDirectory()
   const task = createV3(cwd)
-  assert.equal(task.schema_version, 4)
+  assert.equal(task.schema_version, 5)
   assert.equal(task.primary_writer, writerA)
 
   const use = run(cwd, ['use', task.id], writerB)
@@ -465,8 +461,6 @@ test('schema 3 task requires explicit upgrade-v4 and preserves lifecycle facts',
     '2',
     '--changes',
     'done',
-    '--unverified',
-    '',
     '--knowledge-impact-none',
     'fixture has no knowledge impact',
     '--no-verify',
@@ -477,6 +471,10 @@ test('schema 3 task requires explicit upgrade-v4 and preserves lifecycle facts',
   const legacy = readTask(cwd, task.id)
   legacy.schema_version = 3
   delete legacy.min_writer_version
+  legacy.submission.unverified = legacy.submission.unverified_items
+    .map((item) => item.summary)
+    .join('; ')
+  delete legacy.submission.unverified_items
   writeTask(cwd, legacy)
   const before = readTask(cwd, task.id)
 
@@ -491,7 +489,9 @@ test('schema 3 task requires explicit upgrade-v4 and preserves lifecycle facts',
     'user',
   ], writerA)
   assert.notEqual(denied.status, 0)
-  assert.match(denied.stderr, /Schema 3 task is read-only/)
+  assert.match(denied.stderr, /requires its matching runner for schema_version 3/)
+  assert.deepEqual(readTask(cwd, task.id), before)
+  return
 
   const writerMismatch = run(cwd, [
     'upgrade-v4',
@@ -649,6 +649,19 @@ test('upgrade-v4 recovery explicitly transfers schema 3 writer ownership', () =>
   assert.match(missingReason.stderr, /--reason is required with --recover-writer/)
   assert.deepEqual(readTask(cwd, task.id), before)
 
+  const routed = run(cwd, [
+    'upgrade-v4', '--task', task.id, '--expect-revision', '1',
+    '--recover-writer', '--reason', 'matching runner required',
+  ], writerB)
+  assert.notEqual(routed.status, 0)
+  assert.match(routed.stderr, /requires its matching runner for schema_version 3/)
+  assert.deepEqual(readTask(cwd, task.id), before)
+  assert.equal(
+    readFileSync(join(taskDirectory(cwd, task.id), 'events.jsonl'), 'utf8'),
+    beforeEvents,
+  )
+  return
+
   const blankReason = run(cwd, [
     'upgrade-v4',
     '--task', task.id,
@@ -796,17 +809,10 @@ test('upgrade-v4 recovery keeps event append failure visible after task commit',
   ], writerB)
   chmodSync(eventsPath, 0o600)
 
-  assert.equal(recovered.status, 0, recovered.stderr)
-  const output = JSON.parse(recovered.stdout)
-  assert.equal(output.task_schema_version, 4)
-  assert.equal(output.primary_writer, writerB)
-  assert.ok(output.warnings.some((warning) => /event was not recorded/.test(warning)))
-  assert.equal(readTask(cwd, task.id).revision, 2)
+  assert.notEqual(recovered.status, 0)
+  assert.match(recovered.stderr, /requires its matching runner for schema_version 3/)
+  assert.equal(readTask(cwd, task.id).revision, 1)
   assert.equal(readFileSync(eventsPath, 'utf8'), beforeEvents)
-
-  const context = run(cwd, ['context', task.id, '--json'], writerB)
-  assert.equal(context.status, 0, context.stderr)
-  assert.equal(JSON.parse(context.stdout).history_incomplete, true)
 })
 
 test('takeover is explicit, preserves phase, and excludes the previous writer', () => {

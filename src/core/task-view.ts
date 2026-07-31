@@ -87,6 +87,57 @@ function taskSummary(task: TaskV2, brief: boolean, grouped = false) {
   }
 }
 
+function schema5UnverifiedItems(task: TaskV2) {
+  if (task.schema_version !== 5) return []
+  return task.closure?.unverified_items ?? task.submission?.unverified_items ?? []
+}
+
+function schema5CloseoutCounts(task: TaskV2) {
+  const resolutions = task.schema_version === 5
+    ? (task.closure?.resolutions ?? [])
+    : []
+  return {
+    resolved: resolutions.filter((item) => item.outcome === 'resolved').length,
+    accepted_risk: resolutions.filter((item) => item.outcome === 'accepted_risk').length,
+    followup: resolutions.filter((item) => item.outcome === 'followup').length,
+  }
+}
+
+function briefSubmission(task: TaskV2) {
+  const submission = task.submission
+  if (!submission || task.schema_version !== 5) return submission
+  const items = submission.unverified_items ?? []
+  return {
+    plan_revision: submission.plan_revision,
+    work_revision: submission.work_revision,
+    changes: submission.changes,
+    verified: submission.verified,
+    unverified_count: items.length,
+    unverified_summary: items.slice(0, 3),
+    ...(items.length > 3 ? { unverified_truncated: true } : {}),
+    ...(submission.knowledge_impact
+      ? { knowledge_impact: submission.knowledge_impact }
+      : {}),
+    ...(submission.no_verify ? { no_verify: submission.no_verify } : {}),
+    submitted_at: submission.submitted_at,
+  }
+}
+
+function briefClosure(task: TaskV2) {
+  const closure = task.closure
+  if (!closure || task.schema_version !== 5) return closure
+  const resolutions = closure.resolutions ?? []
+  return {
+    changes: closure.changes,
+    verified: closure.verified,
+    unverified_count: closure.unverified_items?.length ?? 0,
+    resolution_counts: schema5CloseoutCounts(task),
+    resolution_summary: resolutions.slice(0, 3),
+    ...(resolutions.length > 3 ? { resolutions_truncated: true } : {}),
+    accepted_at: closure.accepted_at,
+  }
+}
+
 type GroupListOptions = {
   groupId?: string
   includeArchive?: boolean
@@ -448,6 +499,11 @@ function timelineEvent(task: TaskV2, event: TaskEvent): TimelineEvent {
     'exit_code',
     'no_verify',
     'knowledge_impact_kind',
+    'unverified_item_ids',
+    'unverified_count',
+    'resolved_count',
+    'accepted_risk_count',
+    'followup_count',
     'from',
     'to',
     'reason',
@@ -675,7 +731,10 @@ function nextAction(
     return task.plan.open_questions.length > 0
       ? 'resolve_open_questions'
       : 'approve'
-  if (task.phase === 'review') return 'review_or_archive'
+  if (task.phase === 'review')
+    return schema5UnverifiedItems(task).length > 0
+      ? 'prepare_closeout'
+      : 'review_or_archive'
   const gates = gateSummary(task, liveStatus)
   return gates.total > 0 && gates.pass !== gates.total ? 'verify' : 'submit'
 }
@@ -687,6 +746,7 @@ function statusTask(
   archived = false,
 ) {
   const workspaceProof = workspaceProofView(store, task, archived)
+  const unverifiedItems = schema5UnverifiedItems(task)
   return {
     id: task.id,
     title: task.title,
@@ -709,6 +769,12 @@ function statusTask(
       task,
       archived ? undefined : workspaceProof?.live_status,
     ),
+    ...(task.schema_version === 5
+      ? {
+          unverified_count: unverifiedItems.length,
+          resolution_pending_count: task.closure ? 0 : unverifiedItems.length,
+        }
+      : {}),
     next_action: archived
       ? 'read_only'
       : nextAction(task, actor, workspaceProof?.live_status),
@@ -759,7 +825,8 @@ function briefTask(store: TaskStoreV2, task: TaskV2, archived = false) {
     ),
     verification: task.verification,
     ...(workspaceProof ? { workspace_proof: workspaceProof } : {}),
-    ...(task.submission ? { submission: task.submission } : {}),
+    ...(task.submission ? { submission: briefSubmission(task) } : {}),
+    ...(task.closure ? { closure: briefClosure(task) } : {}),
     artifacts: task.artifacts,
     updated_at: task.updated_at,
   }
@@ -927,6 +994,8 @@ export function contextHumanV2(
   const historyIncomplete = taskHistoryIncompleteForTaskV2(task, eventLog.events)
   const group = groupContext(store, task)
   const workspaceProof = workspaceProofView(store, task, context.archived)
+  const unverifiedItems = schema5UnverifiedItems(task)
+  const closeoutCounts = schema5CloseoutCounts(task)
   const lines = [
     `Task: ${task.id}`,
     `Title: ${task.title}`,
@@ -955,6 +1024,17 @@ export function contextHumanV2(
     `Workspace scope: ${task.plan.workspace_scope?.paths.join(' | ') || '-'}`,
     `Acceptance: ${task.plan.acceptance.join(' | ') || '-'}`,
     `Open questions: ${task.plan.open_questions.join(' | ') || '-'}`,
+    ...(task.schema_version === 5
+      ? [
+          `Unverified items: ${unverifiedItems.length}`,
+          `Pending closeout resolutions: ${task.closure ? 0 : unverifiedItems.length}`,
+          ...(task.closure
+            ? [
+                `Closeout outcomes: resolved=${closeoutCounts.resolved}, accepted_risk=${closeoutCounts.accepted_risk}, followup=${closeoutCounts.followup}`,
+              ]
+            : []),
+        ]
+      : []),
     `Artifacts: ${task.artifacts.map((item) => `${item.kind}:${item.path}`).join(' | ') || '-'}`,
     `History incomplete: ${historyIncomplete ? 'yes' : 'no'}`,
     ...(workspaceProof

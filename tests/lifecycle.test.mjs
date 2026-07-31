@@ -176,7 +176,7 @@ test('any persisted plan change invalidates approval, gates, and submission', ()
       exit_code: 0, work_revision: 1, created_at: new Date().toISOString(),
     }
     task.submission = {
-      work_revision: 1, changes: 'done', verified: 'pass', unverified: '',
+      work_revision: 1, changes: 'done', verified: 'pass', unverified_items: [],
       submitted_at: new Date().toISOString(),
     }
   })
@@ -206,7 +206,7 @@ test('review correction returns to dev, preserves approval, and increments work 
   writeTask(cwd, created.task_id, (task) => {
     task.phase = 'review'
     task.submission = {
-      work_revision: 1, changes: 'first', verified: '', unverified: 'none',
+      work_revision: 1, changes: 'first', verified: '', unverified_items: [],
       submitted_at: new Date().toISOString(),
     }
   })

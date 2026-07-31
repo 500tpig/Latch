@@ -11,10 +11,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import {
-  createTaskV4,
+  createTaskV5,
   initTaskStoreV2,
 } from '../dist/core/task-store.js'
-import { readTaskEventsV3 } from '../dist/core/notes-events.js'
+import { readTaskEventsV5 } from '../dist/core/notes-events.js'
 
 const cli = join(process.cwd(), 'dist/cli.js')
 const actor = 'codex:session:light-proof'
@@ -125,7 +125,7 @@ function revision(cwd, id) {
 
 function createV3(cwd, options = {}) {
   const store = initTaskStoreV2(cwd)
-  return createTaskV4(store, {
+  return createTaskV5(store, {
     title: options.title ?? 'Light fixture',
     plan: options.plan ?? plan(),
     profile: options.profile ?? 'light',
@@ -155,7 +155,7 @@ function submit(cwd, id, impact = impactNone(), extra = []) {
   const impactFile = writeJson(cwd, impact, 'impact')
   return run(cwd, [
     'submit', id, '--expect-revision', revision(cwd, id),
-    '--changes', '完成实现', '--unverified', '',
+    '--changes', '完成实现',
     '--knowledge-impact-file', impactFile, ...extra, '--json',
   ])
 }
@@ -178,8 +178,8 @@ test('checkpoint normalizes six-field Light authoring input to the complete task
 
   assert.equal(created.status, 0, created.stderr)
   const task = readTask(cwd, JSON.parse(created.stdout).task_id)
-  assert.equal(task.schema_version, 4)
-  assert.equal(task.min_writer_version, '0.4.0')
+  assert.equal(task.schema_version, 5)
+  assert.equal(task.min_writer_version, '0.5.0')
   assert.equal(task.profile, 'light')
   assert.deepEqual(task.plan, {
     ...input,
@@ -232,7 +232,7 @@ test('checkpoint CLI atomically creates request and retrospective work basis', (
   ])
   assert.equal(request.status, 0, request.stderr)
   const requestTask = readTask(cwd, JSON.parse(request.stdout).task_id)
-  assert.equal(requestTask.schema_version, 4)
+  assert.equal(requestTask.schema_version, 5)
   assert.equal(requestTask.profile, 'light')
   assert.equal(requestTask.provenance, 'clean')
   assert.equal(requestTask.phase, 'dev')
@@ -240,7 +240,7 @@ test('checkpoint CLI atomically creates request and retrospective work basis', (
   assert.equal(requestTask.work_basis.source, 'user_request')
   assert.equal(requestTask.primary_writer, actor)
   assert.deepEqual(
-    readTaskEventsV3(taskDirectory(cwd, requestTask.id)).map((event) => event.type),
+    readTaskEventsV5(taskDirectory(cwd, requestTask.id)).map((event) => event.type),
     ['task_created', 'implementation_authorized', 'work_started'],
   )
 
@@ -423,7 +423,7 @@ test('light request authorization is atomic and submit stops in review', () => {
     artifacts: [{ kind: 'prd', path: 'docs/light.md' }],
   })
 
-  assert.equal(task.schema_version, 4)
+  assert.equal(task.schema_version, 5)
   assert.equal(task.profile, 'light')
   assert.equal(task.provenance, 'clean')
   assert.equal(task.phase, 'dev')
@@ -432,7 +432,7 @@ test('light request authorization is atomic and submit stops in review', () => {
   assert.equal(task.work_basis.plan_revision, 1)
   assert.equal(task.primary_writer, actor)
   assert.deepEqual(
-    readTaskEventsV3(taskDirectory(cwd, task.id)).map((event) => event.type),
+    readTaskEventsV5(taskDirectory(cwd, task.id)).map((event) => event.type),
     ['task_created', 'implementation_authorized', 'work_started'],
   )
 
@@ -457,7 +457,7 @@ test('submit accepts inline none knowledge impact and rejects ambiguous input', 
   const impactFile = writeJson(cwd, impactNone(), 'impact')
   const combined = run(cwd, [
     'submit', task.id, '--expect-revision', revision(cwd, task.id),
-    '--changes', '完成实现', '--unverified', '',
+    '--changes', '完成实现',
     '--knowledge-impact-none', '未修改长期知识',
     '--knowledge-impact-file', impactFile,
   ])
@@ -465,14 +465,14 @@ test('submit accepts inline none knowledge impact and rejects ambiguous input', 
   assert.match(combined.stderr, /cannot be combined/)
   const empty = run(cwd, [
     'submit', task.id, '--expect-revision', revision(cwd, task.id),
-    '--changes', '完成实现', '--unverified', '', '--knowledge-impact-none', ' ',
+    '--changes', '完成实现', '--knowledge-impact-none', ' ',
   ])
   assert.notEqual(empty.status, 0)
   assert.match(empty.stderr, /must be non-empty/)
 
   const submitted = run(cwd, [
     'submit', task.id, '--expect-revision', revision(cwd, task.id),
-    '--changes', '完成实现', '--unverified', '',
+    '--changes', '完成实现',
     '--knowledge-impact-none', '未修改长期知识', '--json',
   ])
   assert.equal(submitted.status, 0, submitted.stderr)
@@ -659,7 +659,7 @@ test('standard no-verify, legacy backfill, and impact correction preserve review
     phase: legacy.phase,
     work_revision: legacy.work_revision,
     changes: legacy.submission.changes,
-    unverified: legacy.submission.unverified,
+    unverified_items: legacy.submission.unverified_items,
   }
   delete legacy.submission.plan_revision
   delete legacy.submission.knowledge_impact
@@ -676,14 +676,14 @@ test('standard no-verify, legacy backfill, and impact correction preserve review
   assert.equal(current.phase, before.phase)
   assert.equal(current.work_revision, before.work_revision)
   assert.equal(current.submission.changes, before.changes)
-  assert.equal(current.submission.unverified, before.unverified)
+  assert.deepEqual(current.submission.unverified_items, before.unverified_items)
   assert.equal(current.submission.plan_revision, current.plan_revision)
   assert.deepEqual(current.submission.knowledge_impact, impactNone())
   assert.equal(
-    readTaskEventsV3(taskDirectory(cwd, task.id)).at(-1).type,
+    readTaskEventsV5(taskDirectory(cwd, task.id)).at(-1).type,
     'submission_knowledge_impact_patched',
   )
-  const backfill = readTaskEventsV3(taskDirectory(cwd, task.id)).at(-1)
+  const backfill = readTaskEventsV5(taskDirectory(cwd, task.id)).at(-1)
   assert.equal(backfill.operation, 'backfill')
   assert.equal('reason' in backfill, false)
 
@@ -729,20 +729,20 @@ test('standard no-verify, legacy backfill, and impact correction preserve review
     {
       changes: afterCorrection.submission.changes,
       verified: afterCorrection.submission.verified,
-      unverified: afterCorrection.submission.unverified,
+      unverified_items: afterCorrection.submission.unverified_items,
       submitted_at: afterCorrection.submission.submitted_at,
       no_verify: afterCorrection.submission.no_verify,
     },
     {
       changes: beforeCorrection.submission.changes,
       verified: beforeCorrection.submission.verified,
-      unverified: beforeCorrection.submission.unverified,
+      unverified_items: beforeCorrection.submission.unverified_items,
       submitted_at: beforeCorrection.submission.submitted_at,
       no_verify: beforeCorrection.submission.no_verify,
     },
   )
   assert.deepEqual(afterCorrection.submission.knowledge_impact, correctedImpact)
-  const correction = readTaskEventsV3(taskDirectory(cwd, task.id)).at(-1)
+  const correction = readTaskEventsV5(taskDirectory(cwd, task.id)).at(-1)
   assert.equal(correction.operation, 'correction')
   assert.equal(correction.reason, '提交时错误标记为无知识影响，现修正为准确说明')
   assert.deepEqual(correction.previous_knowledge_impact, impactNone())
@@ -789,7 +789,6 @@ test('done revalidates double binding, knowledge impact, and proof', () => {
   writeTask(cwd, current)
   const stale = run(cwd, [
     'done', task.id, '--expect-revision', revision(cwd, task.id),
-    '--followup', '',
   ])
   assert.notEqual(stale.status, 0)
   assert.match(stale.stderr, /plan_revision is stale/)
@@ -800,7 +799,6 @@ test('done revalidates double binding, knowledge impact, and proof', () => {
   writeTask(cwd, current)
   const missing = run(cwd, [
     'done', task.id, '--expect-revision', revision(cwd, task.id),
-    '--followup', '',
   ])
   assert.notEqual(missing.status, 0)
   assert.match(missing.stderr, /does not have knowledge_impact/)
@@ -810,7 +808,7 @@ test('done revalidates double binding, knowledge impact, and proof', () => {
   writeTask(cwd, current)
   const completed = run(cwd, [
     'done', task.id, '--expect-revision', revision(cwd, task.id),
-    '--followup', '', '--json',
+    '--json',
   ])
   assert.equal(completed.status, 0, completed.stderr)
   assert.equal(JSON.parse(completed.stdout).outcome, 'done')
@@ -825,7 +823,7 @@ test('done revalidates double binding, knowledge impact, and proof', () => {
   assert.equal(JSON.parse(abandonedResult.stdout).archived, true)
 })
 
-test('schema 4 approve rejects incomplete drafts before task or event writes', () => {
+test('schema 5 approve rejects incomplete drafts before task or event writes', () => {
   const cases = [
     ['empty workspace scope', 'light', { workspace_scope: { paths: [] } }, authorization()],
     ['empty scope', 'light', { scope: [] }, authorization()],
@@ -839,12 +837,12 @@ test('schema 4 approve rejects incomplete drafts before task or event writes', (
     const cwd = temporaryDirectory()
     const task = createV3(cwd, { profile, plan: plan(overrides) })
     const beforeTask = readFileSync(taskPath(cwd, task.id), 'utf8')
-    const beforeEvents = readTaskEventsV3(taskDirectory(cwd, task.id))
+    const beforeEvents = readTaskEventsV5(taskDirectory(cwd, task.id))
     const denied = approve(cwd, task.id, basis)
     assert.notEqual(denied.status, 0, title)
     assert.match(denied.stderr, /not authorizable/, title)
     assert.equal(readFileSync(taskPath(cwd, task.id), 'utf8'), beforeTask, title)
-    assert.deepEqual(readTaskEventsV3(taskDirectory(cwd, task.id)), beforeEvents, title)
+    assert.deepEqual(readTaskEventsV5(taskDirectory(cwd, task.id)), beforeEvents, title)
   }
 
   const standardRoot = temporaryDirectory()

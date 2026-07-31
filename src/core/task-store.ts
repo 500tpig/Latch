@@ -30,14 +30,18 @@ import { assertWritableActor, isWritableActor } from './actor.js'
 import {
   appendTaskEventV2,
   appendTaskEventV3,
+  appendTaskEventV5,
   readTaskEventLogV3,
+  readTaskEventLogV5,
   readTaskEventsV2,
   validateTaskEventV2,
   validateTaskEventV3,
+  validateTaskEventV5,
 } from './notes-events.js'
 import { downgradeTaskEvents, downgradeTaskValue } from './migration.js'
 import {
   SCHEMA_V4_MIN_WRITER_VERSION,
+  SCHEMA_V5_MIN_WRITER_VERSION,
   TASK_EVENT_TYPES,
   TASK_EVENT_TYPES_V3,
 } from './types.js'
@@ -50,6 +54,7 @@ import type {
   RetrospectiveRecord,
   RetrospectiveRecordInput,
   TaskArtifact,
+  CloseoutResolution,
   TaskEvent,
   TaskEventType,
   TaskEventTypeV2,
@@ -66,6 +71,7 @@ import type {
 const V2_SCHEMA_VERSION = 2 as const
 const V3_SCHEMA_VERSION = 3 as const
 const V4_SCHEMA_VERSION = 4 as const
+const V5_SCHEMA_VERSION = 5 as const
 const STALE_LOCK_MILLISECONDS = 60_000
 const CANONICAL_TASK_ID =
   /^\d{17}-[a-z0-9\u4e00-\u9fa5]+(?:-[a-z0-9\u4e00-\u9fa5]+)*-[a-f0-9]{6}$/
@@ -99,6 +105,7 @@ export type CreateTaskV3Input = CreateTaskV2Input & {
 }
 
 export type CreateTaskV4Input = CreateTaskV3Input
+export type CreateTaskV5Input = CreateTaskV3Input
 
 export type TaskWriteResultV2 = {
   task: TaskV2
@@ -172,8 +179,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function isStructuredTaskSchema(schemaVersion: unknown): schemaVersion is 3 | 4 {
-  return schemaVersion === V3_SCHEMA_VERSION || schemaVersion === V4_SCHEMA_VERSION
+function isStructuredTaskSchema(schemaVersion: unknown): schemaVersion is 3 | 4 | 5 {
+  return (
+    schemaVersion === V3_SCHEMA_VERSION ||
+    schemaVersion === V4_SCHEMA_VERSION ||
+    schemaVersion === V5_SCHEMA_VERSION
+  )
 }
 
 function requireString(
@@ -197,6 +208,160 @@ function requireStringArray(
 ): asserts value is string[] {
   if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string'))
     throw new Error(`Invalid ${field} in ${path}.`)
+}
+
+function requireExactKeys(
+  value: Record<string, unknown>,
+  keys: string[],
+  field: string,
+  path: string,
+) {
+  const allowed = new Set(keys)
+  const unexpected = Object.keys(value).filter((key) => !allowed.has(key))
+  const missing = keys.filter((key) => !Object.hasOwn(value, key))
+  if (unexpected.length > 0 || missing.length > 0)
+    throw new Error(`Invalid ${field} shape in ${path}.`)
+}
+
+function assertUnverifiedItems(
+  value: unknown,
+  field: string,
+  path: string,
+) {
+  if (!Array.isArray(value)) throw new Error(`Invalid ${field} in ${path}.`)
+  for (const [index, item] of value.entries()) {
+    if (!isRecord(item)) throw new Error(`Invalid ${field} in ${path}.`)
+    requireExactKeys(item, ['item_id', 'summary'], field, path)
+    if (item.item_id !== `U${index + 1}`)
+      throw new Error(`Invalid ${field}.item_id in ${path}.`)
+    requireString(item.summary, `${field}.summary`, path)
+  }
+}
+
+function validExternalAccountUri(value: unknown) {
+  if (typeof value !== 'string') return false
+  try {
+    const uri = new URL(value)
+    if (uri.username || uri.password) return false
+    if (uri.protocol === 'mailto:') {
+      const separator = uri.pathname.indexOf('@')
+      return (
+        separator > 0 &&
+        separator < uri.pathname.length - 1 &&
+        !uri.search &&
+        !uri.hash
+      )
+    }
+    return (
+      uri.protocol === 'https:' &&
+      Boolean(uri.hostname) &&
+      uri.pathname !== '/' &&
+      uri.pathname !== ''
+    )
+  } catch {
+    return false
+  }
+}
+
+function assertCloseoutResolutions(
+  value: unknown,
+  items: unknown,
+  path: string,
+): asserts value is CloseoutResolution[] {
+  if (!Array.isArray(value))
+    throw new Error(`Invalid closure.resolutions in ${path}.`)
+  assertUnverifiedItems(items, 'closure.unverified_items', path)
+  const expectedIds = new Set(
+    (items as Array<{ item_id: string }>).map((item) => item.item_id),
+  )
+  const seen = new Set<string>()
+  for (const resolution of value) {
+    if (!isRecord(resolution))
+      throw new Error(`Invalid closure.resolutions in ${path}.`)
+    requireString(resolution.item_id, 'closure.resolutions.item_id', path)
+    if (!expectedIds.has(resolution.item_id as string))
+      throw new Error(`Unknown closure resolution item_id in ${path}.`)
+    if (seen.has(resolution.item_id as string))
+      throw new Error(`Duplicate closure resolution item_id in ${path}.`)
+    seen.add(resolution.item_id as string)
+    if (resolution.outcome === 'resolved') {
+      requireExactKeys(
+        resolution,
+        ['item_id', 'outcome', 'resolution'],
+        'closure.resolutions.resolved',
+        path,
+      )
+      requireString(resolution.resolution, 'closure.resolutions.resolution', path)
+      continue
+    }
+    if (resolution.outcome === 'accepted_risk') {
+      requireExactKeys(
+        resolution,
+        ['item_id', 'outcome', 'user_acceptance'],
+        'closure.resolutions.accepted_risk',
+        path,
+      )
+      if (!isRecord(resolution.user_acceptance))
+        throw new Error(`Invalid closure.resolutions.user_acceptance in ${path}.`)
+      requireExactKeys(
+        resolution.user_acceptance,
+        ['accepted_by', 'statement', 'recorded_at'],
+        'closure.resolutions.user_acceptance',
+        path,
+      )
+      if (resolution.user_acceptance.accepted_by !== 'user')
+        throw new Error(`Invalid closure.resolutions.accepted_by in ${path}.`)
+      requireString(
+        resolution.user_acceptance.statement,
+        'closure.resolutions.user_acceptance.statement',
+        path,
+      )
+      requireString(
+        resolution.user_acceptance.recorded_at,
+        'closure.resolutions.user_acceptance.recorded_at',
+        path,
+      )
+      continue
+    }
+    if (resolution.outcome === 'followup') {
+      requireExactKeys(
+        resolution,
+        ['item_id', 'outcome', 'followup'],
+        'closure.resolutions.followup',
+        path,
+      )
+      if (!isRecord(resolution.followup))
+        throw new Error(`Invalid closure.resolutions.followup in ${path}.`)
+      requireExactKeys(
+        resolution.followup,
+        ['action', 'owner'],
+        'closure.resolutions.followup',
+        path,
+      )
+      requireString(
+        resolution.followup.action,
+        'closure.resolutions.followup.action',
+        path,
+      )
+      if (!isRecord(resolution.followup.owner))
+        throw new Error(`Invalid closure.resolutions.followup.owner in ${path}.`)
+      requireExactKeys(
+        resolution.followup.owner,
+        ['kind', 'account_uri'],
+        'closure.resolutions.followup.owner',
+        path,
+      )
+      if (
+        resolution.followup.owner.kind !== 'external' ||
+        !validExternalAccountUri(resolution.followup.owner.account_uri)
+      )
+        throw new Error(`Invalid closure.resolutions.followup.owner in ${path}.`)
+      continue
+    }
+    throw new Error(`Invalid closure resolution outcome in ${path}.`)
+  }
+  if (seen.size !== expectedIds.size)
+    throw new Error(`Missing closure resolution item_id in ${path}.`)
 }
 
 export function assertGroupIdV3(
@@ -509,28 +674,35 @@ function assertTaskV2(value: unknown, path: string): asserts value is TaskV2 {
     !isRecord(value) ||
     (value.schema_version !== V2_SCHEMA_VERSION &&
       value.schema_version !== V3_SCHEMA_VERSION &&
-      value.schema_version !== V4_SCHEMA_VERSION)
+      value.schema_version !== V4_SCHEMA_VERSION &&
+      value.schema_version !== V5_SCHEMA_VERSION)
   )
     throw new Error(`Unsupported or invalid Latch task schema in ${path}.`)
-  if (value.schema_version === V4_SCHEMA_VERSION) {
-    if (value.min_writer_version !== SCHEMA_V4_MIN_WRITER_VERSION)
+  if (
+    value.schema_version === V4_SCHEMA_VERSION ||
+    value.schema_version === V5_SCHEMA_VERSION
+  ) {
+    const minimumWriter = value.schema_version === V5_SCHEMA_VERSION
+      ? SCHEMA_V5_MIN_WRITER_VERSION
+      : SCHEMA_V4_MIN_WRITER_VERSION
+    if (value.min_writer_version !== minimumWriter)
       throw new Error(
-        `Invalid min_writer_version in ${path}: schema_version 4 requires ${SCHEMA_V4_MIN_WRITER_VERSION}.`,
+        `Invalid min_writer_version in ${path}: schema_version ${value.schema_version} requires ${minimumWriter}.`,
       )
     if (!Object.hasOwn(value, 'primary_writer'))
-      throw new Error(`Invalid primary_writer in ${path}: schema_version 4 requires a writer.`)
+      throw new Error(`Invalid primary_writer in ${path}: schema_version ${value.schema_version} requires a writer.`)
     if (!Object.hasOwn(value, 'profile'))
-      throw new Error(`Invalid profile in ${path}: schema_version 4 requires a profile.`)
+      throw new Error(`Invalid profile in ${path}: schema_version ${value.schema_version} requires a profile.`)
     if (!Object.hasOwn(value, 'provenance'))
-      throw new Error(`Invalid provenance in ${path}: schema_version 4 requires provenance.`)
+      throw new Error(`Invalid provenance in ${path}: schema_version ${value.schema_version} requires provenance.`)
   } else if (Object.hasOwn(value, 'min_writer_version')) {
     throw new Error(
-      `Invalid min_writer_version in ${path}: schema_version 4 is required.`,
+      `Invalid min_writer_version in ${path}: schema_version 4 or 5 is required.`,
     )
   }
   if (Object.hasOwn(value, 'primary_writer')) {
     if (!isStructuredTaskSchema(value.schema_version))
-      throw new Error(`Invalid primary_writer in ${path}: schema_version 3 or 4 is required.`)
+      throw new Error(`Invalid primary_writer in ${path}: structured task schema is required.`)
     if (
       typeof value.primary_writer !== 'string' ||
       !isWritableActor(value.primary_writer)
@@ -539,24 +711,24 @@ function assertTaskV2(value: unknown, path: string): asserts value is TaskV2 {
   }
   if (value.profile !== undefined) {
     if (!isStructuredTaskSchema(value.schema_version))
-      throw new Error(`Invalid profile in ${path}: schema_version 3 or 4 is required.`)
+      throw new Error(`Invalid profile in ${path}: structured task schema is required.`)
     if (value.profile !== 'light' && value.profile !== 'standard')
       throw new Error(`Invalid profile in ${path}.`)
   }
   if (Object.hasOwn(value, 'provenance')) {
     if (!isStructuredTaskSchema(value.schema_version))
-      throw new Error(`Invalid provenance in ${path}: schema_version 3 or 4 is required.`)
+      throw new Error(`Invalid provenance in ${path}: structured task schema is required.`)
     if (value.provenance !== 'clean' && value.provenance !== 'mixed')
       throw new Error(`Invalid provenance in ${path}.`)
   }
   if (Object.hasOwn(value, 'group_id')) {
     if (!isStructuredTaskSchema(value.schema_version))
-      throw new Error(`Invalid group_id in ${path}: schema_version 3 or 4 is required.`)
+      throw new Error(`Invalid group_id in ${path}: structured task schema is required.`)
     assertGroupIdV3(value.group_id, path)
   }
   if (Object.hasOwn(value, 'source_record')) {
     if (!isStructuredTaskSchema(value.schema_version))
-      throw new Error(`Invalid source_record in ${path}: schema_version 3 or 4 is required.`)
+      throw new Error(`Invalid source_record in ${path}: structured task schema is required.`)
     if (!isRecord(value.source_record))
       throw new Error(`Invalid source_record in ${path}.`)
     requireString(value.source_record.record_id, 'source_record.record_id', path)
@@ -575,7 +747,7 @@ function assertTaskV2(value: unknown, path: string): asserts value is TaskV2 {
   }
   if (value.work_basis !== undefined) {
     if (!isStructuredTaskSchema(value.schema_version))
-      throw new Error(`Invalid work_basis in ${path}: schema_version 3 or 4 is required.`)
+      throw new Error(`Invalid work_basis in ${path}: structured task schema is required.`)
     assertWorkBasis(value.work_basis, path)
   }
   requireString(value.id, 'id', path)
@@ -657,7 +829,7 @@ function assertTaskV2(value: unknown, path: string): asserts value is TaskV2 {
     if (value.submission.plan_revision !== undefined) {
       if (!isStructuredTaskSchema(value.schema_version))
         throw new Error(
-          `Invalid submission.plan_revision in ${path}: schema_version 3 or 4 is required.`,
+          `Invalid submission.plan_revision in ${path}: structured task schema is required.`,
         )
       requireInteger(
         value.submission.plan_revision,
@@ -669,13 +841,25 @@ function assertTaskV2(value: unknown, path: string): asserts value is TaskV2 {
     requireString(value.submission.changes, 'submission.changes', path)
     if (typeof value.submission.verified !== 'string')
       throw new Error(`Invalid submission.verified in ${path}.`)
-    if (typeof value.submission.unverified !== 'string')
-      throw new Error(`Invalid submission.unverified in ${path}.`)
+    if (value.schema_version === V5_SCHEMA_VERSION) {
+      if (Object.hasOwn(value.submission, 'unverified'))
+        throw new Error(`Invalid submission.unverified in ${path}: schema_version 5 uses unverified_items.`)
+      assertUnverifiedItems(
+        value.submission.unverified_items,
+        'submission.unverified_items',
+        path,
+      )
+    } else {
+      if (typeof value.submission.unverified !== 'string')
+        throw new Error(`Invalid submission.unverified in ${path}.`)
+      if (Object.hasOwn(value.submission, 'unverified_items'))
+        throw new Error(`Invalid submission.unverified_items in ${path}.`)
+    }
     requireString(value.submission.submitted_at, 'submission.submitted_at', path)
     if (value.submission.knowledge_impact !== undefined) {
       if (!isStructuredTaskSchema(value.schema_version))
         throw new Error(
-          `Invalid submission.knowledge_impact in ${path}: schema_version 3 or 4 is required.`,
+          `Invalid submission.knowledge_impact in ${path}: structured task schema is required.`,
         )
       assertKnowledgeImpact(value.submission.knowledge_impact, value.artifacts, path)
     }
@@ -689,15 +873,46 @@ function assertTaskV2(value: unknown, path: string): asserts value is TaskV2 {
       )
     }
   }
+  if (value.schema_version === V5_SCHEMA_VERSION && value.outcome === 'done') {
+    if (value.submission === undefined)
+      throw new Error(`Invalid schema 5 done task in ${path}: submission is required.`)
+    if (value.closure === undefined)
+      throw new Error(`Invalid schema 5 done task in ${path}: closure is required.`)
+  }
   if (value.closure !== undefined) {
     if (!isRecord(value.closure)) throw new Error(`Invalid closure in ${path}.`)
     requireString(value.closure.changes, 'closure.changes', path)
     if (typeof value.closure.verified !== 'string')
       throw new Error(`Invalid closure.verified in ${path}.`)
-    if (typeof value.closure.unverified !== 'string')
-      throw new Error(`Invalid closure.unverified in ${path}.`)
-    if (typeof value.closure.followup !== 'string')
-      throw new Error(`Invalid closure.followup in ${path}.`)
+    if (value.schema_version === V5_SCHEMA_VERSION) {
+      if (
+        Object.hasOwn(value.closure, 'unverified') ||
+        Object.hasOwn(value.closure, 'followup')
+      )
+        throw new Error(`Invalid legacy closeout fields in ${path}.`)
+      assertCloseoutResolutions(
+        value.closure.resolutions,
+        value.closure.unverified_items,
+        path,
+      )
+      if (!value.submission)
+        throw new Error(`Invalid closure in ${path}: submission is required.`)
+      if (
+        JSON.stringify(value.closure.unverified_items) !==
+        JSON.stringify(value.submission.unverified_items)
+      )
+        throw new Error(`Invalid closure.unverified_items in ${path}.`)
+    } else {
+      if (typeof value.closure.unverified !== 'string')
+        throw new Error(`Invalid closure.unverified in ${path}.`)
+      if (typeof value.closure.followup !== 'string')
+        throw new Error(`Invalid closure.followup in ${path}.`)
+      if (
+        Object.hasOwn(value.closure, 'unverified_items') ||
+        Object.hasOwn(value.closure, 'resolutions')
+      )
+        throw new Error(`Invalid structured closeout fields in ${path}.`)
+    }
     requireString(value.closure.accepted_at, 'closure.accepted_at', path)
   }
 }
@@ -926,8 +1141,9 @@ export function readArchivedTaskV2(
 }
 
 function readTaskEventLogFromDirectory(task: TaskV2, directory: string) {
-  if (isStructuredTaskSchema(task.schema_version))
-    return readTaskEventLogV3(directory)
+  if (task.schema_version === V5_SCHEMA_VERSION)
+    return readTaskEventLogV5(directory)
+  if (isStructuredTaskSchema(task.schema_version)) return readTaskEventLogV3(directory)
   return { events: readTaskEventsV2(directory), warnings: [] }
 }
 
@@ -1096,7 +1312,9 @@ function makeTaskEvent(
 }
 
 function validateTaskEventForTask(task: TaskV2, event: TaskEvent, path: string) {
-  if (isStructuredTaskSchema(task.schema_version))
+  if (task.schema_version === V5_SCHEMA_VERSION)
+    validateTaskEventV5(event, path)
+  else if (isStructuredTaskSchema(task.schema_version))
     validateTaskEventV3(event, path)
   else validateTaskEventV2(event, path)
 }
@@ -1106,7 +1324,9 @@ function appendTaskEventForTask(
   task: TaskV2,
   event: TaskEvent,
 ) {
-  if (isStructuredTaskSchema(task.schema_version))
+  if (task.schema_version === V5_SCHEMA_VERSION)
+    appendTaskEventV5(taskDirectory, event)
+  else if (isStructuredTaskSchema(task.schema_version))
     appendTaskEventV3(taskDirectory, event)
   else appendTaskEventV2(taskDirectory, event)
 }
@@ -1118,9 +1338,9 @@ function eventWriteWarning(task: TaskV2, error: unknown) {
 
 function createTask(
   store: TaskStoreV2,
-  input: CreateTaskV2Input | CreateTaskV3Input | CreateTaskV4Input,
+  input: CreateTaskV2Input | CreateTaskV3Input | CreateTaskV4Input | CreateTaskV5Input,
   actor: string,
-  schemaVersion: 2 | 3 | 4,
+  schemaVersion: 2 | 3 | 4 | 5,
 ): TaskWriteResultV2 {
   assertWritableActor(actor)
   requireString(input.title, 'title', 'checkpoint input')
@@ -1152,7 +1372,10 @@ function createTask(
     : undefined
   if (groupId !== undefined) assertGroupIdV3(groupId, 'checkpoint input')
   if (workBasisInput) {
-    if (schemaVersion === V4_SCHEMA_VERSION)
+    if (
+      schemaVersion === V4_SCHEMA_VERSION ||
+      schemaVersion === V5_SCHEMA_VERSION
+    )
       assertAuthorizableTaskPlan(input.plan, profile!, 'checkpoint input')
     else if (input.plan.open_questions.length > 0)
       throw new Error('Cannot create work_basis while plan.open_questions is not empty.')
@@ -1165,6 +1388,8 @@ function createTask(
     schema_version: schemaVersion,
     ...(schemaVersion === V4_SCHEMA_VERSION
       ? { min_writer_version: SCHEMA_V4_MIN_WRITER_VERSION }
+      : schemaVersion === V5_SCHEMA_VERSION
+        ? { min_writer_version: SCHEMA_V5_MIN_WRITER_VERSION }
       : {}),
     id,
     title: input.title.trim(),
@@ -1253,7 +1478,7 @@ function createTask(
   return { task, warnings }
 }
 
-// createTaskV2/createTaskV3 只保留给 legacy fixture；CLI checkpoint 使用 schema 4。
+// createTaskV2/createTaskV3/createTaskV4 只保留给 legacy fixture；CLI checkpoint 使用 schema 5。
 export function createTaskV2(
   store: TaskStoreV2,
   input: CreateTaskV2Input,
@@ -1276,6 +1501,14 @@ export function createTaskV4(
   actor: string,
 ): TaskWriteResultV2 {
   return createTask(store, input, actor, V4_SCHEMA_VERSION)
+}
+
+export function createTaskV5(
+  store: TaskStoreV2,
+  input: CreateTaskV5Input,
+  actor: string,
+): TaskWriteResultV2 {
+  return createTask(store, input, actor, V5_SCHEMA_VERSION)
 }
 
 export function currentTaskIdV2(store: TaskStoreV2, actor: string) {
@@ -1394,7 +1627,10 @@ function assertCurrentWriterSchema(task: TaskV2) {
       `Schema 3 task is read-only: run latch upgrade-v4 --task ${task.id} ` +
         `--expect-revision ${task.revision} before writing.`,
     )
-  if (task.schema_version !== V4_SCHEMA_VERSION)
+  if (
+    task.schema_version !== V4_SCHEMA_VERSION &&
+    task.schema_version !== V5_SCHEMA_VERSION
+  )
     throw new Error(
       'Task is legacy_unclaimed: write denied.\n' +
         'Claim this task after an explicit user continue/handle request for this task id.',
@@ -1747,7 +1983,10 @@ export function downgradeTaskV2(
             `Run latch context ${current.id} --json --brief and retry.`,
         )
       }
-      if (!isStructuredTaskSchema(current.schema_version))
+      if (
+        current.schema_version !== V3_SCHEMA_VERSION &&
+        current.schema_version !== V4_SCHEMA_VERSION
+      )
         throw new Error('downgrade-v2 requires a schema_version 3 or 4 task.')
       if (!archived) assertPrimaryWriter(current, options.actor)
 

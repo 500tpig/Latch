@@ -8,13 +8,27 @@ description: Track Latch tasks for repository writes and behavior changes, and h
 Use for repository writes and observable behavior changes. Pure Q&A, read-only work,
 no-write requests, and explicit no-Latch requests do not create tasks.
 
+## Select the task runner first
+
+Never use bare `latch` in this candidate worktree.
+
+- Use `node <candidate-worktree>/dist/cli.js` for reads and schema 5 task
+  mutations. New candidate tasks use schema 5 with minimum writer `0.5.0`.
+- Use only the handoff manifest's absolute immutable `0.4.0` runner for the S3
+  schema 4 implementation task. Keep the schema 4 `--unverified` and
+  `--followup` command contract unchanged.
+- Read `task_schema_version` from `context <task-id> --json --status` before a
+  mutation. Stop when the task schema or runner cannot be determined. Candidate
+  CLI `0.5.0` must not mutate schema 2–4 tasks.
+
 ## Start with bounded state
 
-1. Run `git status --short`, then `latch list --json --brief`. On
-   `not_initialized`: stop; no template/plan/`checkpoint`/`latch init`. Explicit
+1. Run `git status --short`, then use the candidate CLI for `list --json --brief`. On
+   `not_initialized`: stop; no template/plan/`checkpoint`/`init`. Explicit
    one-off/no-Latch proceeds; else report/await init choice.
 2. task ID/`current_task_id`: run
-   `latch context <task-id> --json --status`. If neither exists, do not call context.
+   the candidate CLI for `context <task-id> --json --status`. If neither exists,
+   do not call context.
 3. Read artifacts first; use 1–3 `docs/INDEX.md` docs only when
    task affects product contracts, architecture/install/docs, or evidence is insufficient.
 
@@ -54,8 +68,8 @@ group, batch, Git, archive, cancellation, claim, or takeover authority.
 Fill the Light scaffold, then create and authorize atomically:
 
 ```bash
-latch checkpoint --print-plan-template light
-latch checkpoint "Task title" --plan-file plan.json --profile light --authorize-request "User requested this scoped change" --scope-summary "Bounded scope" --scope-path path/to/file --json
+node <candidate-worktree>/dist/cli.js checkpoint --print-plan-template light
+node <candidate-worktree>/dist/cli.js checkpoint "Task title" --plan-file plan.json --profile light --authorize-request "User requested this scoped change" --scope-summary "Bounded scope" --scope-path path/to/file --json
 ```
 
 Light fields: `goal`, `workspace_scope`, `scope`, `acceptance`, `approach`,
@@ -69,7 +83,8 @@ named gate, submit to `review`, wait; never auto-complete.
 ### Standard plan
 
 Complete 12 Standard fields into `--plan-file`. Full plan truth stays in the plan
-file and task store for Latch-Board task detail or `latch context <task-id>`.
+file and task store for Latch-Board task detail or the selected runner's
+`context <task-id>`.
 
 Default chat is short decision highlights only, not a plan dump:
 
@@ -85,14 +100,14 @@ Keep paths, identifiers, keys, and commands in inline code.
 Then create:
 
 ```bash
-latch checkpoint --print-plan-template standard
-latch checkpoint "Task title" --plan-file plan.json --json
+node <candidate-worktree>/dist/cli.js checkpoint --print-plan-template standard
+node <candidate-worktree>/dist/cli.js checkpoint "Task title" --plan-file plan.json --json
 ```
 
 After explicit implementation authorization and authorizable validation succeeds:
 
 ```bash
-latch approve <task-id> --expect-revision <n> --reason "User approved the current plan" --json
+node <candidate-worktree>/dist/cli.js approve <task-id> --expect-revision <n> --reason "User approved the current plan" --json
 ```
 
 Implement, run every named gate, submit to `review`, and wait. Creation or
@@ -104,20 +119,27 @@ Use only when status shows `phase: review`, every gate is `pass`, `stale` and
 `pending` are zero, and the user explicitly requests completion, archive,
 takeover, or Git delivery without renewed review.
 
-1. Read `latch context <task-id> --json --status`. Writer mismatch is fail closed;
+1. Read `context <task-id> --json --status` with the candidate CLI. Writer mismatch is fail closed;
    follow [session actors and handoff](references/session-actors-and-handoff.md)
    and run takeover only with explicit authorization:
 
 ```bash
-latch takeover <task-id> --expect-revision <n> --reason "User authorized takeover" --json
+node <selected-runner>/dist/cli.js takeover <task-id> --expect-revision <n> --reason "User authorized takeover" --json
 ```
 
-2. Read the bounded brief and reconcile `submission.unverified` under
+2. Read the bounded brief and reconcile the submission under
    [task lifecycle](references/task-lifecycle.md). Archive intent alone is not risk
-   acceptance. Run `done` only with explicit completion or archive authorization:
+   acceptance. For schema 5, provide exactly one resolution for each
+   `submission.unverified_items` entry:
 
 ```bash
-latch done <task-id> --expect-revision <n> --followup "Concrete next action, or no follow-up and why" --json
+node <candidate-worktree>/dist/cli.js done <task-id> --expect-revision <n> --closeout-file closeout.json --json
+```
+
+For the S3 schema 4 task, keep using the immutable runner and its legacy command:
+
+```bash
+node <immutable-runner>/dist/cli.js done <task-id> --expect-revision <n> --followup "Concrete next action, or no follow-up and why" --json
 ```
 
 Do not rerun an already passed, non-stale full build solely for closeout. Git
@@ -136,10 +158,10 @@ delivery remains separate and needs separate authorization.
   instruction-only commands such as `echo`, `printf`, and `true` are not evidence.
 - New and updated plans require repo-relative POSIX `workspace_scope.paths`; never
   infer machine scope from prose, authorization, or artifacts.
-- New tasks use schema 4 with minimum writer `0.4.0`; schema 3 is read-only.
-  Run `upgrade-v4` only after explicit authorization; prefer its current writer.
-  Recovery needs explicit task/revision authorization. Never upgrade during reads,
-  startup, build, or verification.
+- New candidate tasks use schema 5 with minimum writer `0.5.0`. Schema 2–4 tasks
+  are read-only to candidate CLI `0.5.0`; use the matching runner selected from
+  the handoff or migration contract. Never migrate during reads, startup, build,
+  or verification.
 - A gate pass requires successful command outcome, complete evidence, no covered
   mutation, current proof generation, and no unresolved violation. Preserve
   mutations for inspection; never reset, clean, stash, or auto-widen scope.

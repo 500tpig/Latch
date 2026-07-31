@@ -1,0 +1,44 @@
+{
+  "task_schema_version": 5,
+  "min_writer_version": "0.5.0",
+  "review": {
+    "unverified_count": 3,
+    "resolution_pending_count": 3,
+    "next_action": "prepare_closeout",
+    "item_ids": ["U1", "U2", "U3"]
+  },
+  "archive": {
+    "outcome": "done",
+    "resolution_pending_count": 0,
+    "resolution_counts": {
+      "resolved": 1,
+      "accepted_risk": 1,
+      "followup": 1
+    },
+    "accepted_by": "user",
+    "followup_owner": "https://github.com/orgs/example/teams/runtime"
+  },
+  "human": {
+    "review_lines": [
+      "Task schema: 5",
+      "Phase: review",
+      "Unverified items: 3"
+    ],
+    "archive_lines": [
+      "Outcome: done",
+      "Closeout outcomes: resolved=1, accepted_risk=1, followup=1"
+    ]
+  },
+  "events": {
+    "events_schema_version": 3,
+    "submitted_fields": [
+      "unverified_item_ids",
+      "unverified_count"
+    ],
+    "done_fields": [
+      "resolved_count",
+      "accepted_risk_count",
+      "followup_count"
+    ]
+  }
+}

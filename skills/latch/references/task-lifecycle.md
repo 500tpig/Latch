@@ -6,8 +6,8 @@ Read this reference for plan structure, checkpoint and approve details, feedback
 
 - Create a task only from a complete plan file. Keep paths, identifiers, keys, and commands in inline code, and keep each plan item to one sentence.
 - New/updated plans need normalized repo-relative POSIX `workspace_scope.paths`; never infer it from prose, authorization, or artifacts.
-- New tasks use schema 4. Treat schema 3 as read-only and run the explicitly authorized single-task `upgrade-v4` before any lifecycle mutation; never upgrade during context, build, or verification.
-- Shape validation keeps history readable; writable validation requires schema 4 `workspace_scope`. Scaffolds are shape-only. Before `work_basis` writes, run authorizable validation by profile. Before approval, chat shows short decision highlights and the task id; full plan stays in the task store for Latch-Board or `latch context`. Do not paste full plan JSON or dump all plan fields by default.
+- New candidate tasks use schema 5 with minimum writer `0.5.0`. Candidate CLI `0.5.0` reads schema 2–5 but rejects schema 2–4 mutations; use only the runner selected by the handoff or migration contract for older tasks. Never migrate during context, build, or verification.
+- Shape validation keeps history readable; writable validation requires `workspace_scope`. Scaffolds are shape-only. Before `work_basis` writes, run authorizable validation by profile. Before approval, chat shows short decision highlights and the task id; full plan stays in the task store for Latch-Board or the selected runner's `context`. Do not paste full plan JSON or dump all plan fields by default.
 - Use `source: user_request` for a complete low-risk request, `source: user_delta` for a precise low-risk addition to the current plan, and `source: user_approve` after explicit approval of the current Standard plan.
 - Use `checkpoint --retrospective-file` only for an honest after-the-fact record when no matching open task exists.
 - Use `save --plan-file` when goal, scope, acceptance, contracts, user flow, or important boundaries change. This returns the task to `plan` and requires new approval.
@@ -23,8 +23,8 @@ Read this reference for plan structure, checkpoint and approve details, feedback
 
 - When authoring `verification_plan`, avoid redundant named gates: every gate must add distinct proof. If a final comprehensive gate already runs typecheck, build, or the full test suite, keep subsumed steps as development diagnostics unless they verify a distinct acceptance requirement. Once approved, never skip a named gate because its proof overlaps another gate.
 - Never use `echo`, `printf`, `true`, or a command whose only effect is to print instructions as a gate; a zero exit code from such a command does not prove that a manual step occurred.
-- Put a manual step in a non-gating diagnostic when the plan needs to preserve it as an instruction, or in `submission.unverified` while acceptance remains outstanding; diagnostic success never verifies the manual action.
-- Run every named gate from the approved plan with `latch verify <task-id> --expect-revision <n> --name <gate-name> --json`.
+- Put a manual step in a non-gating diagnostic when the plan needs to preserve it as an instruction, or in a repeated schema 5 `submit --unverified <summary>` item while acceptance remains outstanding; diagnostic success never verifies the manual action.
+- Run every named gate from the approved plan with the task's selected runner: `verify <task-id> --expect-revision <n> --name <gate-name> --json`.
 - A gate passes only when its command succeeds, workspace evidence is complete, covered workspace is unchanged, and its proof binds the current work revision and generation with no unresolved violation.
 - Preserve gate mutations for user inspection. Do not reset, clean, stash, or auto-approve a wider scope; scope changes return to plan and require explicit approval.
 - `verify-all` stops on command failure, evidence error, workspace mutation, scope violation, or gate-to-gate baseline mismatch. Reuse each successful JSON revision and rerun all stale named gates on the current generation.
@@ -38,17 +38,34 @@ Read this reference for plan structure, checkpoint and approve details, feedback
 ## Finish
 
 - Inspect open tasks and mutate only the named task.
-- Before `done`, read the bounded brief and compare the current
-  `submission.unverified` with the user's latest explicit review acceptance.
-- An archive request alone is not acceptance of remaining risk. If an unverified
-  item remains unresolved, `followup` must name its owner and next action or record
-  the user's explicit risk acceptance.
-- If manual verification completed after submit, `followup` must record the
-  concrete action and observed result as a new acceptance fact, then identify
-  which prior unverified item it resolves.
-- Use "no follow-up" only when no unresolved unverified item remains, and state the
-  concrete reason. If the required acceptance fact, owner, or next action is
-  missing, remain in review and ask for it.
-- Run `done` only after explicit completion/archive authorization. Write a concrete next task/action in `followup`, or state that there is no follow-up and why.
+- Before `done`, read the bounded brief and compare every current
+  `submission.unverified_items` entry with the user's latest explicit review
+  acceptance. Archive intent alone is not risk acceptance.
+- For schema 5, pass `--closeout-file <path>` containing exactly one resolution
+  for every item ID. Unknown, duplicate, or missing item IDs fail before task,
+  event, or archive writes. A task with zero items may omit `--closeout-file`.
+- Each schema 5 resolution has one of these exact shapes:
+
+```json
+{
+  "resolutions": [
+    { "item_id": "U1", "outcome": "resolved", "resolution": "Observed result" },
+    { "item_id": "U2", "outcome": "accepted_risk", "user_acceptance": { "statement": "Explicit user acceptance" } },
+    { "item_id": "U3", "outcome": "followup", "followup": { "action": "Concrete next action", "owner": { "kind": "external", "account_uri": "https://example.com/teams/runtime" } } }
+  ]
+}
+```
+
+- Core records `accepted_by: "user"` and `recorded_at` for `accepted_risk`.
+  `followup.owner.account_uri` must be an absolute `mailto:` address or an
+  absolute credential-free `https:` URL with a non-root path identifying a
+  concrete account or team page. Role text, relative URLs, unknown protocols,
+  and URLs containing credentials are invalid.
+- If required acceptance, an observed result, a stable owner, or the next action
+  is missing, remain in review and ask for it. Do not create follow-up tasks,
+  issues, Records, or reminders automatically.
+- The S3 schema 4 implementation task keeps the immutable CLI `0.4.0` and legacy
+  `--followup` contract; do not send schema 5 closeout input to that runner.
+- Run `done` only after explicit completion/archive authorization.
 - Run `abandon` only after explicit cancellation authorization.
 - Never treat task-level authorization as Git authorization.

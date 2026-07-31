@@ -48,6 +48,11 @@ function validKnowledgeImpact(value: unknown): value is EventKnowledgeImpact {
   )
 }
 
+function exactKeys(value: Record<string, unknown>, allowed: string[]) {
+  const keys = new Set(allowed)
+  return Object.keys(value).every((key) => keys.has(key))
+}
+
 function validateTaskEvent(
   value: unknown,
   path: string,
@@ -231,6 +236,59 @@ export function validateTaskEventV3(
   validateTaskEvent(value, path, taskEventTypesV3)
 }
 
+export function validateTaskEventV5(
+  value: unknown,
+  path: string,
+): asserts value is TaskEvent {
+  validateTaskEventV3(value, path)
+  if (!isRecord(value)) throw new Error(`Invalid schema 5 event in ${path}.`)
+  const base = ['type', 'task_id', 'actor', 'revision', 'created_at']
+  if (value.type === 'submitted') {
+    if (
+      !exactKeys(value, [
+        ...base,
+        'plan_revision',
+        'work_revision',
+        'no_verify',
+        'knowledge_impact_kind',
+        'unverified_item_ids',
+        'unverified_count',
+      ]) ||
+      !Number.isInteger(value.plan_revision) ||
+      (value.plan_revision as number) < 1 ||
+      !Number.isInteger(value.work_revision) ||
+      (value.work_revision as number) < 0 ||
+      typeof value.no_verify !== 'boolean' ||
+      !Array.isArray(value.unverified_item_ids) ||
+      value.unverified_item_ids.some(
+        (item, index) => item !== `U${index + 1}`,
+      ) ||
+      value.unverified_count !== value.unverified_item_ids.length ||
+      (value.knowledge_impact_kind !== undefined &&
+        value.knowledge_impact_kind !== 'none' &&
+        value.knowledge_impact_kind !== 'updated')
+    )
+      throw new Error(`Invalid schema 5 submitted event in ${path}.`)
+  }
+  if (value.type === 'done') {
+    if (
+      !exactKeys(value, [
+        ...base,
+        'resolved_count',
+        'accepted_risk_count',
+        'followup_count',
+      ]) ||
+      !Number.isInteger(value.resolved_count) ||
+      (value.resolved_count as number) < 0 ||
+      !Number.isInteger(value.accepted_risk_count) ||
+      (value.accepted_risk_count as number) < 0 ||
+      !Number.isInteger(value.followup_count) ||
+      (value.followup_count as number) < 0
+    )
+      throw new Error(`Invalid schema 5 done event in ${path}.`)
+  }
+}
+
 function validateTaskEventsMeta(
   value: unknown,
   path: string,
@@ -276,6 +334,10 @@ export function appendTaskEventV3(taskDirectory: string, eventEntry: TaskEvent) 
   appendTaskEvent(taskDirectory, eventEntry, validateTaskEventV3)
 }
 
+export function appendTaskEventV5(taskDirectory: string, eventEntry: TaskEvent) {
+  appendTaskEvent(taskDirectory, eventEntry, validateTaskEventV5)
+}
+
 function readTaskEvents(
   taskDirectory: string,
   validate: TaskEventValidator,
@@ -302,7 +364,10 @@ export type TaskEventLogV3 = {
   warnings: string[]
 }
 
-export function readTaskEventLogV3(taskDirectory: string): TaskEventLogV3 {
+function readTaskEventLog(
+  taskDirectory: string,
+  validate: TaskEventValidator,
+): TaskEventLogV3 {
   const eventsPath = join(taskDirectory, 'events.jsonl')
   if (!existsSync(eventsPath)) return { events: [], warnings: [] }
   const lines = readFileSync(eventsPath, 'utf8').split('\n')
@@ -340,7 +405,7 @@ export function readTaskEventLogV3(taskDirectory: string): TaskEventLogV3 {
       continue
     }
     try {
-      validateTaskEventV3(entry, entryPath)
+      validate(entry, entryPath)
       events.push(entry)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -350,6 +415,14 @@ export function readTaskEventLogV3(taskDirectory: string): TaskEventLogV3 {
   return { ...(meta ? { meta } : {}), events, warnings }
 }
 
+export function readTaskEventLogV3(taskDirectory: string): TaskEventLogV3 {
+  return readTaskEventLog(taskDirectory, validateTaskEventV3)
+}
+
+export function readTaskEventLogV5(taskDirectory: string): TaskEventLogV3 {
+  return readTaskEventLog(taskDirectory, validateTaskEventV5)
+}
+
 // v2 不再生成 notes.md；当前状态读 task.json，历史只从 events.jsonl 读取。
 export function readTaskEventsV2(taskDirectory: string): TaskEvent[] {
   return readTaskEvents(taskDirectory, validateTaskEventV2)
@@ -357,4 +430,8 @@ export function readTaskEventsV2(taskDirectory: string): TaskEvent[] {
 
 export function readTaskEventsV3(taskDirectory: string): TaskEvent[] {
   return readTaskEventLogV3(taskDirectory).events
+}
+
+export function readTaskEventsV5(taskDirectory: string): TaskEvent[] {
+  return readTaskEventLogV5(taskDirectory).events
 }

@@ -234,12 +234,61 @@ export type KnowledgeImpact =
       artifact_refs: TaskArtifact[]
     }
 
+export type UnverifiedItem = {
+  item_id: string
+  summary: string
+}
+
+export type ExternalCloseoutOwner = {
+  kind: 'external'
+  account_uri: string
+}
+
+export type CloseoutResolutionInput =
+  | {
+      item_id: string
+      outcome: 'resolved'
+      resolution: string
+    }
+  | {
+      item_id: string
+      outcome: 'accepted_risk'
+      user_acceptance: {
+        statement: string
+      }
+    }
+  | {
+      item_id: string
+      outcome: 'followup'
+      followup: {
+        action: string
+        owner: ExternalCloseoutOwner
+      }
+    }
+
+export type CloseoutResolution =
+  | Extract<CloseoutResolutionInput, { outcome: 'resolved' | 'followup' }>
+  | {
+      item_id: string
+      outcome: 'accepted_risk'
+      user_acceptance: {
+        accepted_by: 'user'
+        statement: string
+        recorded_at: string
+      }
+    }
+
+export type TaskCloseoutInput = {
+  resolutions: CloseoutResolutionInput[]
+}
+
 export type TaskSubmission = {
   plan_revision?: number
   work_revision: number
   changes: string
   verified: string
-  unverified: string
+  unverified?: string
+  unverified_items?: UnverifiedItem[]
   knowledge_impact?: KnowledgeImpact
   no_verify?: {
     reason: string
@@ -248,11 +297,14 @@ export type TaskSubmission = {
 }
 
 export const SCHEMA_V4_MIN_WRITER_VERSION = '0.4.0' as const
+export const SCHEMA_V5_MIN_WRITER_VERSION = '0.5.0' as const
 
-// schema 4 是 current writer 格式；schema 2/3 只用于 legacy 读取和显式迁移。
+// schema 5 是 current writer 格式；schema 2–4 只用于读取或对应版本的 runner。
 export type TaskV2 = {
-  schema_version: 2 | 3 | 4
-  min_writer_version?: typeof SCHEMA_V4_MIN_WRITER_VERSION
+  schema_version: 2 | 3 | 4 | 5
+  min_writer_version?:
+    | typeof SCHEMA_V4_MIN_WRITER_VERSION
+    | typeof SCHEMA_V5_MIN_WRITER_VERSION
   id: string
   title: string
   phase: TaskPhase
@@ -284,8 +336,10 @@ export type TaskV2 = {
   closure?: {
     changes: string
     verified: string
-    unverified: string
-    followup: string
+    unverified?: string
+    followup?: string
+    unverified_items?: UnverifiedItem[]
+    resolutions?: CloseoutResolution[]
     accepted_at: string
   }
   artifacts: TaskArtifact[]

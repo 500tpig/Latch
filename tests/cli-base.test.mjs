@@ -395,8 +395,8 @@ test('checkpoint is create-only, requires a full plan, and returns warnings', ()
   assert.notEqual(firstData.task_id, secondData.task_id)
   assert.equal(taskIds(cwd).length, 2)
   const firstTask = readTask(cwd, firstData.task_id)
-  assert.equal(firstTask.schema_version, 4)
-  assert.equal(firstTask.min_writer_version, '0.4.0')
+  assert.equal(firstTask.schema_version, 5)
+  assert.equal(firstTask.min_writer_version, '0.5.0')
   assert.equal(firstTask.profile, 'standard')
   assert.equal(firstTask.provenance, 'clean')
   assert.deepEqual(firstTask.artifacts, [
@@ -682,6 +682,32 @@ test('context 按精确 ID 只读归档 task 并保持 mutation 为 open-only', 
     expectRevision: 1,
     actor: 'codex:session:test-session',
     outcome: 'done',
+    eventFields: {
+      resolved_count: 0,
+      accepted_risk_count: 0,
+      followup_count: 0,
+    },
+    update(task) {
+      task.submission = {
+        plan_revision: task.plan_revision,
+        work_revision: task.work_revision,
+        changes: 'Context archive fixture',
+        verified: '',
+        unverified_items: [],
+        knowledge_impact: {
+          kind: 'none',
+          reason: 'Context archive fixture does not change module contracts.',
+        },
+        submitted_at: '2026-07-31T00:00:00.000Z',
+      }
+      task.closure = {
+        changes: task.submission.changes,
+        verified: task.submission.verified,
+        unverified_items: [],
+        resolutions: [],
+        accepted_at: '2026-07-31T00:00:00.000Z',
+      }
+    },
   }).task
   const archivedDirectory = join(
     cwd,
@@ -773,6 +799,40 @@ test('context 按精确 ID 只读归档 task 并保持 mutation 为 open-only', 
   assert.match(missing.stderr, /Task not found/)
 })
 
+test('archiveTaskV2 atomically rejects schema 5 done without structured closeout', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const created = checkpoint(cwd, 'schema 5 done invariant')
+  const store = openTaskStoreV2(cwd)
+  const openDirectory = join(cwd, '.latch', 'tasks', created.task_id)
+  const taskJsonPath = join(openDirectory, 'task.json')
+  const eventsPath = join(openDirectory, 'events.jsonl')
+  const taskBefore = readFileSync(taskJsonPath, 'utf8')
+  const eventsBefore = readFileSync(eventsPath, 'utf8')
+
+  assert.throws(
+    () => archiveTaskV2(store, created.task_id, {
+      expectRevision: 1,
+      actor: 'codex:session:test-session',
+      outcome: 'done',
+      eventFields: {
+        resolved_count: 0,
+        accepted_risk_count: 0,
+        followup_count: 0,
+      },
+    }),
+    /schema 5 done task.*submission is required/,
+  )
+  assert.equal(readFileSync(taskJsonPath, 'utf8'), taskBefore)
+  assert.equal(readFileSync(eventsPath, 'utf8'), eventsBefore)
+  assert.equal(existsSync(openDirectory), true)
+  for (const month of readdirSync(join(cwd, '.latch', 'archive')))
+    assert.equal(
+      existsSync(join(cwd, '.latch', 'archive', month, created.task_id)),
+      false,
+    )
+})
+
 test('context 按精确 ID 兼容读取 schema 2 archive', () => {
   const cwd = temporaryDirectory()
   init(cwd)
@@ -780,6 +840,10 @@ test('context 按精确 ID 兼容读取 schema 2 archive', () => {
     verification_plan: [],
   })
   const store = openTaskStoreV2(cwd)
+  const schema4 = readTask(cwd, created.task_id)
+  schema4.schema_version = 4
+  schema4.min_writer_version = '0.4.0'
+  writeFileSync(taskPath(cwd, created.task_id), `${JSON.stringify(schema4, null, 2)}\n`)
   const archived = archiveTaskV2(store, created.task_id, {
     expectRevision: 1,
     actor: 'codex:session:test-session',
@@ -1186,7 +1250,7 @@ test('save updates a plan, increments revisions, and invalidates approval and ve
     work_revision: 1,
     changes: 'old',
     verified: 'tests',
-    unverified: '',
+    unverified_items: [],
     submitted_at: new Date().toISOString(),
   }
   writeFileSync(path, `${JSON.stringify(seeded, null, 2)}\n`)
