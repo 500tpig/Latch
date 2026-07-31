@@ -58,6 +58,18 @@ function plan(overrides = {}) {
   }
 }
 
+function lightPlan(overrides = {}) {
+  const complete = plan(overrides)
+  return {
+    goal: complete.goal,
+    workspace_scope: complete.workspace_scope,
+    scope: complete.scope,
+    acceptance: complete.acceptance,
+    approach: complete.approach,
+    verification_plan: complete.verification_plan,
+  }
+}
+
 function authorization(source = 'user_request') {
   return {
     kind: 'implementation_authorization',
@@ -151,6 +163,61 @@ function submit(cwd, id, impact = impactNone(), extra = []) {
 test.afterEach(() => {
   for (const directory of temporaryDirectories.splice(0))
     rmSync(directory, { recursive: true, force: true })
+})
+
+test('checkpoint normalizes six-field Light authoring input to the complete task plan', () => {
+  const cwd = temporaryDirectory()
+  assert.equal(run(cwd, ['init']).status, 0)
+  const input = lightPlan()
+  const created = run(cwd, [
+    'checkpoint', 'minimal light input',
+    '--plan-file', writeJson(cwd, input, 'minimal-light-plan'),
+    '--authorize-request', '用户请求实施明确的低风险变更',
+    '--json',
+  ])
+
+  assert.equal(created.status, 0, created.stderr)
+  const task = readTask(cwd, JSON.parse(created.stdout).task_id)
+  assert.equal(task.schema_version, 4)
+  assert.equal(task.min_writer_version, '0.4.0')
+  assert.equal(task.profile, 'light')
+  assert.deepEqual(task.plan, {
+    ...input,
+    api_assumptions: [],
+    permission_assumptions: [],
+    data_assumptions: [],
+    user_flow: [],
+    out_of_scope: [],
+    open_questions: [],
+  })
+})
+
+test('checkpoint rejects Light authoring input missing any core field', () => {
+  const cwd = temporaryDirectory()
+  assert.equal(run(cwd, ['init']).status, 0)
+
+  for (const field of [
+    'goal',
+    'workspace_scope',
+    'scope',
+    'acceptance',
+    'approach',
+    'verification_plan',
+  ]) {
+    const input = lightPlan()
+    delete input[field]
+    const result = run(cwd, [
+      'checkpoint', `missing ${field}`,
+      '--plan-file', writeJson(cwd, input, `missing-${field}`),
+      '--profile', 'light',
+      '--json',
+    ])
+    assert.notEqual(result.status, 0, field)
+    assert.match(result.stderr, /Missing required Light plan fields/)
+    assert.match(result.stderr, new RegExp(`plan\\.${field}`))
+  }
+
+  assert.deepEqual(readdirSync(join(cwd, '.latch', 'tasks')), [])
 })
 
 test('checkpoint CLI atomically creates request and retrospective work basis', () => {

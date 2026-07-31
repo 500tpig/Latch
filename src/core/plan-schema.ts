@@ -14,6 +14,31 @@ type WritableTaskPlan = TaskPlan & {
   workspace_scope: NonNullable<TaskPlan['workspace_scope']>
 }
 
+const lightPlanCoreFields = [
+  'goal',
+  'workspace_scope',
+  'scope',
+  'acceptance',
+  'approach',
+  'verification_plan',
+] as const satisfies ReadonlyArray<keyof TaskPlan>
+
+const lightPlanDefaultFields = [
+  'api_assumptions',
+  'permission_assumptions',
+  'data_assumptions',
+  'user_flow',
+  'out_of_scope',
+  'open_questions',
+] as const satisfies ReadonlyArray<keyof TaskPlan>
+
+type LightPlanCoreField = (typeof lightPlanCoreFields)[number]
+type LightPlanDefaultField = (typeof lightPlanDefaultFields)[number]
+
+export type LightPlanAuthoringInput =
+  Pick<TaskPlan, LightPlanCoreField> &
+  Partial<Pick<TaskPlan, LightPlanDefaultField>>
+
 type PlanFieldSpec = {
   scaffold: unknown
   shapeRequired: boolean
@@ -261,10 +286,24 @@ const requiredPlanFields = planFieldEntries
 const planSchemaSummary = planFieldEntries
   .map(([, spec]) => spec.summary)
   .join('; ')
+const lightPlanFieldEntries = lightPlanCoreFields.map(
+  (field) => [field, planFieldSpecs[field]] as const,
+)
+const lightPlanSchemaSummary = lightPlanFieldEntries
+  .map(([, spec]) => spec.summary)
+  .join('; ')
 
-export function planTemplate(profile: TaskProfile): TaskPlan {
+export function planTemplate(
+  profile: TaskProfile,
+): TaskPlan | LightPlanAuthoringInput {
   switch (profile) {
     case 'light':
+      return Object.fromEntries(
+        lightPlanFieldEntries.map(([field, spec]) => [
+          field,
+          structuredClone(spec.scaffold),
+        ]),
+      ) as LightPlanAuthoringInput
     case 'standard':
       return Object.fromEntries(
         planFieldEntries.map(([field, spec]) => [
@@ -279,7 +318,7 @@ export function assertTaskPlan(
   plan: unknown,
   path: string,
 ): asserts plan is TaskPlan {
-  const minimumPlan = planTemplate('light')
+  const minimumPlan = planTemplate('standard')
   if (!isRecord(plan))
     invalidField('plan', 'object', plan, minimumPlan, path)
 
@@ -315,8 +354,53 @@ export function assertWritableTaskPlan(
     throw new Error(
       `Missing required writable plan fields in ${path}: ` +
         `${missingFields.map((field) => `plan.${field}`).join(', ')}. ` +
+      planTemplateHelp,
+    )
+}
+
+function assertLightPlanAuthoringInput(
+  plan: unknown,
+  path: string,
+): asserts plan is LightPlanAuthoringInput {
+  const minimumPlan = planTemplate('light')
+  if (!isRecord(plan))
+    invalidField('plan', 'object', plan, minimumPlan, path)
+
+  const missingFields = lightPlanCoreFields.filter(
+    (field) => plan[field] === undefined,
+  )
+  if (missingFields.length > 0)
+    throw new Error(
+      `Missing required Light plan fields in ${path}: ` +
+        `${missingFields.map((field) => `plan.${field}`).join(', ')}. ` +
+        `Expected Light authoring schema: ${lightPlanSchemaSummary}. ` +
+        `Minimal legal plan: ${JSON.stringify(minimumPlan)}. ` +
         planTemplateHelp,
     )
+
+  for (const [field, spec] of lightPlanFieldEntries)
+    spec.validateShape(plan[field], path)
+}
+
+export function normalizeTaskPlanInput(
+  plan: unknown,
+  profile: TaskProfile,
+  path: string,
+): WritableTaskPlan {
+  if (profile === 'standard') {
+    assertWritableTaskPlan(plan, path)
+    return plan
+  }
+
+  assertLightPlanAuthoringInput(plan, path)
+  const normalized = {
+    ...Object.fromEntries(
+      lightPlanDefaultFields.map((field) => [field, []]),
+    ),
+    ...plan,
+  }
+  assertWritableTaskPlan(normalized, path)
+  return normalized
 }
 
 function notAuthorizable(

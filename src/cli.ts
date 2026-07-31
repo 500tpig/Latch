@@ -30,7 +30,7 @@ import {
   NotInitializedError,
 } from './core/paths.js'
 import {
-  assertWritableTaskPlan,
+  normalizeTaskPlanInput,
   planTemplate,
 } from './core/plan-schema.js'
 import {
@@ -78,7 +78,6 @@ import type {
   KnowledgeImpact,
   RetrospectiveRecordInput,
   TaskArtifact,
-  TaskPlan,
   TaskProfile,
   TaskProvenance,
 } from './core/types.js'
@@ -296,11 +295,14 @@ function artifactChanges(
   }
 }
 
-function readPlan(cwd: string, planFile: string | undefined) {
+function readPlan(
+  cwd: string,
+  planFile: string | undefined,
+  profile: TaskProfile = 'standard',
+) {
   if (!planFile) fail('invalid_arguments', '--plan-file is required.')
-  const plan = readJsonFile<TaskPlan>(resolve(cwd, planFile))
-  assertWritableTaskPlan(plan, planFile)
-  return plan
+  const plan = readJsonFile<unknown>(resolve(cwd, planFile))
+  return normalizeTaskPlanInput(plan, profile, planFile)
 }
 
 function readInputFile<T>(cwd: string, path: string | undefined, option: string) {
@@ -453,7 +455,10 @@ function runCheckpoint(args: string[], cwd: string, actor: string) {
       'invalid_arguments',
       '--source-record and --source-record-revision must be provided together.',
     )
-  const plan = readPlan(cwd, parsed.values['plan-file'])
+  const profile = hasInlineAuthorization || hasAuthorizationFile
+    ? 'light'
+    : (parsed.values.profile ?? 'standard') as TaskProfile
+  const plan = readPlan(cwd, parsed.values['plan-file'], profile)
   const artifacts = (parsed.values.artifact ?? []).map(artifact)
   const authorization = hasAuthorizationFile
     ? readInputFile<ImplementationAuthorizationInput>(
@@ -490,9 +495,6 @@ function runCheckpoint(args: string[], cwd: string, actor: string) {
           },
         }
       : undefined
-  const profile = hasInlineAuthorization || hasAuthorizationFile
-    ? 'light'
-    : (parsed.values.profile ?? 'standard') as TaskProfile
   const sourceRecord = parsed.values['source-record']
     ? showProjectRecordV1(
         openRecordStoreV1(cwd),

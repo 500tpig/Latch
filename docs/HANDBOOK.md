@@ -78,19 +78,24 @@ latch context [task-id] --json --since-revision <revision>
 
 `checkpoint --print-plan-template light|standard` 向 stdout 写入对应 profile
 的最小合法 JSON（shape scaffold），不创建 `.latch`，也不要求 `title`、`--plan-file` 或
-canonical actor。两个 scaffold 当前共用 `TaskPlan` shape，只保证结构合法；不能
-直接获得 work basis，也不替代 A/B/C 判断。模板入口不能与 task 创建参数组合。
+canonical actor。Light scaffold 只包含 `goal`、`workspace_scope`、`scope`、
+`acceptance`、`approach` 和 `verification_plan`；Standard scaffold 继续包含完整
+12 字段。两个 scaffold 都只保证对应 authoring input 的结构合法，不能直接获得 work
+basis，也不替代 A/B/C 判断。模板入口不能与 task 创建参数组合。
 
-plan 校验分为三层：shape validation 保持历史 task 可读；writable validation 要求
-schema 4 plan 提供 `workspace_scope`；authorizable validation 只在创建或更新 work
-basis 前执行。授权要求 `workspace_scope.paths`、`scope`、`acceptance` 和 `approach`
-包含有效内容，且 `open_questions` 为空；Light 还必须至少包含一个 gate。Standard
-无 gate 时继续使用显式 `--no-verify` 提交流程。draft 可在 plan phase 保存，不触发
-授权完整性门禁。
+plan 校验分为四步：Light authoring validation 要求六组核心字段；CLI 将省略的
+`api_assumptions`、`permission_assumptions`、`data_assumptions`、`user_flow`、
+`out_of_scope` 和 `open_questions` 确定性补为空数组；shape validation 保持历史
+task 可读；writable validation 要求 schema 4 plan 提供 `workspace_scope`。
+authorizable validation 只在创建或更新 work basis 前执行。授权要求
+`workspace_scope.paths`、`scope`、`acceptance` 和 `approach` 包含有效内容，且
+`open_questions` 为空；Light 还必须至少包含一个 gate。Standard 无 gate 时继续
+使用显式 `--no-verify` 提交流程。draft 可在 plan phase 保存，不触发授权完整性门禁。
 
-创建 task 时，`checkpoint` 必须读取完整 plan 文件。plan 校验失败时，错误会列出
-期望类型、实际类型、最小合法值和模板命令。同标题 task 不覆盖。`use` 只修改当前
-actor 的索引。
+创建 task 时，Standard `checkpoint` 必须读取完整 plan 文件；Light `checkpoint`
+接受六字段 authoring input，并在写入前规范化为现有完整 `TaskPlan`。plan 校验失败时，
+错误会列出期望类型、实际类型、最小合法值和模板命令。同标题 task 不覆盖。`use`
+只修改当前 actor 的索引。
 
 新建或更新 plan 必须提供 `workspace_scope.paths`。该字段只接受 repo-relative POSIX
 精确文件路径或以 `/` 结尾的目录前缀；不接受绝对路径、repo escape、glob 或 Git

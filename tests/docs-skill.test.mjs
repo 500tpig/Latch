@@ -399,6 +399,19 @@ test('Light plan template entry stays consistent across CLI-facing instructions'
   assert.match(skill, /choose A\/B\/C/)
   assert.match(handBook, /最小合法 JSON/)
   assert.match(handBook, /期望类型、实际类型、最小合法值/)
+  for (const content of [skill, handBook]) {
+    assert.match(
+      content,
+      /`goal`[\s\S]*`workspace_scope`[\s\S]*`scope`[\s\S]*`acceptance`[\s\S]*`approach`[\s\S]*`verification_plan`/,
+    )
+    assert.match(
+      content,
+      /`api_assumptions`[\s\S]*`permission_assumptions`[\s\S]*`data_assumptions`[\s\S]*`user_flow`[\s\S]*`out_of_scope`[\s\S]*`open_questions`/,
+    )
+    assert.match(content, /complete `TaskPlan`|完整 `TaskPlan`/)
+  }
+  assert.match(skill, /12 Standard fields/)
+  assert.match(handBook, /Standard scaffold 继续包含完整\s+12 字段/)
 })
 
 test('startup reads context and project docs only when conditions require them', () => {

@@ -149,7 +149,15 @@ test('top-level and command help have no side effects', () => {
 })
 
 test('checkpoint templates are side-effect-free shape scaffolds that require completion', () => {
-  const expected = {
+  const lightExpected = {
+    goal: 'Describe the intended outcome.',
+    workspace_scope: { paths: [] },
+    scope: [],
+    acceptance: [],
+    approach: [],
+    verification_plan: [],
+  }
+  const standardExpected = {
     goal: 'Describe the intended outcome.',
     workspace_scope: { paths: [] },
     scope: [],
@@ -164,7 +172,10 @@ test('checkpoint templates are side-effect-free shape scaffolds that require com
     open_questions: [],
   }
 
-  for (const profile of ['light', 'standard']) {
+  for (const [profile, expected] of [
+    ['light', lightExpected],
+    ['standard', standardExpected],
+  ]) {
     const cwd = temporaryDirectory()
     const printed = run(
       cwd,
@@ -203,7 +214,7 @@ test('checkpoint templates are side-effect-free shape scaffolds that require com
 
   const cwd = temporaryDirectory()
   init(cwd)
-  const templateFile = writePlan(cwd, expected, 'template.json')
+  const templateFile = writePlan(cwd, lightExpected, 'template.json')
   const draft = run(cwd, [
     'checkpoint',
     'Template draft',
@@ -229,8 +240,8 @@ test('checkpoint templates are side-effect-free shape scaffolds that require com
   assert.match(denied.stderr, /not authorizable/)
   assert.equal(taskIds(cwd).length, 1)
 
-  const completedFile = writePlan(cwd, {
-    ...expected,
+  const completedLightPlan = {
+    ...lightExpected,
     workspace_scope: { paths: ['src/cli.ts'] },
     scope: ['修改 src/cli.ts'],
     acceptance: ['CLI tests pass'],
@@ -240,7 +251,12 @@ test('checkpoint templates are side-effect-free shape scaffolds that require com
       command: [process.execPath, '-e', 'process.exit(0)'],
       kind: 'gate',
     }],
-  }, 'completed-template.json')
+  }
+  const completedFile = writePlan(
+    cwd,
+    completedLightPlan,
+    'completed-template.json',
+  )
   const created = run(cwd, [
     'checkpoint',
     'Completed template task',
@@ -254,6 +270,26 @@ test('checkpoint templates are side-effect-free shape scaffolds that require com
   const task = readTask(cwd, JSON.parse(created.stdout).task_id)
   assert.equal(task.profile, 'light')
   assert.equal(task.phase, 'dev')
+  assert.deepEqual(task.plan, {
+    ...completedLightPlan,
+    api_assumptions: [],
+    permission_assumptions: [],
+    data_assumptions: [],
+    user_flow: [],
+    out_of_scope: [],
+    open_questions: [],
+  })
+
+  const standardRejected = run(cwd, [
+    'checkpoint',
+    'Minimal Light input is not Standard',
+    '--plan-file',
+    completedFile,
+    '--json',
+  ])
+  assert.notEqual(standardRejected.status, 0)
+  assert.match(standardRejected.stderr, /Missing required plan fields/)
+  assert.match(standardRejected.stderr, /plan\.api_assumptions/)
 })
 
 test('unknown command and flag fail before creating .latch', () => {

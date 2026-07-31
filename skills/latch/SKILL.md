@@ -50,21 +50,24 @@ group, batch, Git, archive, cancellation, claim, or takeover authority.
 
 ### Ordinary Light task
 
-Print the canonical scaffold, complete it with no open questions, then create and
-authorize the task atomically:
+Fill the Light scaffold, then create and authorize atomically:
 
 ```bash
 latch checkpoint --print-plan-template light
 latch checkpoint "Task title" --plan-file plan.json --profile light --authorize-request "User requested this scoped change" --scope-summary "Bounded scope" --scope-path path/to/file --json
 ```
 
-The scaffold proves schema validity only; it does not choose A/B/C or authorize
-work. Light also requires complete core fields and a gate. Implement, run every
-named gate, submit to `review`, and wait. Never auto-complete.
+Light fields: `goal`, `workspace_scope`, `scope`, `acceptance`, `approach`,
+`verification_plan`. Omitted `api_assumptions`,
+`permission_assumptions`, `data_assumptions`, `user_flow`, `out_of_scope`, and
+`open_questions` default to `[]`; storage remains a complete `TaskPlan`. The
+scaffold proves schema validity only; it cannot choose A/B/C or authorize work.
+Authorization requires meaningful core fields and a gate. Implement, run every
+named gate, submit to `review`, wait; never auto-complete.
 
 ### Standard plan
 
-Complete the Standard scaffold, show the complete plan, then create:
+Complete 12 Standard fields; show the complete plan, then create:
 
 ```bash
 latch checkpoint --print-plan-template standard
@@ -137,13 +140,10 @@ delivery remains separate and needs separate authorization.
 
 Read a selected reference completely:
 
-- [task lifecycle](references/task-lifecycle.md): plan, feedback, gates,
-  `knowledge_impact`, submission, closeout, or abandon.
+- [task lifecycle](references/task-lifecycle.md): plan, gates, submission, closeout.
 - [session actors and handoff](references/session-actors-and-handoff.md): actor,
-  mismatch, takeover, handoff, or provenance.
-- [groups](references/groups.md): `group_id`, planning, or siblings.
-- [knowledge and context](references/knowledge-and-context.md): freshness,
-  knowledge impact, Context packs, or benchmarks.
-- [migration](references/migration.md): schema 2/3, claim, `upgrade-v4`, writer
-  versions, or `downgrade-v2`.
-- [records](references/records.md): explicit Record operations or conversion.
+  takeover, handoff.
+- [groups](references/groups.md): `group_id`.
+- [knowledge and context](references/knowledge-and-context.md): Context packs.
+- [migration](references/migration.md): schema migration.
+- [records](references/records.md): Record.
