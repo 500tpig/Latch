@@ -1,0 +1,106 @@
+{
+  "goal": "为 schema 5 建立结构化未验证事项和逐项 closeout resolution，使 Core 能在归档前证明每个未验证事项都有完整处理结果。",
+  "workspace_scope": {
+    "paths": [
+      "src/cli.ts",
+      "src/core/types.ts",
+      "src/core/progress.ts",
+      "src/core/task-store.ts",
+      "src/core/notes-events.ts",
+      "tests/review.test.mjs",
+      "tests/light-proof.test.mjs",
+      "tests/integration.test.mjs",
+      "tests/store.test.mjs",
+      "tests/fixtures/"
+    ]
+  },
+  "scope": [
+    "定义 `UnverifiedItem`、`TaskSubmissionV5`、`CloseoutResolution`、`CloseoutInput` 和 `TaskClosureV5`。",
+    "将 v5 submit CLI 改为可重复的 `--unverified-item <text>`，由 Core 生成稳定 item ID。",
+    "让没有未验证事项的 submission 保存空数组，不接受「无」等文本 sentinel。",
+    "将 v5 done CLI 改为 `--closeout-file`，并移除 v5 `--followup` 自由文本入口。",
+    "实现 resolution 完整性、outcome 字段、额外 follow-up 和 no-follow-up 原因校验。",
+    "让 done 原子冻结结构化 closeout，并保持现有 writer、revision、proof、knowledge impact 和 archive 门禁。",
+    "更新 submission knowledge impact patch、读盘校验和 review 生命周期测试。"
+  ],
+  "acceptance": [
+    "零个 `--unverified-item` 保存 `unverified_items: []`。",
+    "多个 `--unverified-item` 按输入顺序生成唯一稳定 ID `U1`、`U2`，并在 submit JSON 中返回。",
+    "空白 item 被拒绝，不解析「无」「none」或其它关键词。",
+    "每个 submission item 在 closeout 中必须且只能出现一次。",
+    "未知、重复和缺失 `item_id` 均拒绝 done，task、event 和 archive 不发生部分写入。",
+    "`resolved` 必须同时包含非空 `acceptance_fact` 和 `observed_result`。",
+    "`accepted_risk` 必须包含 `accepted_by: \"user\"` 和非空 `reason`。",
+    "`followup` 必须包含非空 `owner` 和 `next_action`。",
+    "`additional_followups` 与 `no_additional_followup_reason` 严格二选一。",
+    "Core 只校验结构，不使用 NLP、正则、关键词或文本相似度判断结果是否合理。",
+    "done 继续要求 review、当前 submission、有效 proof、writer 和 expect revision。",
+    "v2–v4 submission 与 closure 只读，不转换、不补写、不参与 v5 done。",
+    "`pnpm check` 与 `git diff --check` 通过。"
+  ],
+  "approach": [
+    "先在 `src/core/types.ts` 冻结 discriminated union，再实现纯结构 validator。",
+    "让 Core 在 submit 时生成 item ID，CLI 只传递有序摘要。",
+    "让 `doneTask` 在进入 archive transaction 前完成全部 closeout 校验。",
+    "复用现有项目内 JSON 文件读取边界处理 `--closeout-file`，不新增第二套文件加载器。",
+    "保持 knowledge impact patch 只修改 knowledge impact，不改 item ID 或 closeout。",
+    "使用表驱动负向测试覆盖每个 outcome 和集合完整性规则。",
+    "开发期间运行 review 定向测试，最终执行完整项目检查和 diff 完整性 gate。"
+  ],
+  "api_assumptions": [
+    "本切片 task 使用隔离 v5 worktree 的 repo-local CLI `0.5.0` 创建和写入。",
+    "v5 submit 使用重复 `--unverified-item <text>`，不使用 `--unverified`。",
+    "item ID 由 Core 生成，格式为同一 submission 内从 `U1` 开始的顺序编号。",
+    "v5 done 使用 `--closeout-file <path>`，不使用 `--followup`。",
+    "closeout file 必须位于当前项目内，并遵循现有普通文件与 symlink 安全规则。",
+    "现有 `changes`、knowledge impact、gate proof 和 `no_verify` 语义保持不变。",
+    "S3 完成后仍属于未发布 v5 开发序列，human/context 投影由 S4 完成。"
+  ],
+  "permission_assumptions": [
+    "S2 已完成 review acceptance 和 Git delivery，当前隔离 worktree 使用 schema 5 plan/task 基线。",
+    "实现只修改 Latch repo 中列出的文件。",
+    "不执行 Git、不更新全局 CLI、不修改 current 文档或外部 repo。"
+  ],
+  "data_assumptions": [
+    "schema 5 task 在 S3 前没有可保留的 current submission 或 closure 数据。",
+    "v2–v4 archive 中的字符串字段保持原值并继续只读。",
+    "每次 implementation correction 会删除旧 submission，因此 item ID 只需在单次 submission 内稳定。",
+    "用户风险接受仍由 Skill 确认来源；Core 保存结构化本地审计事实，不提供身份认证。"
+  ],
+  "user_flow": [
+    "实现对话使用 repo-local CLI `0.5.0` 从本 plan 创建 schema 5 Standard task 并获得 writer。",
+    "实现完成后使用零个或多个 `--unverified-item` submit 到 review。",
+    "submit JSON 返回每个 item ID，review 使用这些 ID 准备 closeout file。",
+    "手工验收完成时使用 `resolved`，明确接受风险时使用 `accepted_risk`，仍待处理时使用 `followup`。",
+    "done 先校验全部 resolution，再原子写 closure 和 archive。",
+    "任一 item 缺少处理结果时保持 review，并返回具体结构错误。"
+  ],
+  "out_of_scope": [
+    "不实现 human timeline、Board fixture 或 bounded context 投影。",
+    "不修改 package version、current 文档、Skill 或安装状态。",
+    "不验证验收文本真实性，不提供远程身份认证。",
+    "不允许自由文本 followup 替代 resolution。",
+    "不迁移旧 submission 或 closure，不增加 v4/v5 双写。",
+    "不自动创建 follow-up task、issue、Record 或提醒。"
+  ],
+  "verification_plan": [
+    {
+      "name": "project-check",
+      "command": [
+        "pnpm",
+        "check"
+      ],
+      "kind": "gate"
+    },
+    {
+      "name": "diff-integrity",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "kind": "gate"
+    }
+  ],
+  "open_questions": []
+}

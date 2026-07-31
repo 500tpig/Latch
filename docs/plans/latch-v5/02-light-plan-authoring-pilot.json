@@ -1,0 +1,103 @@
+{
+  "goal": "在现有 schema 4 契约内试点简化 Light plan authoring：编写时只要求六组核心字段，写入 task 前确定性补齐完整 plan shape，降低小任务的重复填写成本。",
+  "workspace_scope": {
+    "paths": [
+      "src/cli.ts",
+      "src/core/plan-schema.ts",
+      "tests/cli-base.test.mjs",
+      "tests/light-proof.test.mjs",
+      "tests/docs-skill.test.mjs",
+      "skills/latch/SKILL.md",
+      "docs/HANDBOOK.md"
+    ]
+  },
+  "scope": [
+    "让 `checkpoint --print-plan-template light` 只输出 `goal`、`workspace_scope`、`scope`、`acceptance`、`approach` 和 `verification_plan`。",
+    "为 Light plan 定义独立的 authoring input 校验，六组核心字段仍需满足现有内容、路径和 gate 规则。",
+    "将 Light input 省略的 `api_assumptions`、`permission_assumptions`、`data_assumptions`、`user_flow`、`out_of_scope` 和 `open_questions` 确定性补为空数组。",
+    "在创建 task 前把 Light input 规范化为现有完整 `TaskPlan`，使落盘 task 继续保持 schema 4 shape。",
+    "保持 Standard template、Standard plan 校验和批准流程不变。",
+    "保持 `--scope-summary`、`--scope-path`、work basis、writer、proof、submission、closeout 和 archive 契约不变。",
+    "更新 canonical Skill 和 Handbook，只说明 Light authoring 输入变小以及落盘 shape 不变。",
+    "补齐 Light template、规范化、Standard 不变和负向边界测试。"
+  ],
+  "acceptance": [
+    "Light template 只包含六组核心字段，不再要求手工填写六个空数组。",
+    "Light input 缺少任一核心字段时被拒绝，不使用默认内容猜测目标、范围、验收或方案。",
+    "`workspace_scope.paths` 仍至少包含一条合法的 repo-relative POSIX path。",
+    "`scope`、`acceptance` 和 `approach` 仍各自至少包含一条非空内容。",
+    "`verification_plan` 仍至少包含一个真实 gate，instruction-only 命令不构成验收证据。",
+    "规范化后的 task plan 包含六个被补齐的空数组，并继续通过现有 schema 4 task validator。",
+    "新 task 仍保存 `schema_version: 4` 和 `min_writer_version: \"0.4.0\"`。",
+    "Standard template 继续显示完整 12 字段，Standard plan 的 shape、批准门禁和落盘内容不变。",
+    "`--scope-summary` 与 `--scope-path` 继续使用现有语义，不在本试点中改为 plan snapshot。",
+    "既有 schema 4 task 的读取、save、approve、verify、submit、done 和 archive 行为不变。",
+    "实现不增加 schema 5、CLI `0.5.0`、migration、双写、旧 schema 拒写或 fallback success。",
+    "`pnpm check` 与 `git diff --check` 通过。"
+  ],
+  "approach": [
+    "在 `src/core/plan-schema.ts` 中区分 Light authoring input、完整 `TaskPlan` 和 Standard scaffold，不修改持久化 task type。",
+    "先校验 Light 核心字段，再以固定空数组补齐省略字段，最后复用现有 writable 和 authorizable validation。",
+    "调整 `src/cli.ts` 的 checkpoint 读取顺序，使 profile 在选择 plan input validator 前已经确定。",
+    "让 task store 只接收规范化后的完整 `TaskPlan`，避免把两种 plan shape 带入 lifecycle Core。",
+    "保留现有 Standard 和 schema 4 fixture，增加最小 Light input 与完整落盘 plan 的对照测试。",
+    "同步 Skill 和 Handbook 的 current 使用说明，不改动其它产品契约。",
+    "开发期间先运行定向测试，最终执行完整项目检查和 diff 完整性 gate。"
+  ],
+  "api_assumptions": [
+    "current task schema 继续为 `4`，minimum writer 和 CLI version 继续为 `0.4.0`。",
+    "`checkpoint --print-plan-template light` 与 `standard` 的命令名保持不变。",
+    "`checkpoint --plan-file` 仍是 plan 的唯一文件输入。",
+    "Light authoring input 是 CLI 输入契约，不是新的持久化 task schema。",
+    "缺失的六个非核心字段只允许补为空数组，不从文本、环境、Record 或其它 task 推导内容。",
+    "Standard input 继续要求完整 plan shape。"
+  ],
+  "permission_assumptions": [
+    "S1 未初始化停止边界已经完成、验收并通过 commit `d83fe11` 交付。",
+    "开始本试点前，用户需要单独批准本文件对应的 implementation task。",
+    "实现只修改 Latch repo 中列出的文件。",
+    "不执行 Git，不修改 Record、外部 repo、全局安装或 CLI 链接。"
+  ],
+  "data_assumptions": [
+    "现有 schema 4 archive 和 open task 均使用完整 `TaskPlan` shape。",
+    "Light 省略字段没有隐含业务事实，空数组与当前小任务的真实语义一致。",
+    "已有 Standard plan、历史 task 和 fixture 不需要迁移或重写。",
+    "真实 Light task 的观察样本数、周期和 go/no-go 标准由后续独立评估确定。"
+  ],
+  "user_flow": [
+    "实施人员使用 current CLI `0.4.0` 打印最小 Light template。",
+    "实施人员填写六组核心字段，并按现有 request authorization 命令提供 scope 参数。",
+    "CLI 校验 Light input，补齐六个空数组，再创建完整 schema 4 task。",
+    "后续 dev、check、review 和 closeout 流程保持不变。",
+    "试点完成并经过真实任务观察后，再决定是否为单一 scope 真源或 schema 5 创建新的 Standard plan。"
+  ],
+  "out_of_scope": [
+    "不修改 task、event、submission、closure、archive 或 Record schema。",
+    "不修改 package version、minimum writer 或 current schema 常量。",
+    "不删除或改变 `--scope-summary`、`--scope-path`。",
+    "不实现结构化 `unverified_items`、closeout resolution 或 event/view 投影。",
+    "不新增 schema 5、旧 schema mutation 拒绝、upgrade、downgrade、双写或 fallback。",
+    "不创建 worktree，不复制 maintenance CLI，不更新全局安装。",
+    "不预设真实观察的样本数或自动触发 backlog。"
+  ],
+  "verification_plan": [
+    {
+      "name": "project-check",
+      "command": [
+        "pnpm",
+        "check"
+      ],
+      "kind": "gate"
+    },
+    {
+      "name": "diff-integrity",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "kind": "gate"
+    }
+  ],
+  "open_questions": []
+}

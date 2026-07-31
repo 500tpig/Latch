@@ -54,6 +54,20 @@ Latch、Latch-Board、appearance-sec 和 monitoring 的当前兼容状态。
 - 用途：记录 gate 前后工作区 evidence、mutation 分类、proof generation、`verify-all` 停止规则和只读 Git 边界的设计基线；
 - 边界：current 行为以 [使用手册](HANDBOOK.md)和[设计边界](DESIGN.md)为准，该文件不单独授权后续变更。
 
+## 规划中设计
+
+### [Latch 工作流改进与候选 backlog](briefs/2026-07-31-latch-v5-workflow-contract.md)
+
+- 状态：`proposed`；
+- Source-Task：`20260731061812532-规划-latch-v5-工作流-current-contract-8de6da`；
+- 当前基线：S1 未初始化停止边界已完成、验收并通过 commit `d83fe11` 交付；
+- 唯一待决定项：schema 4 Light plan authoring 试点；
+- 暂停项：schema 5、结构化 closeout、event/view 和 current release 均保存在
+  candidate backlog；
+- 规划入口：[Latch 工作流改进计划与对话交接](plans/latch-v5/README.md)；
+- 边界：不修改当前 schema 4、CLI `0.4.0` 或 current 产品契约，不构成 S2 或
+  candidate backlog 的实施授权。
+
 ## 当前产品契约
 
 ### [Latch 最终产品契约](prd/2026-07-15-latch-final-product-contract.md)

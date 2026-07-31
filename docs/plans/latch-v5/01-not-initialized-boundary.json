@@ -1,0 +1,90 @@
+{
+  "goal": "为未初始化目录建立稳定、无副作用的机器错误和 canonical Skill 停止条件，消除失败后继续生成 template、plan 和 checkpoint 的空转。",
+  "workspace_scope": {
+    "paths": [
+      "src/core/paths.ts",
+      "src/cli.ts",
+      "tests/cli-base.test.mjs",
+      "tests/store.test.mjs",
+      "tests/docs-skill.test.mjs",
+      "skills/latch/SKILL.md",
+      "docs/HANDBOOK.md",
+      "docs/AI_INSTALL.md",
+      "docs/DESIGN.md"
+    ]
+  },
+  "scope": [
+    "在 root discovery 模块定义最小 typed `NotInitializedError`，并保存稳定 `code: \"not_initialized\"`。",
+    "让 CLI 顶层 JSON error mapping 按 error 类型返回 `not_initialized`，不解析 message。",
+    "保持 human error 可读，并保持未初始化 read path 不创建 `.latch` 或其它项目文件。",
+    "更新 canonical Skill，使 `latch list` 返回 `not_initialized` 后立即停止全部 Latch 后续步骤。",
+    "更新 current 使用说明和安装说明，明确不自动执行 `latch init`。",
+    "补齐 CLI、store 和 Skill 契约测试。"
+  ],
+  "acceptance": [
+    "未初始化 Git repo 与非 Git 目录的 `latch list --json --brief` 均返回 `error.code: \"not_initialized\"`。",
+    "未初始化错误不再落入通用 `command_failed`，其它未知错误仍保持通用错误投影。",
+    "探测前后均不存在新建的 `.latch`、plan、task、Record 或其它项目文件。",
+    "canonical Skill 明确要求收到 `not_initialized` 后不打印 template、不准备 plan、不调用 checkpoint，也不自动 init。",
+    "用户已明确一次性任务或不用 Latch 时可普通实施；其他情况停下并等待是否 init 的选择。",
+    "实现不增加通用 error framework、message matcher、vendor 分支、retry 或 fallback success。",
+    "current 文档只描述本切片已经实现的行为，不提前描述 schema 5。",
+    "`pnpm check` 与 `git diff --check` 通过。"
+  ],
+  "approach": [
+    "在 `src/core/paths.ts` 定义带稳定 code 的最小 domain error，并继续复用现有 root discovery。",
+    "在 `src/cli.ts` 顶层 catch 中增加显式 error 类型映射，保留现有 `CliV2Error` 参数错误处理。",
+    "使用临时目录测试未初始化 Git 与非 Git 路径，并断言无文件系统副作用。",
+    "同步 Skill、Handbook、安装说明和设计边界中的停止规则。",
+    "开发期间先运行定向测试，最后只以批准计划中的两个 named gate 作为提交证明。"
+  ],
+  "api_assumptions": [
+    "JSON error envelope 保持现有顶层结构，只新增稳定 error code 值 `not_initialized`。",
+    "Human error message 保持 `Latch is not initialized from ...` 语义。",
+    "`latch init` 仍是唯一显式初始化命令。",
+    "该切片不改变 task schema、event schema、profile 或 lifecycle mutation。"
+  ],
+  "permission_assumptions": [
+    "实现只修改 Latch repo 中列出的文件。",
+    "不执行 Git，不初始化其它目录，不修改外部 repo。",
+    "测试可以创建并清理测试框架管理的临时目录。"
+  ],
+  "data_assumptions": [
+    "未初始化目录没有可读取的 Latch task 或 Record。",
+    "现有已初始化 repo 的 root discovery 和嵌套目录发现行为保持不变。",
+    "全局 canonical Skill 使用 repo 内 `skills/latch` 的符号链接。"
+  ],
+  "user_flow": [
+    "写入请求触发 canonical Skill 后，先执行 `git status --short` 和 `latch list --json --brief`。",
+    "已初始化目录继续普通 A/B/C 流程。",
+    "未初始化目录返回 `not_initialized`，Skill 立即停止 Latch 流程。",
+    "明确不用 Latch 的请求继续普通实施；其他请求等待是否执行 `latch init` 的明确选择。"
+  ],
+  "out_of_scope": [
+    "不实现 schema 5、Light plan 精简或结构化 closeout。",
+    "不自动执行 `latch init`，不创建初始化建议文件。",
+    "不修改 host adapter 或 canonical actor 解析。",
+    "不通过 message、正则或关键词判断未初始化状态。",
+    "不增加 telemetry、重试、fallback 或兼容写路径。"
+  ],
+  "verification_plan": [
+    {
+      "name": "project-check",
+      "command": [
+        "pnpm",
+        "check"
+      ],
+      "kind": "gate"
+    },
+    {
+      "name": "diff-integrity",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "kind": "gate"
+    }
+  ],
+  "open_questions": []
+}

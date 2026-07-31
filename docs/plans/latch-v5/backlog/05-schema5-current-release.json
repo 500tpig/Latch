@@ -1,0 +1,124 @@
+{
+  "goal": "完成 Latch repo 的 schema 5 current 发布边界，统一 CLI `0.5.0`、canonical Skill、current 文档、安装说明和发布验证，并为外部 adopter 提供冻结 reader contract。",
+  "workspace_scope": {
+    "paths": [
+      "package.json",
+      "AGENTS.md",
+      "src/cli.ts",
+      "skills/latch/SKILL.md",
+      "skills/latch/references/task-lifecycle.md",
+      "skills/latch/references/migration.md",
+      "skills/latch/references/session-actors-and-handoff.md",
+      "docs/INDEX.md",
+      "docs/HANDBOOK.md",
+      "docs/DESIGN.md",
+      "docs/AI_INSTALL.md",
+      "docs/ADOPTER_SYNC.md",
+      "docs/prd/2026-07-15-latch-final-product-contract.md",
+      "docs/prd/2026-07-15-latch-workflow-triggers-draft.md",
+      "docs/prd/2026-07-15-latch-light-proof-package-draft.md",
+      "docs/prd/2026-07-15-latch-migration-cli-draft.md",
+      "tests/docs-skill.test.mjs",
+      "tests/cli-base.test.mjs",
+      "tests/fixtures/"
+    ]
+  },
+  "scope": [
+    "核对并冻结 S2 已切换的 package 和 current CLI `0.5.0` 版本，并确认新 task 只写 schema 5。",
+    "更新 canonical Skill 的未初始化停止、最小 Light authoring、结构化 submit、结构化 done 和旧 schema 只读规则。",
+    "更新 task lifecycle、migration 和 handoff reference，使 current 指令面与 v5 CLI 一致。",
+    "更新 Handbook、Design、AI install、最终产品契约及相关 current component。",
+    "更新 `docs/INDEX.md` 的 current 状态和 `docs/ADOPTER_SYNC.md` 的 adopter 阻断项。",
+    "删除 current 文档和 help 中已退出 v5 工作流的 scope 重复参数、自由文本 closeout 和旧 schema mutation 示例。",
+    "固定 Latch-Board 与 adopter reader 所需的 schema 5 fixture，并给出独立 rollout task 的验收条件。",
+    "运行完整项目、canonical Skill 链接和 diff 完整性验证。"
+  ],
+  "acceptance": [
+    "`package.json` 版本为 `0.5.0`，current help、JSON 和文档不再把 schema 4 描述为 current writer。",
+    "新 task 只写 schema 5，普通 mutation 只接受 schema 5。",
+    "canonical Skill 收到 `not_initialized` 后立即停止，不自动 init。",
+    "Light template、checkpoint scope、`--unverified-item` 和 `--closeout-file` 命令示例与实现一致。",
+    "current 指令面不再出现 `--scope-summary`、`--scope-path`、v5 `--unverified` 或 v5 `done --followup`。",
+    "current Skill 不要求新对话读取旧聊天，并优先让新切片对话创建自己的 task。",
+    "v2–v4 被描述为 historical read-only；v5 不提供 upgrade、downgrade、双写或字符串迁移。",
+    "current 产品契约明确区分 Latch repo v5 current 与外部 adopter pending，不提前宣称全面 rollout 完成。",
+    "`docs/INDEX.md` 仍只有一个 current 产品契约入口，proposed Brief 保留为设计基线。",
+    "`docs/ADOPTER_SYNC.md` 列出 Latch-Board、monitoring 和 appearance-sec 的独立后续 task 与阻断条件。",
+    "schema 5 fixture 可供外部 reader 直接消费，且不含本机绝对路径或聊天内容。",
+    "Skill 符号链接仍指向 repo canonical source。",
+    "`pnpm check`、`pnpm skill:check` 与 `git diff --check` 通过。"
+  ],
+  "approach": [
+    "先核对 S1–S4 的实现与 fixture，再更新版本和 current instruction surface。",
+    "按 current contract、Handbook、Design、Skill、安装说明和项目规则的顺序统一术语。",
+    "删除退出 current workflow 的示例和分支说明，不用兼容注释掩盖旧行为。",
+    "保留历史文档和 archive 数据，但 current 入口只描述 v5。",
+    "将外部 adopter 标为 pending，并把每个 repo 的实现授权留给独立 task。",
+    "开发期间运行文档契约定向测试，最终执行三个互相独立的 named gate。"
+  ],
+  "api_assumptions": [
+    "本切片 task 使用隔离 v5 worktree 的 repo-local CLI `0.5.0` 创建和写入。",
+    "CLI current version 为 `0.5.0`，task schema 为 `5`，minimum writer 为 `0.5.0`。",
+    "event schema 延续 `events_schema_version: 3`。",
+    "global canonical Skill 继续通过现有符号链接指向 repo source。",
+    "Latch-Board 使用冻结 fixture 接入，不直接读取实现聊天。",
+    "外部 adopter 未完成时，Latch repo 可以标记 v5 core current，但不得标记全面 adopter rollout 完成。"
+  ],
+  "permission_assumptions": [
+    "S4 已完成 review acceptance 和 Git delivery，当前隔离 worktree 包含完整 v5 Core、CLI、event 和 view。",
+    "实现只修改 Latch repo 中列出的文件。",
+    "允许读取和验证现有全局 CLI 与 Skill 链接，但不执行 Git、不写外部 repo、不创建 worktree。",
+    "如果需要重新执行 `pnpm link --global` 或修改外部安装状态，先取得单独授权。"
+  ],
+  "data_assumptions": [
+    "Latch repo 在发布前没有仍需继续写入的 schema 2–4 open task。",
+    "v2–v4 archive 保持原值并可按精确 ID 只读。",
+    "外部 adopter 当前状态以 `docs/ADOPTER_SYNC.md` 和目标 repo 的后续只读检查为准。",
+    "Record 不在发布流程中自动转 task、修改或归档。"
+  ],
+  "user_flow": [
+    "用户完成 S4 review acceptance 和 Git delivery 后启动 S5 新对话。",
+    "S5 新对话使用 repo-local CLI `0.5.0` 从本 plan 创建 schema 5 Standard task 并获得 writer。",
+    "S5 对话核对完整 v5 实现，更新 current 文档和版本。",
+    "named gate 全部通过后 submit 到 review，并报告仍待执行的外部 adopter 接入。",
+    "用户处理 Latch repo Git delivery。",
+    "后续在 Latch-Board、monitoring 和 appearance-sec 各自创建独立 Standard task。",
+    "全部 adopter 验收完成后，再用独立任务更新全面 rollout 状态。"
+  ],
+  "out_of_scope": [
+    "不修改 Latch-Board、monitoring、appearance-sec 或其他 repo。",
+    "不执行 Git add、commit、push、branch、checkout、reset、clean 或 worktree 操作。",
+    "不自动执行 `pnpm link --global`，除非另获明确安装授权。",
+    "不迁移、重写或删除历史 archive。",
+    "不恢复 v4/v5 双写、legacy writer、自由文本 closeout 或 scope 重复输入。",
+    "不把未完成的 adopter 接入描述为已全面交付。"
+  ],
+  "verification_plan": [
+    {
+      "name": "project-check",
+      "command": [
+        "pnpm",
+        "check"
+      ],
+      "kind": "gate"
+    },
+    {
+      "name": "canonical-skill-link",
+      "command": [
+        "pnpm",
+        "skill:check"
+      ],
+      "kind": "gate"
+    },
+    {
+      "name": "diff-integrity",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "kind": "gate"
+    }
+  ],
+  "open_questions": []
+}
