@@ -7,8 +7,8 @@ Read this reference for plan structure, checkpoint and approve details, feedback
 - Create a task only from a complete plan file. Keep paths, identifiers, keys, and commands in inline code, and keep each plan item to one sentence.
 - New/updated plans need normalized repo-relative POSIX `workspace_scope.paths`; never infer it from prose, authorization, or artifacts.
 - New tasks use schema 4. Treat schema 3 as read-only and run the explicitly authorized single-task `upgrade-v4` before any lifecycle mutation; never upgrade during context, build, or verification.
-- Shape validation keeps history readable; writable validation requires schema 4 `workspace_scope`. Scaffolds are shape-only. Before `work_basis` writes, run authorizable validation by profile. Show every Standard plan before approval.
-- Use `source: user_request` for a complete low-risk request, `source: user_delta` for a precise low-risk addition to the current plan, and `source: user_approve` after explicit approval of a displayed Standard plan.
+- Shape validation keeps history readable; writable validation requires schema 4 `workspace_scope`. Scaffolds are shape-only. Before `work_basis` writes, run authorizable validation by profile. Before approval, chat shows short decision highlights and the task id; full plan stays in the task store for Latch-Board or `latch context`. Do not paste full plan JSON or dump all plan fields by default.
+- Use `source: user_request` for a complete low-risk request, `source: user_delta` for a precise low-risk addition to the current plan, and `source: user_approve` after explicit approval of the current Standard plan.
 - Use `checkpoint --retrospective-file` only for an honest after-the-fact record when no matching open task exists.
 - Use `save --plan-file` when goal, scope, acceptance, contracts, user flow, or important boundaries change. This returns the task to `plan` and requires new approval.
 - Record durable task facts rather than chat logs. Keep review feedback, decisions, submissions, and closure summaries concise and user-readable.

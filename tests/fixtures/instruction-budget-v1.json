@@ -9,8 +9,8 @@
         "AGENTS.md",
         "skills/latch/SKILL.md"
       ],
-      "reviewed_baseline": 2851,
-      "review_reason": "加入 schema 4 最低 writer、schema 3 只读和禁止隐式升级的高频安全规则后，审查并接受普通写入路径的必要增长。"
+      "reviewed_baseline": 3045,
+      "review_reason": "Standard plan 聊天改为重点摘要加 task id，完整 plan 指向 Board/CLI 后，审查并接受 always-loaded 基线。"
     },
     {
       "name": "planning-path",
@@ -19,8 +19,8 @@
         "skills/latch/SKILL.md",
         "skills/latch/references/task-lifecycle.md"
       ],
-      "reviewed_baseline": 4255,
-      "review_reason": "加入 schema 4 lifecycle mutation 边界与显式 upgrade-v4 要求后，审查并接受 planning 路径的必要增长。"
+      "reviewed_baseline": 4499,
+      "review_reason": "Standard plan 默认聊天改为决策重点与 task id，禁止字段倾倒后，审查并接受 planning 路径基线。"
     }
   ]
 }

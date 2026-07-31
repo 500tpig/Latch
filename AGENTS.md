@@ -6,7 +6,7 @@
 
 - A：目标、成功标准、范围、根因或高风险改法不明确时，停在 grill；
 - B：范围固定、低风险且 `open_questions` 为空时，创建或续接 light task；
-- C：涉及方案确认、多个独立验收面、产品选择、公共契约或高风险面时，创建或续接 standard task，展示完整 plan 后等待明确 approve。
+- C：涉及方案确认、多个独立验收面、产品选择、公共契约或高风险面时，创建或续接 standard task；聊天只给可拍板的重点与 task id，完整 plan 在 Latch-Board 或 `latch context` 查看，默认不贴完整 plan JSON、不逐字段倾倒。
 
 lint、typecheck、build 或文档索引等机械检查不单独触发 C。Light task 出现 plan change、产品选择或 scope 扩大时重新执行 A/B/C；Core 不根据 gate 数量分类。纯问答、只读探索、无写入意图或明确要求「不用 Latch」时不建 task；创建或续接 task 必须来自明确写入请求。
 
@@ -21,7 +21,7 @@ lint、typecheck、build 或文档索引等机械检查不单独触发 C。Light
 
 ## 授权与恢复
 
-- plan 必须展示；只有明确实施授权后才能 `approve`。
+- Standard plan 聊天只给重点与 task id；完整 plan 在 Board/CLI。只有明确实施授权后才能 `approve`。
 - `done` 只接受明确完成或归档授权，`abandon` 只接受明确取消授权；`followup` 必须写具体后续动作，或写明无后续及原因。
 - task 授权不包含 Git add、commit、push、branch、checkout、reset、clean。
 - 常规恢复不得读取其他 Codex 会话。已知 group ID 时先运行 `latch list --group <group-id> --include-archive --json --brief`，再按需读取单张 open task status；不得同时展开多张完整 context 或原始 event。

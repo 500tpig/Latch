@@ -40,8 +40,9 @@ Mechanical lint, typecheck, build, or documentation-index gates do not alone
 trigger C; gate count never selects a profile. If implementation reveals missing
 information, a changed root cause, new product choice, plan change, or scope
 expansion, stop and re-run A/B/C. A stays in grill, B needs a precise delta
-authorization, and C shows the updated complete plan and waits for reapproval.
-Core applies structure and revision changes; it never classifies from gate count.
+authorization, and C shows short decision highlights plus the task id for
+full-plan review, then waits for reapproval. Core applies structure and revision changes;
+it never classifies from gate count.
 
 Task creation or continuation requires an explicit write request and grants no
 group, batch, Git, archive, cancellation, claim, or takeover authority.
@@ -67,7 +68,21 @@ named gate, submit to `review`, wait; never auto-complete.
 
 ### Standard plan
 
-Complete 12 Standard fields; show the complete plan, then create:
+Complete 12 Standard fields into `--plan-file`. Full plan truth stays in the plan
+file and task store for Latch-Board task detail or `latch context <task-id>`.
+
+Default chat is short decision highlights only, not a plan dump:
+
+- `goal` in one or two sentences
+- material scope, risks, or choices that affect approval
+- blocking `open_questions`, if any
+- task id, and that full plan is in Board/CLI rather than chat
+
+Do not paste the full `plan.json` body, and do not dump all 12 fields by default.
+Expand a field only when the user asks or when that field is the decision point.
+Keep paths, identifiers, keys, and commands in inline code.
+
+Then create:
 
 ```bash
 latch checkpoint --print-plan-template standard

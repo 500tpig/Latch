@@ -113,7 +113,14 @@ test('canonical skill routes every low-frequency reference without hiding core s
     assert.equal(skill.includes(path.replace('skills/latch/', '')), true, path)
   }
 
-  assert.match(text(lifecycleReference), /Show every Standard plan/)
+  assert.match(
+    text(lifecycleReference),
+    /short decision highlights and the task id/,
+  )
+  assert.match(
+    text(lifecycleReference),
+    /Do not paste full plan JSON or dump all plan fields by default/,
+  )
   assert.match(text(lifecycleReference), /approve --feedback/)
   assert.match(text(actorReference), /LATCH_ACTOR/)
   assert.match(text(actorReference), /handoff prompt/)
@@ -218,7 +225,10 @@ test('A/B/C profile classification follows acceptance semantics instead of gate 
   )
   assert.match(skill, /A stays in grill/)
   assert.match(skill, /B needs a precise delta\s+authorization/)
-  assert.match(skill, /C shows the updated complete plan[\s\S]*reapproval/)
+  assert.match(
+    skill,
+    /C shows short decision highlights plus the task id[\s\S]*reapproval/,
+  )
   assert.match(skill, /Core applies structure and revision changes/)
   assert.match(skill, /never classifies from gate count/)
   assert.doesNotMatch(skill, /disputed\/multiple gates/)
@@ -229,12 +239,20 @@ test('canonical skill routes lifecycle safety without weakening it', () => {
   const lifecycle = text(lifecycleReference)
   const routed = `${skill}\n${lifecycle}`
   assert.match(skill, /pure Q&A/i)
-  assert.match(skill, /show the complete plan[\s\S]*explicit implementation authorization/)
+  assert.match(
+    skill,
+    /short decision highlights only[\s\S]*explicit implementation authorization/,
+  )
+  assert.match(skill, /Do not paste the full `plan\.json` body/)
+  assert.match(skill, /do not dump all 12 fields by default/)
   assert.match(
     routed,
     /implementation reveals missing[\s\S]*changed root cause[\s\S]*new product choice[\s\S]*scope\s+expansion[\s\S]*stop/,
   )
-  assert.match(skill, /C shows the updated complete plan and waits for reapproval/)
+  assert.match(
+    skill,
+    /C shows short decision highlights plus the task id for\s+full-plan review, then waits for reapproval/,
+  )
   assert.match(skill, /writer mismatch is fail closed/)
   assert.match(skill, /Takeover transfers writer ownership only, never implementation approval/)
   assert.match(lifecycle, /implementation correction/)
@@ -250,6 +268,8 @@ test('canonical skill provides three executable paths without weakening closeout
   assert.match(skill, /### Ordinary Light task/)
   assert.match(skill, /checkpoint[\s\S]*--profile light[\s\S]*--authorize-request/)
   assert.match(skill, /### Standard plan/)
+  assert.match(skill, /Default chat is short decision highlights only/)
+  assert.match(skill, /Latch-Board task detail or `latch context/)
   assert.match(skill, /approve <task-id> --expect-revision <n>/)
   assert.match(skill, /### Review closeout fast path/)
   assert.match(
