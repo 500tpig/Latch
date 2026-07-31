@@ -42,6 +42,7 @@ import {
   readTaskEventsV2,
   readTaskEventsV3,
 } from '../dist/core/notes-events.js'
+import { NotInitializedError } from '../dist/core/paths.js'
 
 const temporaryDirectories = []
 
@@ -720,11 +721,22 @@ test('损坏 JSON 的错误包含具体路径', () => {
   })
 })
 
-test('未初始化目录的只读 open 不创建 .latch', () => {
-  const root = temporaryDirectory()
+test('未初始化目录的只读 open 返回 typed error 且不创建文件', () => {
+  const roots = [temporaryDirectory(), temporaryDirectory()]
+  assert.equal(spawnSync('git', ['init', '-q'], { cwd: roots[1] }).status, 0)
 
-  assert.throws(() => openTaskStoreV2(root), /Latch is not initialized/)
-  assert.equal(existsSync(join(root, '.latch')), false)
+  for (const root of roots) {
+    const entriesBefore = readdirSync(root).sort()
+    assert.throws(() => openTaskStoreV2(root), (error) => {
+      assert.ok(error instanceof NotInitializedError)
+      assert.equal(error.code, 'not_initialized')
+      assert.equal(error.workspace_root, realpathSync(root))
+      assert.match(error.message, /Latch is not initialized/)
+      return true
+    })
+    assert.deepEqual(readdirSync(root).sort(), entriesBefore)
+    assert.equal(existsSync(join(root, '.latch')), false)
+  }
 })
 
 test('发现 v1 state 时 init 明确拒绝且不覆盖', () => {

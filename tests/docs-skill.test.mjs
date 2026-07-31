@@ -422,6 +422,15 @@ test('startup reads context and project docs only when conditions require them',
   assert.match(handBook, /简单且证据充分的改动不固定读取项目文档/)
 })
 
+test('canonical skill stops immediately when Latch is not initialized', () => {
+  const skill = text('skills/latch/SKILL.md')
+
+  assert.match(skill, /`not_initialized`: stop/)
+  assert.match(skill, /no template\/plan\/`checkpoint`\/`latch init`/)
+  assert.match(skill, /Explicit\s+one-off\/no-Latch proceeds/)
+  assert.match(skill, /await init choice/)
+})
+
 test('continuous mutation flows reuse returned revision without redundant context reads', () => {
   const skill = text('skills/latch/SKILL.md')
   const agents = text('AGENTS.md')

@@ -10,6 +10,11 @@ Latch 是个人 macOS 开发环境中的本地任务状态记录器。它帮助 
 
 对会导致仓库写入或明确改变可观察行为的请求，先使用触发章 A/B/C 判定表：A 停在 grill；B 创建或续接 light task 并以请求授权；C 创建或续接 standard task，展示 plan 后等待明确 approve。纯问答、只读探索、无写入意图或明确要求「不用 Latch」的请求不建 task。
 
+启动时，`latch list --json --brief` 在未初始化目录中返回稳定的
+`error.code: "not_initialized"`。canonical Skill 收到该错误后立即停止 Latch
+流程，不生成 template 或 plan，不调用 `checkpoint`，也不自动执行 `latch init`。
+该只读探测不创建项目文件。
+
 ## 当前事实
 
 - `task.json` 保存当前状态；

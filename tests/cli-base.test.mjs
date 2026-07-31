@@ -282,6 +282,35 @@ test('JSON errors use the stable envelope', () => {
   assert.match(data.error.message, /Unknown option/)
 })
 
+test('uninitialized list returns a typed JSON error without side effects', () => {
+  const roots = [
+    { root: temporaryDirectory(), kind: 'non-Git directory' },
+    { root: temporaryDirectory(), kind: 'Git repository' },
+  ]
+  const git = spawnSync('git', ['init', '-q'], {
+    cwd: roots[1].root,
+    encoding: 'utf8',
+  })
+  assert.equal(git.status, 0, git.stderr)
+
+  for (const { root, kind } of roots) {
+    const entriesBefore = readdirSync(root).sort()
+    const result = run(root, ['list', '--json', '--brief'])
+
+    assert.notEqual(result.status, 0, kind)
+    const data = JSON.parse(result.stderr)
+    assert.equal(data.schema_version, 2)
+    assert.equal(data.error.code, 'not_initialized')
+    assert.match(data.error.message, /Latch is not initialized from/)
+    assert.deepEqual(readdirSync(root).sort(), entriesBefore)
+    assert.equal(existsSync(join(root, '.latch')), false)
+  }
+
+  const human = run(roots[0].root, ['list'])
+  assert.notEqual(human.status, 0)
+  assert.match(human.stderr, /Run `latch init` in the project root/)
+})
+
 test('init creates schema v2 and returns workspace JSON', () => {
   const cwd = temporaryDirectory()
   const result = run(cwd, ['init', '--json'])

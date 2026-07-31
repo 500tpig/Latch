@@ -25,7 +25,10 @@ import {
   fingerprintKnowledgeDocument,
   type KnowledgeCheckResult,
 } from './core/knowledge.js'
-import { discoverWorkspaceRoot } from './core/paths.js'
+import {
+  discoverWorkspaceRoot,
+  NotInitializedError,
+} from './core/paths.js'
 import {
   assertWritableTaskPlan,
   planTemplate,
@@ -2022,7 +2025,10 @@ try {
   run(process.argv.slice(2), process.cwd())
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error)
-  const code = error instanceof CliV2Error ? error.code : 'command_failed'
+  const code =
+    error instanceof CliV2Error || error instanceof NotInitializedError
+      ? error.code
+      : 'command_failed'
   if (process.argv.includes('--json'))
     process.stderr.write(
       `${JSON.stringify({

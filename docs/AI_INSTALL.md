@@ -81,7 +81,12 @@ pnpm skill:link
 
 ## 初始化项目
 
-新项目直接执行：
+初始化是显式操作。未初始化目录中的 `latch list --json --brief` 返回
+`error.code: "not_initialized"`，不会创建 `.latch` 或其他项目文件。canonical
+Skill 收到该错误后停止，不打印 template、不准备 plan、不调用 `checkpoint`，也不
+自动执行 `latch init`。
+
+确认需要初始化后执行：
 
 ```bash
 latch init

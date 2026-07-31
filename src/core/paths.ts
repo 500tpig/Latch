@@ -17,6 +17,17 @@ export type LatchPathsV2 = {
   stateLockPath: string
 }
 
+export class NotInitializedError extends Error {
+  readonly code = 'not_initialized'
+
+  constructor(readonly workspace_root: string) {
+    super(
+      `Latch is not initialized from ${workspace_root}. Run \`latch init\` in the project root.`,
+    )
+    this.name = 'NotInitializedError'
+  }
+}
+
 function canonicalDirectory(path: string) {
   return realpathSync.native(resolve(path))
 }
@@ -79,14 +90,14 @@ export function discoverWorkspaceRoot(
   const gitRoot = findGitRoot(canonicalCwd)
   if (gitRoot) {
     const existingRoot = findExistingLatchRoot(canonicalCwd, gitRoot)
-    return existingRoot ?? gitRoot
+    if (existingRoot) return existingRoot
+    if (options.forInit) return gitRoot
+    throw new NotInitializedError(canonicalCwd)
   }
 
   const existingRoot = findExistingLatchRoot(canonicalCwd)
   if (existingRoot) return existingRoot
   if (options.forInit) return canonicalCwd
 
-  throw new Error(
-    `Latch is not initialized from ${canonicalCwd}. Run \`latch init\` in the project root.`,
-  )
+  throw new NotInitializedError(canonicalCwd)
 }

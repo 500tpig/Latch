@@ -10,17 +10,17 @@ no-write requests, and explicit no-Latch requests do not create tasks.
 
 ## Start with bounded state
 
-1. Run `git status --short`, then `latch list --json --brief`.
-2. For a named task, run `latch context <task-id> --json --status`; otherwise read
-   status only for a returned `current_task_id`. If neither exists, do not call
-   context without a task ID.
-3. Read task artifacts first. Read `docs/INDEX.md` and 1–3 directly relevant docs
-   only when the task affects product contracts, architecture, installation,
-   documentation behavior, or current evidence is insufficient.
+1. Run `git status --short`, then `latch list --json --brief`. On
+   `not_initialized`: stop; no template/plan/`checkpoint`/`latch init`. Explicit
+   one-off/no-Latch proceeds; else report/await init choice.
+2. task ID/`current_task_id`: run
+   `latch context <task-id> --json --status`. If neither exists, do not call context.
+3. Read artifacts first; use 1–3 `docs/INDEX.md` docs only when
+   task affects product contracts, architecture/install/docs, or evidence is insufficient.
 
 Above 50 worktree entries, report totals, status counts, and at most eight paths
 unless the full list is requested. Avoid a full `git diff` unless review or exact
-patch evidence requires it, and never join high-output commands with `;`.
+patch evidence requires it; never join high-output commands with `;`.
 
 Do not read other Codex conversations for routine recovery. Do not read or write
 Records during startup, task recovery, or ordinary discussion without explicit

@@ -32,6 +32,12 @@ blocked 不改变 phase。其他处于 dev、check、review 的 task 不阻止�
 
 Agent 处理请求时，先运行 `git status --short` 和 `latch list --json --brief`。请求已点名 task 时，读取该 task 的 `context --json --status`；未点名时，仅当 list 返回 `current_task_id` 才读取对应 status。
 
+`latch list --json --brief` 在未初始化的 Git repo 或非 Git 目录中返回
+`error.code: "not_initialized"`。收到该错误后立即停止 Latch 流程，不打印
+template、不准备 plan、不调用 `checkpoint`，也不自动执行 `latch init`。请求已明确为
+一次性任务或明确不用 Latch 时，可按普通任务实施；其他情况等待是否初始化的明确选择。
+该探测不创建 `.latch` 或其他项目文件。
+
 当 list 不含 `current_task_id` 且请求未点名 task 时，不得调用无 task ID 的 `latch context --json --status`。需要 goal、scope、acceptance、完整 gate 或 submission 时，再从 status 展开为 brief 或完整 context。
 
 先读取 task artifact。只有任务涉及产品契约、架构、安装、文档行为，或现有证据不足时，才从 `docs/INDEX.md` 选择直接相关文档；简单且证据充分的改动不固定读取项目文档。
@@ -44,7 +50,8 @@ Agent 处理请求时，先运行 `git status --short` 和 `latch list --json --
 latch init
 ```
 
-v2 不迁移或覆盖 v1 `.latch`。
+`latch init` 只在明确选择初始化后执行。v2 不自动初始化，也不迁移或覆盖 v1
+`.latch`。
 
 ### 创建与选择
 
