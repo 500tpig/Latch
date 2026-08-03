@@ -1,117 +1,13 @@
 {
-  "goal": "建立 schema 5 的单一 current task 与 plan authoring 模型，精简 Light plan 输入并移除重复 scope 真源和旧 schema 普通写路径。",
-  "workspace_scope": {
-    "paths": [
-      "package.json",
-      "src/cli.ts",
-      "src/core/types.ts",
-      "src/core/plan-schema.ts",
-      "src/core/task-store.ts",
-      "src/core/notes-events.ts",
-      "src/core/migration.ts",
-      "tests/cli-base.test.mjs",
-      "tests/light-proof.test.mjs",
-      "tests/store.test.mjs",
-      "tests/migration.test.mjs",
-      "tests/schema4-compat.test.mjs",
-      "tests/fixtures/"
-    ]
-  },
-  "scope": [
-    "将 repo-local package 版本切换为 `0.5.0`，使 writer 身份与 minimum writer 一致，但不更新全局安装或 current 文档。",
-    "定义 schema 5 current task、minimum writer `0.5.0` 和独立的 current task 类型边界。",
-    "将 TaskPlan v5 收缩为六组 required 字段，并把假设、用户流程、out-of-scope 和 open questions 改为按需字段。",
-    "让 Light 与 Standard template 输出不同 authoring shape，同时复用同一 v5 validator。",
-    "让 `checkpoint` 只从 plan 读取机器范围和人类范围，并移除 `--scope-summary` 与 `--scope-path`。",
-    "让 `--authorize-request` 从已校验 plan 冻结 work basis scope snapshot。",
-    "让新 task 只写 schema 5，让 v2–v4 保持历史只读，并从 current CLI 普通写路径移除旧 schema mutation。",
-    "更新 task 创建、读盘、writer 校验、plan 更新和 fixture 测试。"
+  "document_status": "superseded",
+  "superseded_by": [
+    "../02-light-plan-authoring-pilot.json",
+    "../03-structured-closeout-candidate.json"
   ],
-  "acceptance": [
-    "`package.json` 版本为 `0.5.0`，repo-local CLI writer 身份与 minimum writer 一致。",
-    "新 checkpoint task 保存 `schema_version: 5` 和 `min_writer_version: \"0.5.0\"`。",
-    "Light template 只输出 `goal`、`workspace_scope`、`scope`、`acceptance`、`approach` 和 `verification_plan`。",
-    "Standard template 展示 optional 字段，但 plan 文件省略无事实的 optional 字段时仍合法。",
-    "required 字段、路径规则、Light gate 和 blocking open questions 继续由 authorizable validation 强制。",
-    "`--scope-summary` 与 `--scope-path` 不再出现在 current checkpoint help 或解析分支。",
-    "request authorization 的 scope snapshot 与批准 plan 的 `scope` 和 `workspace_scope.paths` 完全一致。",
-    "plan 变化仍使旧 work basis、gate 和 submission 失效，不从授权文本反推新 scope。",
-    "schema 5 普通 mutation 通过，v2–v4 普通 mutation 明确拒绝且不修改 task 或 event。",
-    "schema 5 task 不得写入 v4 形状的 submission 或 closure；S3 完成前相关 mutation 必须 fail closed 且无部分写入。",
-    "S2 implementation task 保持 schema 4，并只由 handoff 指定的 immutable CLI `0.4.0` runner 完成 checkpoint、approve、verify 和 submit。",
-    "repo-local CLI `0.5.0` 不 mutation S2 task；S3 及后续 task 只由 repo-local CLI `0.5.0` 创建和写入。",
-    "v5 新写路径不包含 v4/v5 双写、字段回填、隐式 upgrade、downgrade 或 fallback。",
-    "S2 完成后仍属于未发布 v5 开发序列，不修改 global install 或 current 文档。",
-    "`pnpm check` 与 `git diff --check` 通过。"
-  ],
-  "approach": [
-    "先核对隔离 v5 worktree、S1 delivery commit 和 immutable CLI `0.4.0` runner，任一不符即停止。",
-    "先冻结 `TaskPlanV5`、schema 常量和 validator，再修改 task create/update 边界。",
-    "将 package、current schema 常量和 minimum writer 在同一切片一次性切到 `0.5.0` 与 schema 5。",
-    "将历史 readable task 与 current writable task 明确区分，ordinary mutation 只接受 current task。",
-    "保留旧 archive 的 shape validator 和精确 ID 只读能力，不把历史字段转换成 v5。",
-    "从 checkpoint 删除重复 scope 参数，并让 work basis scope 只由 plan snapshot 产生。",
-    "使用 schema 5 fixture 覆盖最小 Light、扩展 Standard、optional 字段和旧 task 拒写。",
-    "开发期间运行定向测试，最终执行完整项目检查和 diff 完整性 gate。"
-  ],
-  "api_assumptions": [
-    "current task schema 为 `5`，minimum writer 为 `0.5.0`。",
-    "repo-local package 与 CLI version 从本切片起为 `0.5.0`。",
-    "`checkpoint --print-plan-template light` 与 `standard` 保持现有命令名。",
-    "`checkpoint --plan-file` 继续是 plan 的唯一文件输入。",
-    "`--authorize-request` 只接收授权原因，不再接收另一套 scope 输入。",
-    "v2–v4 context 和 archive read 保持只读，current mutation 只接受 schema 5。",
-    "该切片不定义 v5 submission 或 closeout 的最终结构；S3 完成前不得发布或全局安装。"
-  ],
-  "permission_assumptions": [
-    "S1 已完成 review acceptance 和 Git delivery，隔离 v5 worktree 以该精确 commit 为基线。",
-    "用户已在隔离 v5 worktree 显式初始化 Latch，并提供位于该 worktree 外的 immutable CLI `0.4.0` runner。",
-    "实现只修改 Latch repo 中列出的文件。",
-    "不执行 Git、不复制 maintenance CLI、不更新全局 CLI、不切换 CLI 链接、不修改 canonical Skill 或 current 文档。"
-  ],
-  "data_assumptions": [
-    "S2 implementation task 在源码改动前由 immutable CLI `0.4.0` 创建为 schema 4，并由同一 runner 写到 review。",
-    "发布 schema 5 前，其余旧 open task 将由用户使用旧 CLI 完成处置。",
-    "v2–v4 archive 必须继续按原值读取，不重写 task、event、submission 或 closure。",
-    "测试 fixture 可以保存历史 schema，用于证明只读能力和拒写边界。",
-    "S2–S4 位于同一未发布开发序列，中间状态不作为 current 产品使用。"
-  ],
-  "user_flow": [
-    "新实现对话核对隔离 worktree、S1 delivery commit 和 immutable CLI `0.4.0` runner。",
-    "新实现对话使用 immutable CLI `0.4.0` 从本 plan 创建 schema 4 Standard task 并获得 writer。",
-    "Light 请求打印最小 template，填写 required 字段后以 request authorization 原子进入 dev。",
-    "Standard 请求可以填写 optional 字段，创建后仍等待明确 approve。",
-    "读取旧 task 时显示历史 schema；尝试普通 mutation 时明确拒绝。",
-    "完成 gate 后仍使用 immutable CLI `0.4.0` submit S2 task 到 review，不让 repo-local CLI `0.5.0` mutation 该 task。",
-    "S2 review acceptance 和 Git delivery 后，S3 使用 repo-local CLI `0.5.0` 创建 schema 5 task。"
-  ],
-  "out_of_scope": [
-    "不实现结构化 `unverified_items`、closeout resolution 或 done file。",
-    "不更新 current 产品契约、Skill、安装说明、全局安装或 adopter。",
-    "不由实现对话创建 worktree、初始化 Latch、复制 maintenance CLI 或切换全局 CLI 链接。",
-    "不新增 v4→v5 upgrade、v5 downgrade 或双写。",
-    "不根据 profile、命令数量或自然语言自动选择 task 类型。",
-    "不为 optional 字段读盘回填空数组。",
-    "不机械重命名与当前契约无关的所有 `V2` 内部符号。"
-  ],
-  "verification_plan": [
-    {
-      "name": "project-check",
-      "command": [
-        "pnpm",
-        "check"
-      ],
-      "kind": "gate"
-    },
-    {
-      "name": "diff-integrity",
-      "command": [
-        "git",
-        "diff",
-        "--check"
-      ],
-      "kind": "gate"
-    }
-  ],
-  "open_questions": []
+  "source_task": "20260803021354850-冻结-s4-schema-5-event-view-candidate-规划-2eae7e",
+  "source_task_plan_revision": 2,
+  "s2_delivery_commit": "0a14c714753a106a89a94e6d0af464a15024cc2e",
+  "s3_delivery_commit": "f08f66999799dda713fe43c50a5b4b08958e15dd",
+  "implementation_authorization": false,
+  "reason": "旧 backlog/02 将 schema 5、package/CLI 0.5.0 和旧 schema 拒写与 S2 绑定。现已确认 S2 只交付 schema 4 Light authoring，CLI/package 0.5.0 来自 S3 candidate；本文件保留历史入口，不再作为可执行 Standard plan。"
 }

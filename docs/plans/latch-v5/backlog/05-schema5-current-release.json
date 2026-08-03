@@ -24,7 +24,7 @@
     ]
   },
   "scope": [
-    "核对并冻结 S2 已切换的 package 和 current CLI `0.5.0` 版本，并确认新 task 只写 schema 5。",
+    "核对并冻结 S3 candidate 已切换的 package 和 repo-local CLI `0.5.0` 版本，并确认新 task 只写 schema 5。",
     "更新 canonical Skill 的未初始化停止、最小 Light authoring、结构化 submit、结构化 done 和旧 schema 只读规则。",
     "更新 task lifecycle、migration 和 handoff reference，使 current 指令面与 v5 CLI 一致。",
     "更新 Handbook、Design、AI install、最终产品契约及相关 current component。",
@@ -66,6 +66,7 @@
   ],
   "permission_assumptions": [
     "S4 已完成 review acceptance 和 Git delivery，当前隔离 worktree 包含完整 v5 Core、CLI、event 和 view。",
+    "CLI/package `0.5.0` 来自 S3 candidate delivery commit `f08f66999799dda713fe43c50a5b4b08958e15dd`，不是 S2 的交付内容。",
     "实现只修改 Latch repo 中列出的文件。",
     "允许读取和验证现有全局 CLI 与 Skill 链接，但不执行 Git、不写外部 repo、不创建 worktree。",
     "如果需要重新执行 `pnpm link --global` 或修改外部安装状态，先取得单独授权。"
