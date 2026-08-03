@@ -6,7 +6,7 @@ Read this reference for plan structure, checkpoint and approve details, feedback
 
 - Create a task only from a complete plan file. Keep paths, identifiers, keys, and commands in inline code, and keep each plan item to one sentence.
 - New/updated plans need normalized repo-relative POSIX `workspace_scope.paths`; never infer it from prose, authorization, or artifacts.
-- New candidate tasks use schema 5 with minimum writer `0.5.0`. Candidate CLI `0.5.0` reads schema 2–5 but rejects schema 2–4 mutations; use only the runner selected by the handoff or migration contract for older tasks. Never migrate during context, build, or verification.
+- New tasks use schema 5 with minimum writer `0.5.0`. CLI `0.5.0` reads schema 2–5 but rejects schema 2–4 mutations. Historical tasks remain read-only; never migrate during context, build, or verification.
 - Shape validation keeps history readable; writable validation requires `workspace_scope`. Scaffolds are shape-only. Before `work_basis` writes, run authorizable validation by profile. Before approval, chat shows short decision highlights and the task id; full plan stays in the task store for Latch-Board or the selected runner's `context`. Do not paste full plan JSON or dump all plan fields by default.
 - Use `source: user_request` for a complete low-risk request, `source: user_delta` for a precise low-risk addition to the current plan, and `source: user_approve` after explicit approval of the current Standard plan.
 - Use `checkpoint --retrospective-file` only for an honest after-the-fact record when no matching open task exists.
@@ -23,7 +23,7 @@ Read this reference for plan structure, checkpoint and approve details, feedback
 
 - When authoring `verification_plan`, avoid redundant named gates: every gate must add distinct proof. If a final comprehensive gate already runs typecheck, build, or the full test suite, keep subsumed steps as development diagnostics unless they verify a distinct acceptance requirement. Once approved, never skip a named gate because its proof overlaps another gate.
 - Never use `echo`, `printf`, `true`, or a command whose only effect is to print instructions as a gate; a zero exit code from such a command does not prove that a manual step occurred.
-- Put a manual step in a non-gating diagnostic when the plan needs to preserve it as an instruction, or in a repeated schema 5 `submit --unverified <summary>` item while acceptance remains outstanding; diagnostic success never verifies the manual action.
+- Put a manual step in a non-gating diagnostic when the plan needs to preserve it as an instruction, or in a repeated schema 5 `submit --unverified-item <summary>` item while acceptance remains outstanding; diagnostic success never verifies the manual action.
 - Run every named gate from the approved plan with the task's selected runner: `verify <task-id> --expect-revision <n> --name <gate-name> --json`.
 - A gate passes only when its command succeeds, workspace evidence is complete, covered workspace is unchanged, and its proof binds the current work revision and generation with no unresolved violation.
 - Preserve gate mutations for user inspection. Do not reset, clean, stash, or auto-approve a wider scope; scope changes return to plan and require explicit approval.
@@ -64,8 +64,6 @@ Read this reference for plan structure, checkpoint and approve details, feedback
 - If required acceptance, an observed result, a stable owner, or the next action
   is missing, remain in review and ask for it. Do not create follow-up tasks,
   issues, Records, or reminders automatically.
-- The S3 schema 4 implementation task keeps the immutable CLI `0.4.0` and legacy
-  `--followup` contract; do not send schema 5 closeout input to that runner.
 - Run `done` only after explicit completion/archive authorization.
 - Run `abandon` only after explicit cancellation authorization.
 - Never treat task-level authorization as Git authorization.

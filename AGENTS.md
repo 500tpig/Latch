@@ -13,20 +13,20 @@ lint、typecheck、build 或文档索引等机械检查不单独触发 C。Light
 开始时依次执行：
 
 1. `git status --short`；
-2. 使用 candidate CLI `node <candidate-worktree>/dist/cli.js list --json --brief`；
-3. 已知 task ID 时使用 candidate CLI 读取 `context <task-id> --json --status`；否则仅为 list 返回的 `current_task_id` 读取 status，两者都没有时不得调用无 task ID 的 status；
+2. 在 Latch 源码 repo 使用 `node dist/cli.js list --json --brief`；已完成 `0.5.0` 安装的 adopter repo 使用 `latch list --json --brief`；
+3. 已知 task ID 时使用同一 current runner 读取 `context <task-id> --json --status`；否则仅为 list 返回的 `current_task_id` 读取 status，两者都没有时不得调用无 task ID 的 status；
 4. 先读 task artifact；status 不足时只展开一张 task 的 `--brief --history timeline`，仅在产品契约、架构、安装、文档行为或证据不足时从 `docs/INDEX.md` 选择直接相关的 1–3 份文档。
 
-candidate worktree 禁止使用裸 `latch`。读取 task 的 `task_schema_version` 后再选择 mutation runner：schema 5 使用 candidate CLI `0.5.0`；S3 schema 4 implementation task 只使用 handoff manifest 指定的仓库外 immutable CLI `0.4.0`。schema 或 runner 无法确定时立即停止；candidate CLI `0.5.0` 不得修改 schema 2–4 task。
+CLI `0.5.0` 是 current runner。新 task 使用 schema 5；schema 2–4 仅供 historical read-only，不得通过 current runner 执行 claim、upgrade、downgrade、takeover 或其它 mutation。task schema 或 runner 无法确定时立即停止。
 
 连续 mutation 直接复用成功 JSON 返回的 `revision` 作为下一条 `--expect-revision`。仅在 revision conflict、用户输入边界、warning 需要判断或任务语义变化时刷新 status；不得自动重试冲突，也不得只为 revision 重读 context。
 
 ## 授权与恢复
 
 - Standard plan 聊天只给重点与 task id；完整 plan 在 Board/CLI。只有明确实施授权后才能 `approve`。
-- `done` 只接受明确完成或归档授权，`abandon` 只接受明确取消授权。schema 5 必须通过 `--closeout-file` 为每个 `submission.unverified_items` 提供一个结构化 resolution；S3 schema 4 task 继续由 immutable runner 使用旧 `--followup` 契约。
+- `done` 只接受明确完成或归档授权，`abandon` 只接受明确取消授权。schema 5 必须通过 `--closeout-file` 为每个 `submission.unverified_items` 提供一个结构化 resolution。
 - task 授权不包含 Git add、commit、push、branch、checkout、reset、clean。
-- 常规恢复不得读取其他 Codex 会话。已知 group ID 时先使用 candidate CLI 运行 `list --group <group-id> --include-archive --json --brief`，再按需读取单张 open task status；不得同时展开多张完整 context 或原始 event。
+- 常规恢复不得读取其他 Codex 会话。已知 group ID 时先使用 current runner 运行 `list --group <group-id> --include-archive --json --brief`，再按需读取单张 open task status；不得同时展开多张完整 context 或原始 event。
 - 只读恢复不构成 handoff；新 session 继续写同一 open task 时按 canonical skill 的 handoff 规则取得授权。不得只为聊天连续性创建 planning 或 anchor task，也不得从路径或归档邻近关系推断 group。
 
 ## 开发边界
@@ -34,7 +34,7 @@ candidate worktree 禁止使用裸 `latch`。读取 task 的 `task_schema_versio
 - 写代码前读取现有实现、相关测试和 import；明确标识符使用 `rg`，结构影响在存在 `.codegraph/` 时使用 CodeGraph。
 - 做最小可维护改动，不清理、回滚或覆盖用户改动，不新增无真实来源的 guard、fallback 或抽象。
 - JavaScript 和 TypeScript 使用 `pnpm`；完成前运行 `pnpm check` 和 `git diff --check`，或说明为何采用更小验证。
-- phase 只有 `plan`、`dev`、`check`、`review`；blocked 是附加状态。`task.json` 是当前事实，events 是历史，state 是 actor 的 current 索引。candidate 新 task 使用 schema 5 和 minimum writer `0.5.0`；`events_schema_version` 保持 `3`。
+- phase 只有 `plan`、`dev`、`check`、`review`；blocked 是附加状态。`task.json` 是当前事实，events 是历史，state 是 actor 的 current 索引。current 新 task 使用 schema 5 和 minimum writer `0.5.0`；`events_schema_version` 保持 `3`。
 - 不实现自动分类、聊天保存、全局 knowledge store、自动 Git 或自动 worktree。
 
 ## Record 与文档

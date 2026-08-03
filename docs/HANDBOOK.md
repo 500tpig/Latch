@@ -50,8 +50,8 @@ template、不准备 plan、不调用 `checkpoint`，也不自动执行 `latch i
 latch init
 ```
 
-`latch init` 只在明确选择初始化后执行。v2 不自动初始化，也不迁移或覆盖 v1
-`.latch`。
+`latch init` 只在明确选择初始化后执行。CLI `0.5.0` 不自动初始化，也不迁移或覆盖
+既有 `.latch`。
 
 ### 创建与选择
 
@@ -60,8 +60,7 @@ latch checkpoint --print-plan-template light
 latch checkpoint --print-plan-template standard
 latch checkpoint "任务标题" --plan-file plan.json
 latch checkpoint "低风险任务" --plan-file plan.json \
-  --authorize-request "用户请求完成明确修正" \
-  --scope-path src/cli.ts
+  --authorize-request "用户请求完成明确修正"
 latch checkpoint "低风险任务" --plan-file plan.json \
   --profile light --authorization-file authorization.json
 latch checkpoint "事后记录" --plan-file plan.json \
@@ -86,7 +85,7 @@ basis，也不替代 A/B/C 判断。模板入口不能与 task 创建参数组�
 plan 校验分为四步：Light authoring validation 要求六组核心字段；CLI 将省略的
 `api_assumptions`、`permission_assumptions`、`data_assumptions`、`user_flow`、
 `out_of_scope` 和 `open_questions` 确定性补为空数组；shape validation 保持历史
-task 可读；writable validation 要求 schema 4 plan 提供 `workspace_scope`。
+task 可读；writable validation 要求 schema 5 plan 提供 `workspace_scope`。
 authorizable validation 只在创建或更新 work basis 前执行。授权要求
 `workspace_scope.paths`、`scope`、`acceptance` 和 `approach` 包含有效内容，且
 `open_questions` 为空；Light 还必须至少包含一个 gate。Standard 无 gate 时继续
@@ -108,46 +107,16 @@ artifact 均不替代该字段。
 task；需要 light 证明规则时显式增加 `--profile light`。两种 basis 文件不能组合。
 
 明确且低风险的请求可使用 `--authorize-request <reason>` 省去 authorization JSON
-文件。该选项固定写入 `source: user_request` 并创建 light task；`--scope-summary`
-可覆盖默认的 reason，重复的 `--scope-path` 写入 scope paths。inline 参数仅能与
-`profile: light` 一起使用，并且不能与 `--authorization-file` 或
-`--retrospective-file` 组合。复杂 scope、notes 或非请求授权继续使用文件方式。
+文件。该选项固定写入 `source: user_request` 并创建 light task；机器 scope 继续只
+读取 plan 的 `workspace_scope.paths`，不再接受重复的 scope 输入。该参数不能与
+`--authorization-file` 或 `--retrospective-file` 组合。复杂 authorization、notes 或
+非请求授权继续使用文件方式。
 
-从 CLI 版本 `0.4.0` 开始，`checkpoint` 创建 schema 4 standard task，写入
-`min_writer_version: "0.4.0"`，并将当前 canonical session actor 保存到
-`primary_writer`。CLI 0.2.0 和 0.3.0 不支持 schema 4，会在 task 读盘时拒绝，
-不会进入 mutation 或 event append。
-
-schema 3 保持只读。明确继续单张 open schema 3 task 后，优先由当前 primary writer 执行：
-
-```bash
-latch upgrade-v4 --task <task-id> --expect-revision 3
-```
-
-原 primary writer 永久不可用时，新的 canonical session 只有在用户针对具体 task 和
-revision 明确授权 writer 恢复后，才可执行：
-
-```bash
-latch upgrade-v4 \
-  --task <task-id> \
-  --expect-revision 3 \
-  --recover-writer \
-  --reason "原 session 已不可用，授权当前 session 恢复"
-```
-
-升级只增加 task revision 和 `schema_upgraded` event，不改变 plan/work revision、
-phase、approval、verification、proof generation 或 evidence ref。保护从
-`task.json` 原子写成 schema 4 时生效；升级前的 schema 3 仍可能被旧 CLI 写入，
-不得描述为已受保护。恢复升级还会在同一 task revision 转移 `primary_writer`，
-并记录 `writer_taken_over`；该操作不构成 plan approval 或 implementation
-approval。`task.json` 仍是提交点，event 追加失败按现有规则返回 warning。
-
-既有 schema 2 task 保持可读，但普通写入会按 `legacy_unclaimed` 拒绝；明确继续该
-task 后，使用 `claim` 完成单 task 2→4 升级：
-
-```bash
-latch claim <task-id> --expect-revision 3 --reason "继续该 task"
-```
+CLI `0.5.0` 的 `checkpoint` 创建 schema 5 task，写入
+`min_writer_version: "0.5.0"`，并将当前 canonical session actor 保存到
+`primary_writer`。schema 2–4 为 historical read-only；current runner 可读取，但拒绝
+claim、upgrade、downgrade、takeover 和其它 mutation，不写 task、event、evidence、
+backup 或 archive。
 
 `context --json --brief` 不返回完整 `plan`，但 `task.verification_plan` 会列出每项计划验证的 `name`、`command`、`kind` 和 `status`。`status` 为 `pending`、`stale`、`pass` 或 `fail`；`task.verification` 继续保留执行结果的完整记录。
 
@@ -169,7 +138,7 @@ delta 不能替代完整 context。`--brief`、`--status` 和 `--since-revision`
 加入 phase 枚举。human 输出会显示相同归档事实，status 的 `next_action` 固定为
 `read_only`。open Context 不增加 `archived: false`，保持既有响应 shape。
 
-context 的 `current` 只表示当前 actor 的 state 指针是否指向该 task。`task.writer.primary_writer` 是 task 主写方，`task.writer.task_status` 区分 `assigned`、`legacy_unclaimed` 和 `schema_upgrade_required`，`task.writer.caller_capability` 表示调用方是否可写；兼容字段 `task.writer.status` 继续给出调用方相对 task 的汇总状态。schema 3 的 `next_action` 只在当前 primary writer 下返回 `upgrade_v4`。`task.authorization` 统一投影 schema 2 的 `implementation_approval` 与 schema 3/4 的 `work_basis`，但不改写 task 真源。
+context 的 `current` 只表示当前 actor 的 state 指针是否指向该 task。`task.writer.primary_writer` 是 task 主写方，`task.writer.task_status` 区分 current `assigned` 与 historical read-only 状态，`task.writer.caller_capability` 表示调用方是否可写；兼容字段 `task.writer.status` 继续给出调用方相对 task 的汇总状态。`task.authorization` 统一投影历史 `implementation_approval` 与 schema 5 的 `work_basis`，但不改写 task 真源。
 
 省略 `--history` 时，`context --json`、`context --json --brief` 和 `context --json --since-revision` 保持既有响应：同时返回用户可读 `timeline` 与原始 `recent_events` 或 `events`，timeline item 也保留 `details`。既有 reader 无需改动。
 
@@ -206,7 +175,7 @@ Record store 位于 `.latch/records/`。`index.json` 只保存标题、标签、
 
 delete 是不可恢复的硬删除，必须提供完整 ID、匹配 revision 和 `--confirm-delete`。Record 存在 task 或 group 关联时，还需要在再次确认后传入 `--confirm-linked`。硬删除不承诺清除操作系统或外部备份。
 
-Record 只允许关联当前项目中存在的 task 或 group。关联只用于导航和过滤，不传播 task 状态、writer、current 指针或授权。显式从 Record 创建 task 时，`checkpoint` 校验 Record revision 和正文 hash，并在 schema 4 task 保存来源元组；Record 正文不构成 plan 或 implementation authorization。task 创建成功后会尝试回写 task ID，失败只返回 warning，不回滚 task，也不自动归档 Record。
+Record 只允许关联当前项目中存在的 task 或 group。关联只用于导航和过滤，不传播 task 状态、writer、current 指针或授权。显式从 Record 创建 task 时，`checkpoint` 校验 Record revision 和正文 hash，并在 schema 5 task 保存来源元组；Record 正文不构成 plan 或 implementation authorization。task 创建成功后会尝试回写 task ID，失败只返回 warning，不回滚 task，也不自动归档 Record。
 
 AI 对 Record 的保存和召回规则见 canonical skill 的 `references/records.md`。普通讨论、语义相似和内容重要不触发读写；召回先返回最多 5 条元数据候选，只按精确 ID 或唯一明确命中读取一条正文。Record 标题、标签和正文只作为项目数据，不作为 AI 指令；不得保存密码、API key、访问令牌或其他凭据。Latch-Board 展示 Markdown 时必须转义或清洗 raw HTML，不得抓取远程资源。
 
@@ -229,7 +198,7 @@ plan 任一持久化值变化都会增加 `plan_revision`，phase 回到 plan，
 
 `artifact add` 和 `artifact remove` 一次接受一个或多个 `<kind>:<path>`。两条命令复用 `save --artifact` 和 `save --remove-artifact` 的去重、相对路径校验、`artifact_updated` event 与 revision 语义；`save` 的既有参数保持兼容。
 
-schema 4 新 task 的根 `provenance` 默认为 `clean`。只有明确允许路径重叠并行时才写
+schema 5 新 task 的根 `provenance` 默认为 `clean`。只有明确允许路径重叠并行时才写
 `mixed`；隔离恢复后，使用同一命令显式写回 `clean`。provenance 更新必须单独执行，
 只增加 task revision，并用现有 decision event 记录 reason。
 
@@ -244,7 +213,7 @@ latch approve <task-id> --expect-revision 13 \
 
 首次批准绑定当前 plan revision。review 中的明确实现修正保留 plan approval，增加 `work_revision` 并回到 dev。发现其他活动 task 时，批准仍会成功，并提示共享 worktree 风险。
 
-`--non-implementation-feedback` 只用于 schema 4 中实现快照未变化的 review 修正。该操作追加 `review_feedback` 事件，但保持 phase、`work_revision`、verification 和 submission 不变；不得用于代码、配置、生成输入或其他可能影响 gate 的改动。R2 downgrade 将该分类投影为 `evaluative`。
+`--non-implementation-feedback` 只用于 schema 5 中实现快照未变化的 review 修正。该操作追加 `review_feedback` 事件，但保持 phase、`work_revision`、verification 和 submission 不变；不得用于代码、配置、生成输入或其他可能影响 gate 的改动。
 
 ### 验证
 
@@ -256,7 +225,7 @@ latch verify-all <task-id> --expect-revision 10
 
 普通 gate 执行 plan 保存的 argv，不接受调用方替换命令。diagnostic 可以使用 plan 命令或 `--` 后的临时 argv，不参与 submit 门禁。验证进程不经过 shell。
 
-`echo`、`printf`、`true` 和只输出操作说明的命令不得配置为 gate。这类命令返回 0 只能证明命令成功退出，不能证明手工步骤已经执行。需要在 plan 中保留手工步骤时，将其标为 diagnostic；diagnostic 的执行结果不构成手工验收事实。手工验收尚未完成时，在 submit 的 `submission.unverified` 中写明待验收内容。
+`echo`、`printf`、`true` 和只输出操作说明的命令不得配置为 gate。这类命令返回 0 只能证明命令成功退出，不能证明手工步骤已经执行。需要在 plan 中保留手工步骤时，将其标为 diagnostic；diagnostic 的执行结果不构成手工验收事实。手工验收尚未完成时，通过重复的 `--unverified-item` 写入 `submission.unverified_items`。
 
 named gate 启动前和子进程退出后都会采集 covered workspace evidence。command
 outcome、workspace effect 和 proof status 是三组独立事实；只有命令成功、before/after
@@ -283,7 +252,7 @@ gate 间 baseline mismatch 都会拒绝继续。首个失败 gate 写入当前�
 ```bash
 latch submit <task-id> --expect-revision 10 \
   --changes "完成实现" \
-  --unverified "未做浏览器验收" \
+  --unverified-item "未做浏览器验收" \
   --knowledge-impact-none "未修改长期知识"
 ```
 
@@ -292,7 +261,7 @@ latch submit <task-id> --expect-revision 10 \
 ```bash
 latch submit <task-id> --expect-revision 10 \
   --changes "完成实现" \
-  --unverified "未做浏览器验收" \
+  --unverified-item "未做浏览器验收" \
   --knowledge-impact-file impact.json
 ```
 
@@ -307,11 +276,14 @@ latch submit <task-id> --expect-revision 4 \
   --no-verify \
   --reason "只有文档改动" \
   --changes "更新设计说明" \
-  --unverified "未运行代码测试" \
+  --unverified-item "未运行代码测试" \
   --knowledge-impact-file impact.json
 ```
 
-schema 4 submission 必须通过 `impact.json` 提供 `knowledge_impact`，使用 `none` 时 reason 需说明为何不更新模块知识。submission 绑定当前 work revision，verified 摘要由结构化 gate 结果生成。
+schema 5 submission 将每个 `--unverified-item` 确定性编号为
+`submission.unverified_items`，并通过 `impact.json` 提供 `knowledge_impact`；使用
+`none` 时 reason 需说明为何不更新模块知识。submission 绑定当前 work revision，
+verified 摘要由结构化 gate 结果生成。
 
 submit 还会检查 live snapshot、evidence sidecar 完整性、work revision、proof
 generation 和 unresolved violation。live baseline mismatch 会先写入新的 generation
@@ -332,38 +304,35 @@ latch patch-submission-knowledge-impact <task-id> \
   --reason "提交时误判了知识影响"
 ```
 
-该命令复用同一入口处理两种情况：legacy submission 缺少 `knowledge_impact` 时补齐；已有值时原地修正。后者必须提供非空 `--reason`，相同 impact 会被拒绝。两种情况都要求 schema 4、非 blocked、review、当前双 revision、有效 work basis、仍有效的 gate 或无 gate 的合法 `no_verify` proof，以及合法的 artifact 引用。
+该命令复用同一入口处理两种情况：historical submission 缺少 `knowledge_impact` 时补齐；已有值时原地修正。后者必须提供非空 `--reason`，相同 impact 会被拒绝。current 写入要求 schema 5、非 blocked、review、当前双 revision、有效 work basis、仍有效的 gate 或无 gate的合法 `no_verify` proof，以及合法的 artifact 引用。
 
 修正只增加 task revision，保留 phase、plan/work revision、work basis、verification 和 submission 其余字段。只有实现、配置、生成输入、gate 对象与公共行为均未变化时，调用方才能保留 proof；否则应使用 `approve --feedback` 开启新的 work revision，而不是调用 patch。审计 event 会区分补齐和修正；修正记录原因及前后 impact。该命令不编辑知识文档或 freshness baseline。
 
 ### 归档或放弃
 
+`closeout.json` 必须为每个未验证项提供且只提供一个 resolution：
+
+```json
+{
+  "resolutions": [
+    { "item_id": "U1", "outcome": "resolved", "resolution": "已完成浏览器验收" },
+    { "item_id": "U2", "outcome": "accepted_risk", "user_acceptance": { "statement": "明确接受该剩余风险" } },
+    { "item_id": "U3", "outcome": "followup", "followup": { "action": "完成真实数据验收", "owner": { "kind": "external", "account_uri": "https://example.com/teams/frontend" } } }
+  ]
+}
+```
+
 ```bash
-latch done <task-id> --expect-revision 11 \
-  --followup "后续由前端负责人在发布前完成真实数据验收"
-
-latch done <task-id> --expect-revision 11 \
-  --followup "无后续：用户已在 review 中完成浏览器验收，已解决 submission.unverified 中的页面验收项"
-
-latch done <task-id> --expect-revision 11 \
-  --followup "无后续：用户明确接受未覆盖真实数据环境的剩余风险"
-
+latch done <task-id> --expect-revision 11 --closeout-file closeout.json
 latch abandon <task-id> --expect-revision 5 --reason "用户取消"
 ```
 
 `done` 只接受 review 中当前 work revision 的有效 submission。`abandon` 必须提供原因。AI 只有获得明确用户授权后才能执行这两个命令。
 
-执行 `done` 前，先读取 bounded brief，并将当前 `submission.unverified` 与 review
-期间新增的明确验收事实进行比较。归档请求本身不表示接受剩余风险：
-
-- 未验证项仍待处理时，`followup` 写明责任方和下一步；
-- 用户明确接受剩余风险时，`followup` 记录该事实；
-- 用户在 submit 后完成手工验收时，`followup` 记录具体操作与观察结果，并指出该
-  验收事实解决的 `submission.unverified` 项。
-
-只有不存在未解决的未验证项时，才能写「无后续」，并说明具体原因。缺少验收事实、
-责任方或下一步时，task 保持在 review，等待补充信息。该规则不修改 submission；
-是否需要新的 review event 或 evidence patch 由后续独立设计决定。
+执行 `done` 前，先读取 bounded brief，并将当前 `submission.unverified_items` 与 review
+期间新增的明确验收事实进行比较。归档请求本身不表示接受剩余风险。`resolved` 需要
+具体操作与观察结果，`accepted_risk` 需要明确用户接受，`followup` 需要具体行动和稳定 external
+owner。缺少任一事实时，task 保持在 review，等待补充信息。
 
 两条命令的 JSON 响应都保留既有 `outcome` 与最后开放 phase，并增加
 `archived: true` 以明确目录已归档；不把 `done` 或 `abandoned` 加入 phase 枚举。
@@ -373,31 +342,12 @@ latch abandon <task-id> --expect-revision 5 --reason "用户取消"
 仍只解析 open task，不会把 archive 接回写路径。该入口也不开放无 group 的全局
 archive list、分页、时间范围或模糊搜索。
 
-### Schema 3 升级与 schema 3/4 回退
+### Historical schema
 
-schema 3→4 只通过前述 `upgrade-v4` 单 task 命令完成。普通升级不支持 writer
-mismatch；原 writer 永久不可用时，仅允许使用显式
-`--recover-writer --reason <text>` 恢复。两种模式均不支持 archive、schema 2、
-schema 4、损坏的 evidence ref 或批量处理。
-
-需要让 schema 3/4 task 重新被 v2 CLI 读写时，先明确确认当前专用字段和 event 细节只保留在 backup，再执行：
-
-```bash
-latch downgrade-v2 \
-  --task <task-id> \
-  --expect-revision 8 \
-  --confirm-data-loss
-```
-
-命令支持 open 或 archived task，并在改写前将完整 task 目录复制到
-`.latch/archive/v3-backup/<task-id>-<utc-ts>/` 或
-`.latch/archive/v4-backup/<task-id>-<utc-ts>/`。完整 backup 保留 minimum writer、
-workspace scope、proof、generation、violation 和 evidence ref；schema 2 主
-`task.json` 的 plan 与 verification，以及主 `events.jsonl`，会剥离这些专用字段。
-主 event 只保留 v2
-类型并将 revision 重写为 `1..n`；`state.json` 不改写。失败时保留 `.latch` 和已创建的
-backup。若 backup 已创建后主投影失败，JSON 错误返回 `backup_path` 和部分失败
-warning；在检查主 task 状态前停止后续 mutation。
+schema 2–4 task 和 archive 保持原值，只能通过 `list` 与精确 ID `context` 读取。
+CLI `0.5.0` 不提供 claim、upgrade、downgrade、双写或字符串 migration。需要改变
+historical 数据时，必须先建立独立产品契约和实施 task；current 恢复、构建与验证流程
+不得触发迁移。
 
 ## 并发与文件
 
@@ -435,17 +385,13 @@ latch takeover <task-id> --expect-revision <revision> --reason "用户明确授�
 
 takeover 不改变 phase、plan approval 或 gate，也不构成 implementation approval。若同一用户消息同时明确授权 takeover 和当前 plan，则先 takeover，再将其 JSON 返回的 `revision` 用于 `approve`；否则在 takeover 后等待单独批准。正常顺序交接保持 `provenance: clean`，只有明确允许重叠并行时才写入 `mixed`。
 
-schema 3 不使用普通 `takeover`。原 primary writer 可用时，必须先由其执行普通
-`upgrade-v4`；原 writer 永久不可用时，新的 canonical session 需要针对具体 task
-和 revision 的明确恢复授权，并执行
-`upgrade-v4 --recover-writer --reason <text>`。恢复 reason 是本地审计信息，不是
-session 存活或身份认证证明。
+schema 2–4 不使用普通 `takeover`；current runner 对 historical task 保持只读。
 
 ## 最终契约能力
 
-C1–C8 已在当前发布中交付。C1–C3 的 session writer、Light 证明包与 Group 最小集已接入真实 schema 4 task；Light request/retrospective 可通过真实 `checkpoint` 原子创建，task 根 provenance 可显式维护；C4 提供独立于 task schema 的 Git 知识文档 freshness 只读检查；C5 提供受预算 Context pack 与 benchmark diagnostic；C6 提供 legacy claim/patch 升级与 R2 回退；C7/C8 提供 current 产品契约与 A/B/C 指令面。
+C1–C8 已在当前发布中交付。C1–C3 的 session writer、Light 证明包与 Group 最小集使用 schema 5；Light request/retrospective 可通过 `checkpoint` 原子创建，task 根 provenance 可显式维护；C4 提供独立于 task schema 的 Git 知识文档 freshness 只读检查；C5 提供受预算 Context pack 与 benchmark diagnostic；C6 固定 schema 5 structured closeout 和 historical read-only 边界；C7/C8 提供 current 产品契约与 A/B/C 指令面。
 
-Group 只聚合 task，不增加 group phase、revision、锁或完成门禁。schema 4 task 可使用 `save --group` 或 `save --clear-group` 修改单张 task；`list --group [--include-archive]` 返回精确匹配的成员与派生计数，`context` 只附带受限的 sibling 摘要。Group 变更不会修改 plan、work basis、verification 或 submission。
+Group 只聚合 task，不增加 group phase、revision、锁或完成门禁。schema 5 task 可使用 `save --group` 或 `save --clear-group` 修改单张 task；`list --group [--include-archive]` 返回精确匹配的成员与派生计数，`context` 只附带受限的 sibling 摘要。Group 变更不会修改 plan、work basis、verification 或 submission。
 
 知识文档使用 YAML frontmatter 的 `covers`、`status`、`last_fingerprint` 与 `last_fingerprint_algo` 判定 freshness：
 
@@ -470,10 +416,10 @@ latch benchmark context --case-file case.json --run-file run.json \
 
 `benchmark context` 只校验 case/run 并计算主成功和 30% 次目标，不执行检索、CodeGraph 或模型判断，也不成为 task gate。
 
-schema 3/4 event 文件继续使用 `events_schema_version: 3`，允许可选的首行
-`events_meta`；未知 v3 event 会被跳过并以 `warnings` 返回，schema 2 reader 仍对
+schema 5 event 文件继续使用 `events_schema_version: 3`，允许可选的首行
+`events_meta`；未知扩展 event 会被跳过并以 `warnings` 返回，schema 2 reader 仍对
 未知 event fail closed。event schema 表示 forward-compatible event 语法，不是
-writer 锁。schema 4 task 的 `min_writer_version` 固定为 `0.4.0`；旧 CLI 依靠
-不支持的 task schema 机器级拒写，而不是依靠字段 warning。
+writer 锁。schema 5 task 的 `min_writer_version` 固定为 `0.5.0`；CLI `0.5.0`
+在 task schema 边界执行机器级拒写，而不是依靠字段 warning。
 
 最终产品契约已全面 current；v2 中未被最终分章覆盖的条款继续作为历史基线有效。

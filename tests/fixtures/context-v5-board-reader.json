@@ -1,6 +1,8 @@
 {
   "fixture_schema_version": 1,
   "purpose": "Schema 5 reader contract for richer Context views consumed by Board or external readers.",
+  "contract_status": "current",
+  "external_adopter_status": "pending",
   "task_schema_version": 5,
   "min_writer_version": "0.5.0",
   "events_schema_version": 3,

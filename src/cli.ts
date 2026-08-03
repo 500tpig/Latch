@@ -98,7 +98,7 @@ const usage = `Usage: latch <command> [options]
 
 Commands:
   init
-  checkpoint <title> --plan-file <path> [--profile <light|standard>] [--authorize-request <reason> [--scope-summary <summary>] [--scope-path <path>...] | --authorization-file <path> | --retrospective-file <path>] [--source-record <id> --source-record-revision <revision>]
+  checkpoint <title> --plan-file <path> [--profile <light|standard>] [--authorize-request <reason> | --authorization-file <path> | --retrospective-file <path>] [--source-record <id> --source-record-revision <revision>]
   checkpoint --print-plan-template <light|standard>
   use <task-id>
   list [--group <id> [--include-archive]] [--json] [--brief]
@@ -107,24 +107,21 @@ Commands:
   record <create|list|show|edit|archive|restore|delete> [options]
   knowledge <fingerprint|check> [options]
   benchmark context [options]
-  claim <task-id> --expect-revision <revision> [--reason <text>]
   takeover <task-id> --expect-revision <revision> --reason <text>
   save <task-id> --expect-revision <revision> [changes]
   approve <task-id> --expect-revision <revision> [--reason <text> | --authorization-file <path> | --retrospective-file <path>] [--feedback <text> | --non-implementation-feedback <text>]
   verify <task-id> --expect-revision <revision> --name <name> [--diagnostic] [-- command...]
   verify-all <task-id> --expect-revision <revision>
   artifact <add|remove> <task-id> --expect-revision <revision> <kind:path>...
-  submit <task-id> --expect-revision <revision> --changes <text> [--unverified <summary>...] [--knowledge-impact-none <reason> | --knowledge-impact-file <path>] [--no-verify --reason <text>] [--verbose-warnings]
+  submit <task-id> --expect-revision <revision> --changes <text> [--unverified-item <summary>...] [--knowledge-impact-none <reason> | --knowledge-impact-file <path>] [--no-verify --reason <text>] [--verbose-warnings]
   patch-submission-knowledge-impact <task-id> --expect-revision <revision> --knowledge-impact-file <path> [--reason <text>]
-  upgrade-v4 --task <task-id> --expect-revision <revision> [--recover-writer --reason <text>]
-  downgrade-v2 --task <task-id> --expect-revision <revision> --confirm-data-loss
   done <task-id> --expect-revision <revision> [--closeout-file <path>]
   abandon <task-id> --expect-revision <revision> --reason <text>`
 
 const commandUsage: Record<string, string> = {
   init: 'Usage: latch init [--json]',
   checkpoint:
-    'Usage: latch checkpoint <title> --plan-file <path> [--profile <light|standard>] [--authorize-request <reason> [--scope-summary <summary>] [--scope-path <path>...] | --authorization-file <path> | --retrospective-file <path>] [--source-record <id> --source-record-revision <revision>] [--artifact <kind>:<path>] [--json]\n       latch checkpoint --print-plan-template <light|standard>',
+    'Usage: latch checkpoint <title> --plan-file <path> [--profile <light|standard>] [--authorize-request <reason> | --authorization-file <path> | --retrospective-file <path>] [--source-record <id> --source-record-revision <revision>] [--artifact <kind>:<path>] [--json]\n       latch checkpoint --print-plan-template <light|standard>',
   use: 'Usage: latch use <task-id> [--json]',
   list:
     'Usage: latch list [--group <id> [--include-archive]] [--json] [--brief]',
@@ -152,7 +149,7 @@ const commandUsage: Record<string, string> = {
   artifact:
     'Usage: latch artifact <add|remove> <task-id> --expect-revision <revision> <kind:path>... [--json]',
   submit:
-    'Usage: latch submit <task-id> --expect-revision <revision> --changes <text> [--unverified <summary>...] [--knowledge-impact-none <reason> | --knowledge-impact-file <path>] [--no-verify --reason <text>] [--verbose-warnings] [--json]',
+    'Usage: latch submit <task-id> --expect-revision <revision> --changes <text> [--unverified-item <summary>...] [--knowledge-impact-none <reason> | --knowledge-impact-file <path>] [--no-verify --reason <text>] [--verbose-warnings] [--json]',
   'patch-submission-knowledge-impact':
     'Usage: latch patch-submission-knowledge-impact <task-id> --expect-revision <revision> --knowledge-impact-file <path> [--reason <text>] [--json]',
   'upgrade-v4':
@@ -626,7 +623,7 @@ function targetTask(cwd: string, actor: string, id: string | undefined) {
   return { store, context: readContextTaskV2(store, taskId) }
 }
 
-function candidateWritableTask(
+function currentWritableTask(
   store: ReturnType<typeof openTaskStoreV2>,
   id: string,
 ) {
@@ -634,7 +631,7 @@ function candidateWritableTask(
   if (task.schema_version !== 5)
     fail(
       'writer_version_mismatch',
-      `Candidate CLI 0.5.0 only mutates schema_version 5 tasks; task ${task.id} requires its matching runner for schema_version ${task.schema_version}.`,
+      `Candidate CLI 0.5.0 only mutates schema_version 5 tasks; the current Latch runner treats task ${task.id} as historical read-only and requires its matching runner for schema_version ${task.schema_version}.`,
     )
   return task
 }
@@ -1185,7 +1182,7 @@ function runClaim(args: string[], cwd: string, actor: string) {
     '--expect-revision',
   )
   const store = openTaskStoreV2(cwd)
-  candidateWritableTask(store, parsed.positionals[0])
+  currentWritableTask(store, parsed.positionals[0])
   const result = claimTaskV3(store, parsed.positionals[0], {
     expectRevision,
     actor,
@@ -1214,7 +1211,7 @@ function runTakeover(args: string[], cwd: string, actor: string) {
   )
   if (!parsed.values.reason) fail('invalid_arguments', '--reason is required.')
   const store = openTaskStoreV2(cwd)
-  candidateWritableTask(store, parsed.positionals[0])
+  currentWritableTask(store, parsed.positionals[0])
   const result = takeoverTaskV3(store, parsed.positionals[0], {
     expectRevision,
     actor,
@@ -1287,7 +1284,7 @@ function runSave(args: string[], cwd: string, actor: string) {
     if (combined)
       fail('invalid_arguments', '--provenance must be saved as a standalone change.')
     const store = openTaskStoreV2(cwd)
-    const current = candidateWritableTask(store, parsed.positionals[0])
+    const current = currentWritableTask(store, parsed.positionals[0])
     const previousProvenance = current.provenance ?? 'clean'
     if (previousProvenance === selectedProvenance)
       fail('invalid_arguments', 'save did not change provenance.')
@@ -1337,7 +1334,7 @@ function runSave(args: string[], cwd: string, actor: string) {
     if (combined)
       fail('invalid_arguments', '--group must be saved as a standalone change.')
     const store = openTaskStoreV2(cwd)
-    const current = candidateWritableTask(store, parsed.positionals[0])
+    const current = currentWritableTask(store, parsed.positionals[0])
     const nextGroup = clearGroup ? undefined : selectedGroup
     if (current.group_id === nextGroup)
       fail('invalid_arguments', 'save did not change group_id.')
@@ -1385,7 +1382,7 @@ function runSave(args: string[], cwd: string, actor: string) {
     if (combined)
       fail('invalid_arguments', '--profile must be saved as a standalone change.')
     const store = openTaskStoreV2(cwd)
-    candidateWritableTask(store, parsed.positionals[0])
+    currentWritableTask(store, parsed.positionals[0])
     const result = changeTaskProfileV3(store, parsed.positionals[0], {
       expectRevision,
       actor,
@@ -1404,7 +1401,7 @@ function runSave(args: string[], cwd: string, actor: string) {
     fail('invalid_arguments', '--profile-reason and narrowing require --profile.')
 
   const store = openTaskStoreV2(cwd)
-  const current = candidateWritableTask(store, parsed.positionals[0])
+  const current = currentWritableTask(store, parsed.positionals[0])
   const nextPlan = parsed.values['plan-file']
     ? readPlan(cwd, parsed.values['plan-file'])
     : undefined
@@ -1549,7 +1546,7 @@ function runApprove(args: string[], cwd: string, actor: string) {
     '--expect-revision',
   )
   const store = openTaskStoreV2(cwd)
-  candidateWritableTask(store, parsed.positionals[0])
+  currentWritableTask(store, parsed.positionals[0])
   const authorization = parsed.values['authorization-file']
     ? readInputFile<ImplementationAuthorizationInput>(
         cwd,
@@ -1604,7 +1601,7 @@ function runVerify(args: string[], cwd: string, actor: string) {
   if (!diagnostic && command.length > 0)
     fail('invalid_arguments', 'Gate verification command comes from the approved plan.')
   const store = openTaskStoreV2(cwd)
-  candidateWritableTask(store, parsed.positionals[0])
+  currentWritableTask(store, parsed.positionals[0])
   const result = verifyTaskV2(store, parsed.positionals[0], {
     expectRevision,
     actor,
@@ -1639,7 +1636,7 @@ function runVerifyAll(args: string[], cwd: string, actor: string) {
     '--expect-revision',
   )
   const store = openTaskStoreV2(cwd)
-  candidateWritableTask(store, parsed.positionals[0])
+  currentWritableTask(store, parsed.positionals[0])
   const result = verifyAllTasksV2(store, parsed.positionals[0], {
     expectRevision,
     actor,
@@ -1691,7 +1688,7 @@ function runArtifact(args: string[], cwd: string, actor: string) {
     '--expect-revision',
   )
   const store = openTaskStoreV2(cwd)
-  const current = candidateWritableTask(store, taskId)
+  const current = currentWritableTask(store, taskId)
   const update = artifactChanges(
     current.artifacts,
     action === 'add' ? values : [],
@@ -1726,6 +1723,9 @@ function runSubmit(args: string[], cwd: string, actor: string) {
     ...commonOptions(),
     'expect-revision': { type: 'string' },
     changes: { type: 'string' },
+    'unverified-item': { type: 'string', multiple: true },
+    // S3/S4 candidate fixtures still exercise the pre-release spelling. It is
+    // intentionally absent from current help and documentation.
     unverified: { type: 'string', multiple: true },
     'no-verify': { type: 'boolean' },
     reason: { type: 'string' },
@@ -1763,12 +1763,15 @@ function runSubmit(args: string[], cwd: string, actor: string) {
       ? { kind: 'none' as const, reason: parsed.values['knowledge-impact-none'].trim() }
       : undefined
   const store = openTaskStoreV2(cwd)
-  candidateWritableTask(store, parsed.positionals[0])
+  currentWritableTask(store, parsed.positionals[0])
   const result = submitTaskV2(store, parsed.positionals[0], {
     expectRevision,
     actor,
     changes: parsed.values.changes,
-    unverifiedItems: parsed.values.unverified ?? [],
+    unverifiedItems: [
+      ...(parsed.values['unverified-item'] ?? []),
+      ...(parsed.values.unverified ?? []),
+    ],
     noVerify: Boolean(parsed.values['no-verify']),
     reason: parsed.values.reason,
     knowledgeImpact,
@@ -1810,7 +1813,7 @@ function runPatchSubmissionKnowledgeImpact(
     '--knowledge-impact-file',
   )
   const store = openTaskStoreV2(cwd)
-  candidateWritableTask(store, parsed.positionals[0])
+  currentWritableTask(store, parsed.positionals[0])
   const result = patchSubmissionKnowledgeImpactV3(
     store,
     parsed.positionals[0],
@@ -1849,7 +1852,7 @@ function runDowngradeV2(args: string[], cwd: string, actor: string) {
     '--expect-revision',
   )
   const store = openTaskStoreV2(cwd)
-  candidateWritableTask(store, parsed.values.task)
+  currentWritableTask(store, parsed.values.task)
   const result = downgradeTaskV2(store, parsed.values.task, {
     expectRevision,
     actor,
@@ -1888,7 +1891,7 @@ function runUpgradeV4(args: string[], cwd: string, actor: string) {
     '--expect-revision',
   )
   const store = openTaskStoreV2(cwd)
-  candidateWritableTask(store, parsed.values.task)
+  currentWritableTask(store, parsed.values.task)
   const result = upgradeTaskV4(store, parsed.values.task, {
     expectRevision,
     actor,
@@ -1927,7 +1930,7 @@ function runDone(args: string[], cwd: string, actor: string) {
     '--expect-revision',
   )
   const store = openTaskStoreV2(cwd)
-  candidateWritableTask(store, parsed.positionals[0])
+  currentWritableTask(store, parsed.positionals[0])
   const closeout = parsed.values['closeout-file']
     ? readInputFile<TaskCloseoutInput>(
         cwd,
@@ -1964,7 +1967,7 @@ function runAbandon(args: string[], cwd: string, actor: string) {
   )
   if (!parsed.values.reason) fail('invalid_arguments', '--reason is required.')
   const store = openTaskStoreV2(cwd)
-  candidateWritableTask(store, parsed.positionals[0])
+  currentWritableTask(store, parsed.positionals[0])
   const result = abandonTaskV2(store, parsed.positionals[0], {
     expectRevision,
     actor,

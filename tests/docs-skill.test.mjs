@@ -137,10 +137,10 @@ test('canonical skill routes every low-frequency reference without hiding core s
   assert.match(text(groupsReference), /group_id/)
   assert.match(text(knowledgeReference), /knowledge fingerprint/)
   assert.match(text(knowledgeReference), /context pack/i)
-  assert.match(text(migrationReference), /Candidate CLI version `0\.5\.0`[\s\S]*minimum writer for schema 5/)
-  assert.match(text(migrationReference), /CLI `0\.4\.0` remains the minimum writer for schema 4/)
-  assert.match(text(migrationReference), /rejects every schema 2–4 task[\s\S]*mutation/)
-  assert.match(text(migrationReference), /downgrade-v2/)
+  assert.match(text(migrationReference), /CLI `0\.5\.0` is the current runner[\s\S]*minimum writer for schema 5/)
+  assert.match(text(migrationReference), /Schema 2–4 are historical read-only/)
+  assert.match(text(migrationReference), /rejects every schema 2–4 task mutation/)
+  assert.doesNotMatch(text(migrationReference), /upgrade-v4|downgrade-v2/)
   assert.match(text(recordsReference), /Do not read or write Records during session startup/)
   assert.match(text(recordsReference), /at most five candidates/)
   assert.match(text(recordsReference), /--confirm-linked/)
@@ -166,6 +166,33 @@ test('current docs contain no local absolute path or removed command examples', 
     assert.doesNotMatch(content, removedCommands, path)
     assert.doesNotMatch(content, /triage\s*->|brainstorm\s*->|grill\s*->/, path)
   }
+})
+
+test('current release surfaces consistently expose schema 5 and keep adopters pending', () => {
+  const packageJson = JSON.parse(text('package.json'))
+  const index = text('docs/INDEX.md')
+  const handBook = text('docs/HANDBOOK.md')
+  const design = text('docs/DESIGN.md')
+  const install = text('docs/AI_INSTALL.md')
+  const contract = text('docs/prd/2026-07-15-latch-final-product-contract.md')
+  const adopter = text('docs/ADOPTER_SYNC.md')
+  const fixture = JSON.parse(text('tests/fixtures/context-v5-board-reader.json'))
+
+  assert.equal(packageJson.version, '0.5.0')
+  for (const content of [index, handBook, design, install, contract]) {
+    assert.match(content, /schema 5/)
+    assert.doesNotMatch(content, /current (?:task )?writer[^\n]*schema 4/i)
+  }
+  assert.match(design, /schema 2–4[\s\S]*historical read-only/)
+  assert.match(handBook, /--unverified-item/)
+  assert.match(handBook, /--closeout-file/)
+  assert.match(adopter, /Latch-Board[\s\S]*pending/)
+  assert.match(adopter, /monitoring[\s\S]*pending/)
+  assert.match(adopter, /appearance-sec[\s\S]*pending/)
+  assert.equal(fixture.task_schema_version, 5)
+  assert.equal(fixture.min_writer_version, '0.5.0')
+  assert.equal(fixture.contract_status, 'current')
+  assert.equal(fixture.external_adopter_status, 'pending')
 })
 
 test('docs index relative markdown links resolve', () => {
@@ -404,15 +431,15 @@ test('inline Light shortcuts stay consistent across instructions and current doc
 
   for (const content of [skill, migration, install, handBook]) {
     assert.match(content, /--authorize-request/)
-    assert.match(content, /--scope-summary/)
-    assert.match(content, /--scope-path/)
+    assert.doesNotMatch(content, /--scope-summary/)
+    assert.doesNotMatch(content, /--scope-path/)
   }
   for (const content of [lifecycle, knowledge, install, handBook]) {
     assert.match(content, /--knowledge-impact-none/)
     assert.match(content, /--knowledge-impact-file/)
   }
   assert.match(knowledge, /patch-submission-knowledge-impact[\s\S]*--knowledge-impact-file/)
-  assert.match(migration, /--authorization-file[\s\S]*complex authorization/)
+  assert.match(migration, /--authorization-file[\s\S]*(?:complex\s+authorization|复杂 authorization)/)
 })
 
 test('Light plan template entry stays consistent across CLI-facing instructions', () => {
@@ -420,7 +447,7 @@ test('Light plan template entry stays consistent across CLI-facing instructions'
   const install = text('docs/AI_INSTALL.md')
   const handBook = text('docs/HANDBOOK.md')
 
-  assert.match(skill, /node <candidate-worktree>\/dist\/cli\.js checkpoint --print-plan-template light/)
+  assert.match(skill, /latch checkpoint --print-plan-template light/)
   for (const content of [install, handBook])
     assert.match(content, /latch checkpoint --print-plan-template light/)
   assert.match(skill, /scaffold[\s\S]*schema validity/)
@@ -518,7 +545,7 @@ test('review closeout reconciles unverified evidence before archive', () => {
 
   for (const content of [skill, lifecycle])
     assert.match(content, /submission\.unverified_items/)
-  assert.match(handBook, /submission\.unverified/)
+  assert.match(handBook, /submission\.unverified_items/)
 
   assert.match(skill, /archive intent alone[\s\S]{0,30}is not risk[\s\S]{0,20}acceptance/i)
   assert.match(lifecycle, /latest explicit review[\s\S]*acceptance/)
@@ -527,9 +554,9 @@ test('review closeout reconciles unverified evidence before archive', () => {
   assert.match(lifecycle, /`accepted_by: "user"` and `recorded_at`/)
   assert.match(lifecycle, /remain in review and ask for it/)
   assert.match(handBook, /归档请求本身不表示接受剩余风险/)
-  assert.match(handBook, /责任方和下一步/)
-  assert.match(handBook, /解决的[\s\S]*`submission\.unverified` 项/)
-  assert.match(handBook, /只有不存在未解决的未验证项时，才能写「无后续」/)
+  assert.match(handBook, /`resolved`[\s\S]*观察结果/)
+  assert.match(handBook, /`accepted_risk`[\s\S]*明确用户接受/)
+  assert.match(handBook, /`followup`[\s\S]*稳定 external[\s\S]*owner/)
 })
 
 test('cross-session handoff requires takeover separate from implementation approval', () => {

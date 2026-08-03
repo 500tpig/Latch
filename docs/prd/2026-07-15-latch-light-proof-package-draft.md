@@ -8,13 +8,15 @@ Document-Status: current component of `2026-07-15-latch-final-product-contract.m
 
 Date: 2026-07-15
 
-Revision: 8
+Revision: 9
 
 Released: 2026-07-16 — 全面 current 发布。
 
 Updated: 2026-07-22 — 增加 inline Light 请求授权与 `none` knowledge impact 快捷路径。
 
 Updated: 2026-07-28 — 修订 Light 中途重新分类与多 gate 边界。
+
+Updated: 2026-08-03 — schema 5 使用 plan scope、structured unverified items 与 structured closeout。
 
 判定表 B、A、C 的权威定义见 `docs/prd/2026-07-15-latch-workflow-triggers-draft.md`，本章不重复展开。
 
@@ -164,10 +166,9 @@ type WorkBasis =
 无 `--expect-revision`。events/state 随后；失败不回滚 task.json（warning）。
 
 CLI 可用 `--authorize-request <reason>` 创建同一结构，不需要 authorization 文件。
-`--scope-summary` 可覆盖 scope summary，重复 `--scope-path` 写入 paths；未提供
-summary 时使用 reason，未提供 path 时不写 `paths`。该快捷路径固定
-`source: user_request`，仅创建 light task，且与 `--authorization-file`、
-`--retrospective-file` 严格互斥。
+scope summary 使用 reason，机器 scope 只来自 plan 的 `workspace_scope.paths`；
+current 命令面不再接受重复的 scope 输入。该快捷路径固定 `source: user_request`，
+仅创建 Light task，且与 `--authorization-file`、`--retrospective-file` 严格互斥。
 
 #### B. 新建 retrospective task（事后建档专用创建）
 
@@ -268,7 +269,7 @@ type Submission = {
   work_revision: number
   changes: string
   verified: string
-  unverified: string
+  unverified_items: Array<{ item_id: string; summary: string }>
   knowledge_impact: KnowledgeImpact
   no_verify?: { reason: string }
   submitted_at: string
@@ -324,7 +325,11 @@ blocked **不**改变当前 phase。
 Skill 确认用户明确归档后调用。  
 Core 校验：非 blocked、phase=review、**submission 有效（§9）**、**work_basis 对 submission 双 revision 仍有效或为提交时已冻结且仍匹配**、**proof 分支在提交时满足且 done 时仍可复核**（gate 结果仍在对应 work_revision，或 submission 带合法 no_verify 且 plan 仍无 gate）、knowledge_impact、writer、expect_revision。
 
-`--followup` **不是**归档授权证据。
+`--closeout-file` **不是**归档授权证据。Skill 仍需取得明确 done/归档授权。
+schema 5 closeout 必须为每个 `submission.unverified_items` item ID 提供且只提供一个
+resolution：`resolved` 保存观察结果，`accepted_risk` 保存明确用户接受，`followup`
+保存具体行动与稳定 external owner。缺少、重复或未知 item ID 时，在 task、event 与
+archive 写入前拒绝。
 
 ## 9. submission 有效与 done/patch 复核
 
@@ -353,7 +358,7 @@ AND knowledge_impact 合法
 
 `implementation_authorized` | `retrospective_recorded` | `profile_changed` | `submitted` | `submission_knowledge_impact_patched` | `review_feedback` | `done` | `abandoned`
 
-schema 3 的 `review_feedback.classification` 增加 `non_implementation_correction`。Skill 只能在确认实现快照未变化时选择该分类；Core 不读取 diff 或路径语义，只保持当前 proof。代码、配置、生成输入或可能影响 gate 的修改仍使用 `implementation_correction`。R2 downgrade 将该分类投影为 v2 可读的 `evaluative`，完整事件保留在 backup。
+schema 5 的 `review_feedback.classification` 支持 `non_implementation_correction`。Skill 只能在确认实现快照未变化时选择该分类；Core 不读取 diff 或路径语义，只保持当前 proof。代码、配置、生成输入或可能影响 gate 的修改仍使用 `implementation_correction`。
 
 ### 11.1 Artifact Git 交付状态
 
@@ -397,7 +402,7 @@ reader 为 task artifact 派生 `tracked`、`untracked`、`ignored`、`missing` 
 
 - 写入或替换 `knowledge_impact`；
 - 若缺 `plan_revision`，补写为当前 `task.plan_revision`；
-- **不**改 phase、`work_revision`、changes/unverified；`verified` 保持或保持由结构化结果可再生成的摘要策略与 v2 一致；
+- **不**改 phase、`work_revision`、changes/`unverified_items`；`verified` 保持或由结构化结果重新生成；
 - task `revision + 1`；事件 `submission_knowledge_impact_patched` 区分 `backfill` 与 `correction`，后者记录 reason 及修正前后的 impact；
 - **不**重跑 gate、**不**要求假 review feedback。
 
@@ -416,7 +421,7 @@ reader 为 task artifact 派生 `tracked`、`untracked`、`ignored`、`missing` 
 | `approve` | 写 implementation_authorization；plan→dev 时 work_revision+1 |
 | `save` | 不写 basis、不擅自推 phase |
 | `verify` / `submit` / `done` | §3–§9 |
-| `patch_submission_knowledge_impact` | §12.3；不开放 changes、verified、unverified、submitted_at 或 no_verify 的通用编辑 |
+| `patch_submission_knowledge_impact` | §12.3；不开放 changes、verified、`unverified_items`、submitted_at 或 no_verify 的通用编辑 |
 
 提交点 task.json；锁序 task→state。
 

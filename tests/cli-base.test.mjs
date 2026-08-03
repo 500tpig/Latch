@@ -112,7 +112,7 @@ test('top-level and command help have no side effects', () => {
     ['record', '--help'],
     ['record', 'create', '--help'],
     ['submit', '--help'],
-    ['upgrade-v4', '--help'],
+    ['done', '--help'],
   ]) {
     const cwd = temporaryDirectory()
     const result = run(cwd, args)
@@ -126,6 +126,7 @@ test('top-level and command help have no side effects', () => {
   assert.match(checkpointHelp.stdout, /--authorization-file/)
   assert.match(checkpointHelp.stdout, /--retrospective-file/)
   assert.match(checkpointHelp.stdout, /--source-record/)
+  assert.doesNotMatch(checkpointHelp.stdout, /--scope-summary|--scope-path/)
   assert.match(
     checkpointHelp.stdout,
     /checkpoint --print-plan-template <light\|standard>/,
@@ -142,10 +143,37 @@ test('top-level and command help have no side effects', () => {
   assert.match(contextHelp.stdout, /--status/)
   assert.match(contextHelp.stdout, /--since-revision/)
   assert.match(contextHelp.stdout, /--history <timeline\|events\|both>/)
-  assert.match(run(temporaryDirectory(), ['submit', '--help']).stdout, /--verbose-warnings/)
-  const upgradeHelp = run(temporaryDirectory(), ['upgrade-v4', '--help'])
-  assert.match(upgradeHelp.stdout, /--recover-writer/)
-  assert.match(upgradeHelp.stdout, /--reason <text>/)
+  const submitHelp = run(temporaryDirectory(), ['submit', '--help']).stdout
+  assert.match(submitHelp, /--verbose-warnings/)
+  assert.match(submitHelp, /--unverified-item/)
+  assert.doesNotMatch(submitHelp, /--unverified <summary>/)
+  assert.match(run(temporaryDirectory(), ['done', '--help']).stdout, /--closeout-file/)
+  const topHelp = run(temporaryDirectory(), ['--help']).stdout
+  assert.doesNotMatch(topHelp, /upgrade-v4|downgrade-v2|claim <task-id>/)
+})
+
+test('current submit flag writes structured schema 5 unverified items', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const created = checkpoint(cwd, 'structured submit input', {
+    verification_plan: [],
+  })
+  const approved = run(cwd, [
+    'approve', created.task_id, '--expect-revision', '1',
+    '--reason', 'approved', '--json',
+  ])
+  assert.equal(approved.status, 0, approved.stderr)
+  const submitted = run(cwd, [
+    'submit', created.task_id, '--expect-revision', '2',
+    '--changes', 'current flag',
+    '--unverified-item', '浏览器验收待完成',
+    '--knowledge-impact-none', 'fixture does not change module knowledge',
+    '--no-verify', '--reason', 'fixture has no gates', '--json',
+  ])
+  assert.equal(submitted.status, 0, submitted.stderr)
+  assert.deepEqual(readTask(cwd, created.task_id).submission.unverified_items, [
+    { item_id: 'U1', summary: '浏览器验收待完成' },
+  ])
 })
 
 test('checkpoint templates are side-effect-free shape scaffolds that require completion', () => {
