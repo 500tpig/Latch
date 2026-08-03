@@ -16,6 +16,28 @@ function json(result) {
   return JSON.parse(result.stdout)
 }
 
+function writeJson(cwd, path, value) {
+  writeFileSync(join(cwd, path), `${JSON.stringify(value, null, 2)}\n`)
+  return path
+}
+
+function noGatePlan(goal = 'reader fixture') {
+  return {
+    goal,
+    workspace_scope: { paths: ['fixture'] },
+    scope: ['fixture'],
+    acceptance: ['reader context'],
+    approach: ['run argv'],
+    api_assumptions: [],
+    permission_assumptions: [],
+    data_assumptions: [],
+    user_flow: ['approve submit context done'],
+    out_of_scope: [],
+    verification_plan: [],
+    open_questions: [],
+  }
+}
+
 test('schema 5 CLI completes lifecycle with structured closeout projections', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'latch-v2-integration-'))
   try {
@@ -81,9 +103,14 @@ test('schema 5 CLI completes lifecycle with structured closeout projections', ()
       brief.submission.unverified_summary.length,
       contract.review.unverified_count,
     )
+    assert.equal(brief.submission.unverified_items_summary.sample_limit, 8)
+    assert.equal(brief.submission.unverified_items_summary.truncated, false)
+    assert.equal(brief.schema5_view.reviewer_next_action, 'prepare_closeout')
     assert.equal('unverified_items' in brief.submission, false)
     const reviewHuman = run(cwd, ['context', id]).stdout
     for (const line of contract.human.review_lines) assert.match(reviewHuman, new RegExp(line))
+    assert.match(reviewHuman, /sample_limit=8/)
+    assert.match(reviewHuman, /Reviewer next action: prepare_closeout/)
 
     writeFileSync(join(cwd, '.latch', 'closeout.json'), `${JSON.stringify({
       resolutions: [
@@ -133,10 +160,19 @@ test('schema 5 CLI completes lifecycle with structured closeout projections', ()
       archivedContext.task.closure.resolutions.length,
       Object.values(contract.archive.resolution_counts).reduce((sum, count) => sum + count, 0),
     )
+    assert.deepEqual(
+      archivedContext.task.schema5_view.closeout.resolution_counts,
+      contract.archive.resolution_counts,
+    )
+    assert.equal(
+      archivedContext.task.schema5_view.closeout.resolutions.sample.length,
+      Object.values(contract.archive.resolution_counts).reduce((sum, count) => sum + count, 0),
+    )
     const archivedStatus = json(run(cwd, ['context', id, '--json', '--status'])).task
     assert.equal(archivedStatus.resolution_pending_count, contract.archive.resolution_pending_count)
     const archivedHuman = run(cwd, ['context', id]).stdout
     for (const line of contract.human.archive_lines) assert.match(archivedHuman, new RegExp(line))
+    assert.match(archivedHuman, /Follow-up next action: track_followup_items/)
 
     const submitted = archivedContext.recent_events.findLast((event) => event.type === 'submitted')
     assert.deepEqual(
@@ -159,6 +195,185 @@ test('schema 5 CLI completes lifecycle with structured closeout projections', ()
     assert.equal(
       eventsMeta.events_schema_version,
       contract.events.events_schema_version,
+    )
+    const doneTimeline = archivedContext.timeline.findLast((event) => event.event_type === 'done')
+    assert.equal(doneTimeline.title, '完成归档：3 项 closeout')
+    assert.equal(doneTimeline.next_action, '跟进 closeout 中标记的 follow-up。')
+  } finally { rmSync(cwd, { recursive: true, force: true }) }
+})
+
+test('schema 5 Board reader fixture matches richer bounded Context projections', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'latch-v2-reader-'))
+  try {
+    spawnSync('git', ['init'], { cwd, encoding: 'utf8' })
+    const contract = JSON.parse(
+      readFileSync(join(process.cwd(), 'tests/fixtures/context-v5-board-reader.json'), 'utf8'),
+    )
+    assert.doesNotMatch(JSON.stringify(contract), /\/Users\//)
+    assert.equal(contract.sample_limit, 8)
+
+    json(run(cwd, ['init', '--json']))
+    writeJson(cwd, '.latch/impact.json', {
+      kind: 'none',
+      reason: 'Reader fixture does not change module contracts.',
+    })
+    writeJson(cwd, '.latch/plan.json', noGatePlan('open reader fixture'))
+    const open = json(run(cwd, [
+      'checkpoint', 'open reader fixture',
+      '--plan-file', '.latch/plan.json', '--json',
+    ]))
+    json(run(cwd, [
+      'approve', open.task_id, '--expect-revision', '1',
+      '--reason', 'approved', '--json',
+    ]))
+    const openBrief = json(run(cwd, [
+      'context', open.task_id, '--json', '--brief',
+    ])).task
+    assert.equal(openBrief.phase, contract.views.open.phase)
+    assert.deepEqual(
+      openBrief.schema5_view.unverified_items,
+      contract.views.open.schema5_view.unverified_items,
+    )
+    assert.equal(
+      openBrief.schema5_view.reviewer_next_action,
+      contract.views.open.schema5_view.reviewer_next_action,
+    )
+
+    const unverifiedArgs = Array.from(
+      { length: contract.views.review_truncated.schema5_view.unverified_items.total },
+      (_, index) => ['--unverified', `Reader item ${index + 1}`],
+    ).flat()
+    json(run(cwd, [
+      'submit', open.task_id, '--expect-revision', '2',
+      '--changes', 'reader review fixture',
+      ...unverifiedArgs,
+      '--knowledge-impact-file', '.latch/impact.json',
+      '--no-verify', '--reason', 'no gates',
+      '--json',
+    ]))
+    const review = json(run(cwd, [
+      'context', open.task_id, '--json', '--brief',
+    ]))
+    assert.deepEqual(
+      review.task.schema5_view.unverified_items,
+      contract.views.review_truncated.schema5_view.unverified_items,
+    )
+    assert.equal(
+      review.task.schema5_view.reviewer_next_action,
+      contract.views.review_truncated.schema5_view.reviewer_next_action,
+    )
+    const submittedTimeline = review.timeline.findLast((event) => event.event_type === 'submitted')
+    assert.equal(
+      submittedTimeline.title,
+      contract.views.review_truncated.timeline.submitted_title,
+    )
+    assert.equal(
+      submittedTimeline.details.unverified_item_ids_total,
+      contract.views.review_truncated.timeline.unverified_item_ids_total,
+    )
+    assert.equal(
+      submittedTimeline.details.unverified_item_ids_sample_limit,
+      contract.views.review_truncated.timeline.unverified_item_ids_sample_limit,
+    )
+    assert.equal(
+      submittedTimeline.details.unverified_item_ids_truncated,
+      contract.views.review_truncated.timeline.unverified_item_ids_truncated,
+    )
+
+    writeJson(cwd, '.latch/mixed-plan.json', noGatePlan('mixed archive fixture'))
+    const mixed = json(run(cwd, [
+      'checkpoint', 'mixed archive fixture',
+      '--plan-file', '.latch/mixed-plan.json', '--json',
+    ]))
+    json(run(cwd, [
+      'approve', mixed.task_id, '--expect-revision', '1',
+      '--reason', 'approved', '--json',
+    ]))
+    json(run(cwd, [
+      'submit', mixed.task_id, '--expect-revision', '2',
+      '--changes', 'mixed archive fixture',
+      '--unverified', 'Resolved browser check',
+      '--unverified', 'Accepted compatibility risk',
+      '--unverified', 'Release observation follow-up',
+      '--knowledge-impact-file', '.latch/impact.json',
+      '--no-verify', '--reason', 'no gates',
+      '--json',
+    ]))
+    writeJson(cwd, '.latch/mixed-closeout.json', {
+      resolutions: [
+        { item_id: 'U1', outcome: 'resolved', resolution: 'Browser check passed' },
+        {
+          item_id: 'U2',
+          outcome: 'accepted_risk',
+          user_acceptance: { statement: 'User accepts the compatibility risk' },
+        },
+        {
+          item_id: 'U3',
+          outcome: 'followup',
+          followup: {
+            action: 'Observe production for one week',
+            owner: {
+              kind: 'external',
+              account_uri: 'https://github.com/orgs/example/teams/runtime',
+            },
+          },
+        },
+      ],
+    })
+    json(run(cwd, [
+      'done', mixed.task_id, '--expect-revision', '3',
+      '--closeout-file', '.latch/mixed-closeout.json',
+      '--json',
+    ]))
+    const mixedArchive = json(run(cwd, ['context', mixed.task_id, '--json']))
+    assert.deepEqual(
+      mixedArchive.task.schema5_view,
+      contract.views.archived_mixed.schema5_view,
+    )
+    const mixedDone = mixedArchive.timeline.findLast((event) => event.event_type === 'done')
+    assert.equal(mixedDone.title, contract.views.archived_mixed.timeline.done_title)
+    assert.equal(
+      mixedDone.next_action,
+      contract.views.archived_mixed.timeline.done_next_action,
+    )
+
+    writeJson(cwd, '.latch/no-followup-plan.json', noGatePlan('no followup fixture'))
+    const noFollowup = json(run(cwd, [
+      'checkpoint', 'no followup fixture',
+      '--plan-file', '.latch/no-followup-plan.json', '--json',
+    ]))
+    json(run(cwd, [
+      'approve', noFollowup.task_id, '--expect-revision', '1',
+      '--reason', 'approved', '--json',
+    ]))
+    json(run(cwd, [
+      'submit', noFollowup.task_id, '--expect-revision', '2',
+      '--changes', 'no followup fixture',
+      '--unverified', 'Manual check',
+      '--knowledge-impact-file', '.latch/impact.json',
+      '--no-verify', '--reason', 'no gates',
+      '--json',
+    ]))
+    writeJson(cwd, '.latch/no-followup-closeout.json', {
+      resolutions: [
+        { item_id: 'U1', outcome: 'resolved', resolution: 'Manual check passed' },
+      ],
+    })
+    json(run(cwd, [
+      'done', noFollowup.task_id, '--expect-revision', '3',
+      '--closeout-file', '.latch/no-followup-closeout.json',
+      '--json',
+    ]))
+    const noFollowupArchive = json(run(cwd, [
+      'context', noFollowup.task_id, '--json',
+    ]))
+    assert.deepEqual(
+      noFollowupArchive.task.schema5_view.closeout,
+      contract.views.archived_without_followup.schema5_view.closeout,
+    )
+    assert.match(
+      noFollowupArchive.timeline.findLast((event) => event.event_type === 'done').impact,
+      new RegExp(contract.views.archived_without_followup.timeline.done_impact_fragment),
     )
   } finally { rmSync(cwd, { recursive: true, force: true }) }
 })

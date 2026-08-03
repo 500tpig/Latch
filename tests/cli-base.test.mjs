@@ -860,9 +860,13 @@ test('context 按精确 ID 兼容读取 schema 2 archive', () => {
   assert.equal(context.archived, true)
   assert.equal(context.outcome, 'abandoned')
   assert.equal(context.last_open_phase, 'plan')
+  assert.equal(context.historical_schema, true)
   assert.equal(context.task.schema_version, 2)
   assert.equal(context.recent_events.at(-1).type, 'abandoned')
   assert.equal(context.history_incomplete, false)
+  const human = run(cwd, ['context', archived.id])
+  assert.equal(human.status, 0, human.stderr)
+  assert.match(human.stdout, /Historical schema: yes/)
 })
 
 test('context history selector keeps defaults compatible and projects raw or readable history', () => {

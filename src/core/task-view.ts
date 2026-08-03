@@ -13,7 +13,12 @@ import {
   listTasksV2,
   taskHistoryIncompleteForTaskV2,
 } from './task-store.js'
-import type { TaskEvent, TaskV2 } from './types.js'
+import type {
+  CloseoutResolution,
+  TaskEvent,
+  TaskV2,
+  UnverifiedItem,
+} from './types.js'
 import { now } from './utils.js'
 import {
   captureWorkspaceSnapshot,
@@ -92,6 +97,27 @@ function schema5UnverifiedItems(task: TaskV2) {
   return task.closure?.unverified_items ?? task.submission?.unverified_items ?? []
 }
 
+const SCHEMA5_VIEW_SAMPLE_LIMIT = 8
+
+type BoundedView<T> = {
+  total: number
+  sample_limit: number
+  sample: T[]
+  truncated: boolean
+}
+
+function boundedView<T>(
+  items: T[],
+  sampleLimit = SCHEMA5_VIEW_SAMPLE_LIMIT,
+): BoundedView<T> {
+  return {
+    total: items.length,
+    sample_limit: sampleLimit,
+    sample: items.slice(0, sampleLimit),
+    truncated: items.length > sampleLimit,
+  }
+}
+
 function schema5CloseoutCounts(task: TaskV2) {
   const resolutions = task.schema_version === 5
     ? (task.closure?.resolutions ?? [])
@@ -100,6 +126,63 @@ function schema5CloseoutCounts(task: TaskV2) {
     resolved: resolutions.filter((item) => item.outcome === 'resolved').length,
     accepted_risk: resolutions.filter((item) => item.outcome === 'accepted_risk').length,
     followup: resolutions.filter((item) => item.outcome === 'followup').length,
+  }
+}
+
+function resolutionPreview(resolution: CloseoutResolution) {
+  if (resolution.outcome === 'resolved')
+    return {
+      item_id: resolution.item_id,
+      outcome: resolution.outcome,
+      summary: concise(resolution.resolution),
+    }
+  if (resolution.outcome === 'accepted_risk')
+    return {
+      item_id: resolution.item_id,
+      outcome: resolution.outcome,
+      summary: concise(resolution.user_acceptance.statement),
+      accepted_by: resolution.user_acceptance.accepted_by,
+    }
+  return {
+    item_id: resolution.item_id,
+    outcome: resolution.outcome,
+    summary: concise(resolution.followup.action),
+    owner: resolution.followup.owner.account_uri,
+  }
+}
+
+function schema5ReviewerNextAction(task: TaskV2) {
+  if (task.closure) {
+    const counts = schema5CloseoutCounts(task)
+    return counts.followup > 0 ? 'track_followup_items' : 'read_only_archive'
+  }
+  if (task.phase === 'review')
+    return schema5UnverifiedItems(task).length > 0
+      ? 'prepare_closeout'
+      : 'review_or_archive'
+  if (task.phase === 'plan') return 'approve'
+  return 'verify_or_submit'
+}
+
+function schema5CloseoutView(task: TaskV2) {
+  const counts = schema5CloseoutCounts(task)
+  const resolutions = (task.closure?.resolutions ?? []).map(resolutionPreview)
+  return {
+    resolution_counts: counts,
+    resolutions: boundedView(resolutions),
+    ...(counts.followup > 0
+      ? { followup_next_action: 'track_followup_items' }
+      : { no_followup_reason: 'no_followup_resolution_items' }),
+  }
+}
+
+function schema5DetailView(task: TaskV2) {
+  if (task.schema_version !== 5) return undefined
+  const unverifiedItems: UnverifiedItem[] = schema5UnverifiedItems(task)
+  return {
+    unverified_items: boundedView(unverifiedItems),
+    reviewer_next_action: schema5ReviewerNextAction(task),
+    ...(task.closure ? { closeout: schema5CloseoutView(task) } : {}),
   }
 }
 
@@ -115,6 +198,7 @@ function briefSubmission(task: TaskV2) {
     unverified_count: items.length,
     unverified_summary: items.slice(0, 3),
     ...(items.length > 3 ? { unverified_truncated: true } : {}),
+    unverified_items_summary: boundedView(items),
     ...(submission.knowledge_impact
       ? { knowledge_impact: submission.knowledge_impact }
       : {}),
@@ -134,6 +218,7 @@ function briefClosure(task: TaskV2) {
     resolution_counts: schema5CloseoutCounts(task),
     resolution_summary: resolutions.slice(0, 3),
     ...(resolutions.length > 3 ? { resolutions_truncated: true } : {}),
+    closeout_summary: schema5CloseoutView(task),
     accepted_at: closure.accepted_at,
   }
 }
@@ -406,6 +491,11 @@ function detailValue(
   return undefined
 }
 
+function detailNumber(event: TaskEvent, key: string) {
+  const value = detailValue(event, key)
+  return typeof value === 'number' ? value : undefined
+}
+
 function details(
   event: TaskEvent,
   keys: string[],
@@ -413,7 +503,12 @@ function details(
   const output: Record<string, unknown> = { event_type: event.type }
   for (const key of keys) {
     const value = detailValue(event, key)
-    if (value !== undefined) output[key] = value
+    if (Array.isArray(value)) {
+      output[key] = value.slice(0, SCHEMA5_VIEW_SAMPLE_LIMIT)
+      output[`${key}_total`] = value.length
+      output[`${key}_sample_limit`] = SCHEMA5_VIEW_SAMPLE_LIMIT
+      output[`${key}_truncated`] = value.length > SCHEMA5_VIEW_SAMPLE_LIMIT
+    } else if (value !== undefined) output[key] = value
   }
   return output
 }
@@ -618,15 +713,26 @@ function timelineEvent(task: TaskV2, event: TaskEvent): TimelineEvent {
       details: technicalDetails,
     }
   }
-  if (event.type === 'submitted')
+  if (event.type === 'submitted') {
+    const unverifiedCount = detailNumber(event, 'unverified_count') ?? 0
     return {
       ...base,
-      title: '提交验收',
-      summary: '本轮工作已提交验收。',
+      title:
+        unverifiedCount > 0
+          ? `提交验收：${unverifiedCount} 项待处理`
+          : '提交验收：无未验证项',
+      summary:
+        unverifiedCount > 0
+          ? `本轮工作已提交验收，包含 ${unverifiedCount} 项未验证说明。`
+          : '本轮工作已提交验收，没有未验证说明。',
       impact: '任务进入 review，不会自动归档。',
-      next_action: '等待用户确认、反馈或归档授权。',
+      next_action:
+        unverifiedCount > 0
+          ? '为每个未验证项准备 closeout resolution。'
+          : '等待用户确认、反馈或归档授权。',
       details: technicalDetails,
     }
+  }
   if (event.type === 'submission_knowledge_impact_patched')
     return {
       ...base,
@@ -638,14 +744,26 @@ function timelineEvent(task: TaskV2, event: TaskEvent): TimelineEvent {
       impact: '实现和验证结果不因此改变。',
       details: technicalDetails,
     }
-  if (event.type === 'done')
+  if (event.type === 'done') {
+    const resolved = detailNumber(event, 'resolved_count') ?? 0
+    const acceptedRisk = detailNumber(event, 'accepted_risk_count') ?? 0
+    const followup = detailNumber(event, 'followup_count') ?? 0
     return {
       ...base,
-      title: '完成归档',
-      summary: '任务已按用户授权完成并归档。',
-      impact: '后续只作为历史记录读取。',
+      title: `完成归档：${resolved + acceptedRisk + followup} 项 closeout`,
+      summary:
+        `任务已按用户授权完成并归档；` +
+        `resolved=${resolved}，accepted_risk=${acceptedRisk}，followup=${followup}。`,
+      impact:
+        followup > 0
+          ? '后续只作为历史记录读取；closeout 中仍有 follow-up 动作。'
+          : '后续只作为历史记录读取；没有额外 follow-up。',
+      ...(followup > 0
+        ? { next_action: '跟进 closeout 中标记的 follow-up。' }
+        : {}),
       details: technicalDetails,
     }
+  }
   if (event.type === 'abandoned')
     return {
       ...base,
@@ -782,8 +900,19 @@ function statusTask(
   }
 }
 
+function fullTask(task: TaskV2) {
+  const schema5View = schema5DetailView(task)
+  return schema5View
+    ? {
+        ...task,
+        schema5_view: schema5View,
+      }
+    : task
+}
+
 function briefTask(store: TaskStoreV2, task: TaskV2, archived = false) {
   const workspaceProof = workspaceProofView(store, task, archived)
+  const schema5View = schema5DetailView(task)
   return {
     id: task.id,
     title: task.title,
@@ -827,6 +956,7 @@ function briefTask(store: TaskStoreV2, task: TaskV2, archived = false) {
     ...(workspaceProof ? { workspace_proof: workspaceProof } : {}),
     ...(task.submission ? { submission: briefSubmission(task) } : {}),
     ...(task.closure ? { closure: briefClosure(task) } : {}),
+    ...(schema5View ? { schema5_view: schema5View } : {}),
     artifacts: task.artifacts,
     updated_at: task.updated_at,
   }
@@ -878,6 +1008,7 @@ function archivedContextMetadata(context: ContextTaskReadV2) {
         archived: true as const,
         outcome: context.task.outcome!,
         last_open_phase: context.task.phase,
+        ...(context.task.schema_version < 5 ? { historical_schema: true } : {}),
       }
     : {}
 }
@@ -931,7 +1062,7 @@ export function contextJsonV2(
       ? statusTask(store, task, actor, context.archived)
       : options.brief
         ? briefTask(store, task, context.archived)
-        : task,
+        : fullTask(task),
     ...(!options.status && includeRawEvents
       ? { recent_events: options.brief ? events.slice(-5) : events }
       : {}),
@@ -984,6 +1115,45 @@ export function listHumanV2(
   ].join('\n')
 }
 
+function schema5HumanLines(task: TaskV2) {
+  const view = schema5DetailView(task)
+  if (!view) return []
+  const lines = [
+    `Unverified items: ${view.unverified_items.total} ` +
+      `(sample_limit=${view.unverified_items.sample_limit}, ` +
+      `sample_count=${view.unverified_items.sample.length}, ` +
+      `truncated=${view.unverified_items.truncated ? 'yes' : 'no'})`,
+    `Pending closeout resolutions: ${task.closure ? 0 : view.unverified_items.total}`,
+    `Reviewer next action: ${view.reviewer_next_action}`,
+  ]
+  for (const item of view.unverified_items.sample)
+    lines.push(`Unverified item: ${item.item_id} ${concise(item.summary)}`)
+  const closeout = view.closeout
+  if (closeout) {
+    lines.push(
+      `Closeout outcomes: resolved=${closeout.resolution_counts.resolved}, ` +
+        `accepted_risk=${closeout.resolution_counts.accepted_risk}, ` +
+        `followup=${closeout.resolution_counts.followup}`,
+    )
+    lines.push(
+      `Closeout resolutions: ${closeout.resolutions.total} ` +
+        `(sample_limit=${closeout.resolutions.sample_limit}, ` +
+        `sample_count=${closeout.resolutions.sample.length}, ` +
+        `truncated=${closeout.resolutions.truncated ? 'yes' : 'no'})`,
+    )
+    for (const resolution of closeout.resolutions.sample)
+      lines.push(
+        `Closeout resolution: ${resolution.item_id} ${resolution.outcome} ` +
+          `${resolution.summary}`,
+      )
+    if ('followup_next_action' in closeout)
+      lines.push(`Follow-up next action: ${closeout.followup_next_action}`)
+    if ('no_followup_reason' in closeout)
+      lines.push(`No follow-up reason: ${closeout.no_followup_reason}`)
+  }
+  return lines
+}
+
 export function contextHumanV2(
   store: TaskStoreV2,
   context: ContextTaskReadV2,
@@ -994,8 +1164,6 @@ export function contextHumanV2(
   const historyIncomplete = taskHistoryIncompleteForTaskV2(task, eventLog.events)
   const group = groupContext(store, task)
   const workspaceProof = workspaceProofView(store, task, context.archived)
-  const unverifiedItems = schema5UnverifiedItems(task)
-  const closeoutCounts = schema5CloseoutCounts(task)
   const lines = [
     `Task: ${task.id}`,
     `Title: ${task.title}`,
@@ -1011,6 +1179,9 @@ export function contextHumanV2(
     `Plan revision: ${task.plan_revision}`,
     `Work revision: ${task.work_revision}`,
     `Task schema: ${task.schema_version}`,
+    ...(context.archived && task.schema_version < 5
+      ? ['Historical schema: yes']
+      : []),
     `Minimum writer: ${task.min_writer_version ?? '-'}`,
     `Schema upgrade required: ${task.schema_version === 3 ? 'yes' : 'no'}`,
     `Profile: ${task.profile ?? 'standard'}`,
@@ -1024,17 +1195,7 @@ export function contextHumanV2(
     `Workspace scope: ${task.plan.workspace_scope?.paths.join(' | ') || '-'}`,
     `Acceptance: ${task.plan.acceptance.join(' | ') || '-'}`,
     `Open questions: ${task.plan.open_questions.join(' | ') || '-'}`,
-    ...(task.schema_version === 5
-      ? [
-          `Unverified items: ${unverifiedItems.length}`,
-          `Pending closeout resolutions: ${task.closure ? 0 : unverifiedItems.length}`,
-          ...(task.closure
-            ? [
-                `Closeout outcomes: resolved=${closeoutCounts.resolved}, accepted_risk=${closeoutCounts.accepted_risk}, followup=${closeoutCounts.followup}`,
-              ]
-            : []),
-        ]
-      : []),
+    ...schema5HumanLines(task),
     `Artifacts: ${task.artifacts.map((item) => `${item.kind}:${item.path}`).join(' | ') || '-'}`,
     `History incomplete: ${historyIncomplete ? 'yes' : 'no'}`,
     ...(workspaceProof

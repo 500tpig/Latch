@@ -510,6 +510,15 @@ test('done freezes current submission into closure, archives, clears current, an
     archived.closure.resolutions[0].followup.owner.account_uri,
     'mailto:runtime@example.com',
   )
+  const archivedContext = JSON.parse(run(cwd, ['context', id, '--json']).stdout)
+  assert.equal(
+    archivedContext.task.schema5_view.closeout.followup_next_action,
+    'track_followup_items',
+  )
+  assert.equal(
+    archivedContext.task.schema5_view.closeout.resolutions.sample[0].summary,
+    '后续观察',
+  )
   const state = JSON.parse(readFileSync(join(cwd, '.latch', 'state.json'), 'utf8'))
   assert.deepEqual(state.actors, {})
 
