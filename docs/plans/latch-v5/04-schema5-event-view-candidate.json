@@ -1,0 +1,101 @@
+{
+  "goal": "在 S3 delivery commit `f08f66999799dda713fe43c50a5b4b08958e15dd` 已提供 schema 5 event validator、最小 Context 和 `tests/fixtures/context-v5-candidate.json` 的基础上，冻结 S4 schema 5 event/view 丰富展示 candidate：补充 richer timeline、bounded reviewer view 和独立 Board/external-reader contract fixture，同时不改变 S3 的事件、closeout 和最低 lifecycle 契约。",
+  "workspace_scope": {
+    "paths": [
+      "src/core/task-view.ts",
+      "tests/cli-base.test.mjs",
+      "tests/review.test.mjs",
+      "tests/integration.test.mjs",
+      "tests/group.test.mjs",
+      "tests/fixtures/context-v5-board-reader.json"
+    ]
+  },
+  "scope": [
+    "基于 S3 已交付的 schema 5 `submitted` 与 `done` event 计数生成更丰富的 timeline，不改变 event payload、event validator 或 `events_schema_version`。",
+    "在 S3 最低 status、brief、full Context 和 human Context 之上增加 bounded item 摘要、resolution 摘要、确定性标题、影响说明和 reviewer next action。",
+    "在不改变 S3 archive 精确 ID 读取契约的前提下丰富 detail，并让 v2-v4 historical schema 继续按原 shape 展示。",
+    "新增独立 reader contract fixture `tests/fixtures/context-v5-board-reader.json`，覆盖 schema 5 open、review 和 archived view；该 fixture 与 S3 的最低 lifecycle fixture 分离。",
+    "补齐 bounded output、混合 outcome、额外 follow-up、无额外后续原因、历史只读和 fixture 稳定性测试。"
+  ],
+  "acceptance": [
+    "不修改 S3 已交付的 schema 5 `submitted` 与 `done` event payload、专用 validator、closeout 校验规则或最低 lifecycle 投影。",
+    "不修改 S3 的 `tests/fixtures/context-v5-candidate.json`；该 fixture 只证明最小 lifecycle 和 view。",
+    "超过 S3 最低要求的 brief、full Context 和 human detail 返回 bounded item、resolution 摘要、完整总数和截断状态。",
+    "timeline 使用确定性标题、影响和下一步，不裸露内部字段堆栈，也不把 event log 变成 submission 或 closure 的第二份完整真源。",
+    "S3 精确 ID archive Context 返回完整 resolution 的最低契约保持不变；S4 只增加丰富 detail。",
+    "v2-v4 archive 保持原有字符串投影，并明确标识 historical schema，不转换成 schema 5 resolution。",
+    "`tests/fixtures/context-v5-board-reader.json` 覆盖空 item、三种 outcome、混合 resolution、额外 follow-up 和 no-follow-up reason，且不含本机绝对路径、聊天内容或外部 repo 状态。",
+    "Board 和 external reader 只能把新 fixture 作为读取契约输入；本切片不实现 Board UI、不修改外部 repo、不发布 current 文档。",
+    "`pnpm check` 与 `git diff --check` 通过。"
+  ],
+  "approach": [
+    "从 S3 已实现的 `task.json` current state 与 event 计数派生丰富 view，不改动最低 validator、event writer 或 lifecycle contract。",
+    "为超过 S3 最低投影的信息定义稳定预算，默认 bounded item 最多显示 8 个样本，同时返回完整总数和截断状态。",
+    "复用现有 task view/timeline mapper 和 bounded sample 习惯，不创建新的 view 子系统。",
+    "为 historical 与 current schema 使用明确读取分支，不从旧字符串推断 resolution，也不迁移 archive。",
+    "生成稳定排序、可供 Latch-Board 和 external reader 使用的独立 contract fixture。",
+    "开发期间运行 view 与 review 定向测试，最终执行完整项目检查和 diff 完整性 gate。"
+  ],
+  "api_assumptions": [
+    "S4 implementation task 以 S3 delivery commit `f08f66999799dda713fe43c50a5b4b08958e15dd` 的实际代码和 fixture 为输入，不以当前 `main` 的 `0.4.0` 状态为输入。",
+    "S3 delivery commit 将 repo-local package 和 CLI 标记为 `0.5.0`，新 schema 5 task 的 `min_writer_version` 为 `0.5.0`。",
+    "S3 delivery commit 已新增 `tests/fixtures/context-v5-candidate.json`，其中固定的是最低 lifecycle 和 view；S4 不修改该文件。",
+    "`events_schema_version` 继续为 `3`，schema 5 `submitted` event 使用 `unverified_item_ids` 和 `unverified_count`，schema 5 `done` event 使用 `resolved_count`、`accepted_risk_count` 和 `followup_count`。",
+    "Context JSON envelope、`archived: true` 语义、status、brief 和 full view 的现有 CLI 参数保持不变。",
+    "`tests/fixtures/context-v5-board-reader.json` 是 reader contract，不授权 Latch-Board 写入、UI 开发、外部 repo 修改或发布。"
+  ],
+  "permission_assumptions": [
+    "S2 已由 commit `0a14c714753a106a89a94e6d0af464a15024cc2e` 交付；S2 只简化 schema 4 Light authoring，不负责 CLI/package `0.5.0` 切换。",
+    "CLI/package `0.5.0` 来自 S3 candidate delivery commit `f08f66999799dda713fe43c50a5b4b08958e15dd`，不得再归因于 S2。",
+    "既有证据已被接受为 S4 重新激活前置条件：S2 功能、测试和交付 commit 已存在，且 S2 后存在真实 Light task。",
+    "真实六字段 Light authoring 样本尚未得到使用观察；该事实记录为后续观察限制，不阻断 S4 event/view 展示。",
+    "未来 implementation 只修改 Latch repo 中列出的文件；不执行 Git add、commit、push、branch、checkout、reset、clean 或 worktree 操作。",
+    "未来 implementation 不修改 Latch-Board repo、不更新全局 CLI、不执行全局安装、不创建 S4 之外的 implementation task。"
+  ],
+  "data_assumptions": [
+    "schema 5 `task.json` 是 submission 和 closure 的唯一当前事实，event log 只提供 timeline 线索和计数。",
+    "event 丢失或 event 写入 warning 不改变已经提交的 task current state。",
+    "历史 task 可能缺少 current 字段，但其原始数据仍通过已有 validator 读取。",
+    "Board 与 external reader 接入只依赖本切片冻结的 `tests/fixtures/context-v5-board-reader.json` 和 Context JSON。",
+    "当前 `main` 尚未包含 S3 delivery commit `f08f66999799dda713fe43c50a5b4b08958e15dd` 的代码、`0.5.0` package 版本或 S3 最低 fixture；S4 实施前必须在正确 delivery 基线上重新核对。"
+  ],
+  "user_flow": [
+    "用户完成本 candidate plan 的 review acceptance 和 Git delivery 后，另行启动 S4 implementation 对话。",
+    "S4 implementation 对话从已交付的 S4 candidate plan 和 S3 delivery commit 读取输入，使用 repo-local CLI `0.5.0` 创建 schema 5 Standard task 并获得 writer。",
+    "submit 后，reviewer 在 S3 最低 Context 之上读取 bounded item 摘要、resolution 摘要和丰富 timeline。",
+    "done 后，timeline 显示各 outcome 计数、确定性标题和仍存在的下一步。",
+    "archive detail 在 S3 完整 resolution 之上展示 bounded 摘要和确定性导航信息。",
+    "Board 和 external reader 在后续独立 task 中使用专用 fixture 更新读取逻辑。"
+  ],
+  "out_of_scope": [
+    "不修改结构化 closeout 校验规则。",
+    "不修改 schema 5 event payload、event validator、`events_schema_version`、status/brief/full Context/human Context 的最低投影或 S3 closeout 规则。",
+    "不修改或复用 S3 的 `tests/fixtures/context-v5-candidate.json`。",
+    "不更新 package version、current 文档、canonical Skill、安装说明或全局安装。",
+    "不实现 Board UI 或外部 adopter reader。",
+    "不把完整 submission 或 closure 复制到 event。",
+    "不从旧字符串推断 outcome，不迁移、重写或删除 archive。",
+    "不增加 archive 搜索、分页、全局列表或自动 follow-up task。",
+    "不执行 Git add、commit、push、branch、checkout、reset、clean 或 worktree 操作。"
+  ],
+  "verification_plan": [
+    {
+      "name": "project-check",
+      "command": [
+        "pnpm",
+        "check"
+      ],
+      "kind": "gate"
+    },
+    {
+      "name": "diff-integrity",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "kind": "gate"
+    }
+  ],
+  "open_questions": []
+}

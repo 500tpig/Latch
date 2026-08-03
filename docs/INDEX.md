@@ -56,24 +56,25 @@ Latch、Latch-Board、appearance-sec 和 monitoring 的当前兼容状态。
 
 ## 规划中设计
 
-### [Latch 工作流改进与 S3 candidate](briefs/2026-07-31-latch-v5-workflow-contract.md)
+### [Latch 工作流改进与 S4 candidate](briefs/2026-07-31-latch-v5-workflow-contract.md)
 
-- 状态：`proposed`；
-- Source-Task：`20260731093527854-冻结-s3-结构化收尾-candidate-规划-258da4`，Plan Revision 3；
+- 状态：`candidate-planning`；
+- Source-Task：`20260803021354850-冻结-s4-schema-5-event-view-candidate-规划-2eae7e`，Plan Revision 2；
 - 规划 source baseline：`35e6ff0f3fedc4753c04d8a599075c1d0621f411`；
 - 当前基线：S1 未初始化停止边界已完成、验收并通过 commit `d83fe11` 交付；
-- 独立试点：schema 4 Light plan authoring 保持 proposed，尚未授权实施；
-- 已冻结 candidate：schema 5 结构化 closeout 方案 A，入口为
-  [S3 结构化 closeout candidate](plans/latch-v5/03-structured-closeout-candidate.json)；
-- 取代关系：`plans/latch-v5/backlog/03-schema5-structured-closeout.json` 仅保留
-  superseded 指针；
-- 交付边界：S3 handoff 必须绑定 candidate plan 的 path、SHA-256、Git delivery commit、
-  Source-Task、Plan Revision 3 和可信 runner provenance；
-- 切片边界：S3 保存最小 lifecycle fixture；丰富 timeline、独立 Board/external-reader
-  contract fixture 和 current release 继续保存在 candidate backlog；
+- 已交付试点：S2 schema 4 Light authoring 已由 commit
+  `0a14c714753a106a89a94e6d0af464a15024cc2e` 交付；
+- 已交付 candidate：S3 schema 5 结构化 closeout 已由 candidate delivery commit
+  `f08f66999799dda713fe43c50a5b4b08958e15dd` 交付，CLI/package `0.5.0` 来自 S3，不是 S2；
+- 已冻结 candidate：S4 schema 5 event/view 丰富展示，入口为
+  [S4 event/view candidate](plans/latch-v5/04-schema5-event-view-candidate.json)；
+- 取代关系：`plans/latch-v5/backlog/03-schema5-structured-closeout.json` 和
+  `plans/latch-v5/backlog/04-schema5-event-view.json` 仅保留 superseded 指针；
+- 切片边界：S4 不修改 event payload、event validator、closeout 规则、S3 最低 fixture、
+  Board UI、外部 repo 或全局安装；
 - 规划入口：[Latch 工作流改进计划与对话交接](plans/latch-v5/README.md)；
-- 边界：不修改当前 schema 4、CLI `0.4.0` 或 current 产品契约，不构成 S2 或
-  S3 的准备、实施或发布授权。
+- 边界：不修改当前 schema 4、CLI `0.4.0` 或 current 产品契约，不构成 S4 implementation、
+  S5 current release、外部 adopter 或 Git 操作授权。
 
 ## 当前产品契约
 
