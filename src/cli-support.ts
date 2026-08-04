@@ -1,4 +1,6 @@
 import { parseArgs, type ParseArgsConfig } from 'node:util'
+import { resolve } from 'node:path'
+import { readJsonFile } from './core/utils.js'
 
 export class CliV2Error extends Error {
   constructor(
@@ -43,4 +45,21 @@ export function commonOptions() {
     help: { type: 'boolean', short: 'h' },
     json: { type: 'boolean' },
   } as const
+}
+
+export function readInputFile<T>(
+  cwd: string,
+  path: string | undefined,
+  option: string,
+) {
+  if (!path) fail('invalid_arguments', `${option} is required.`)
+  return readJsonFile<T>(resolve(cwd, path))
+}
+
+export function validateBrief(
+  jsonOutput: boolean | undefined,
+  brief: boolean | undefined,
+) {
+  if (brief && !jsonOutput)
+    fail('invalid_arguments', '--brief requires --json.')
 }

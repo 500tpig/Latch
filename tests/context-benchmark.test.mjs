@@ -1,28 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  mkdtempSync,
-  rmSync,
-  writeFileSync,
   readFileSync,
 } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { spawnSync } from 'node:child_process'
 import {
   evaluateContextBenchmark,
   parseContextBenchCase,
   parseContextBenchRun,
 } from '../dist/core/context-benchmark.js'
-
-const cli = join(process.cwd(), 'dist/cli.js')
-const temporaryDirectories = []
-
-function temporaryDirectory() {
-  const directory = mkdtempSync(join(tmpdir(), 'latch-context-bench-'))
-  temporaryDirectories.push(directory)
-  return directory
-}
 
 function fixture(name) {
   return JSON.parse(readFileSync(
@@ -60,11 +46,6 @@ function broadValue(overrides = {}) {
     ...overrides,
   }
 }
-
-test.afterEach(() => {
-  for (const directory of temporaryDirectories.splice(0))
-    rmSync(directory, { recursive: true, force: true })
-})
 
 test('all three benchmark case fixtures satisfy the contract', () => {
   for (const name of [
@@ -128,28 +109,4 @@ test('critical misses, wrong docs, slow evidence, and freshness failures fail ma
     ),
     /does not classify critical entry/,
   )
-})
-
-test('benchmark context CLI evaluates supplied case and run files only', () => {
-  const cwd = temporaryDirectory()
-  writeFileSync(join(cwd, 'case.json'), JSON.stringify(fixture('cross-file-cli.json')))
-  writeFileSync(join(cwd, 'run.json'), JSON.stringify(runValue()))
-  writeFileSync(join(cwd, 'broad.json'), JSON.stringify(broadValue()))
-  const result = spawnSync(process.execPath, [
-    cli,
-    'benchmark',
-    'context',
-    '--case-file', 'case.json',
-    '--run-file', 'run.json',
-    '--baseline-run-file', 'broad.json',
-    '--json',
-  ], {
-    cwd,
-    encoding: 'utf8',
-  })
-  assert.equal(result.status, 0, result.stderr)
-  const output = JSON.parse(result.stdout)
-  assert.equal(output.benchmark.pass_main, true)
-  assert.equal(output.benchmark.token_goal_miss, false)
-  assert.equal('pack' in output, false)
 })

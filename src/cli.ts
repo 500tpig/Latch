@@ -8,7 +8,23 @@ import {
   parseCommand,
   positiveInteger,
   printWarnings,
+  readInputFile,
+  validateBrief,
 } from './cli-support.js'
+import {
+  benchmarkUsage,
+  runBenchmark,
+} from './commands/benchmark.js'
+import {
+  contextPackUsage,
+  contextUsage,
+  runContext,
+  runContextPack,
+} from './commands/context.js'
+import {
+  knowledgeUsage,
+  runKnowledge,
+} from './commands/knowledge.js'
 import {
   recordJsonEnvelope,
   recordUsage,
@@ -17,28 +33,9 @@ import {
 import {
   actorId,
   assertWritableActor,
-  isWritableActor,
 } from './core/actor.js'
 import { injectHostActor } from './host-adapter.js'
 import {
-  evaluateContextBenchmark,
-  parseContextBenchCase,
-  parseContextBenchRun,
-} from './core/context-benchmark.js'
-import {
-  buildContextPack,
-  loadContextPackSections,
-  parseContextPackRequest,
-  type ContextPackSectionInput,
-} from './core/context-pack.js'
-import {
-  checkKnowledgeDocument,
-  checkTaskKnowledgeDocuments,
-  fingerprintKnowledgeDocument,
-  type KnowledgeCheckResult,
-} from './core/knowledge.js'
-import {
-  discoverWorkspaceRoot,
   NotInitializedError,
 } from './core/paths.js'
 import {
@@ -51,25 +48,19 @@ import {
   showProjectRecordV1,
 } from './core/record-store.js'
 import {
-  contextHumanV2,
-  contextJsonV2,
   jsonEnvelopeV2,
   listHumanV2,
   listJsonV2,
-  type ContextHistoryView,
 } from './core/task-view.js'
 import {
   assertGroupIdV3,
   claimTaskV3,
   createTaskV5,
-  currentTaskIdV2,
   DowngradeTaskV2Error,
   downgradeTaskV2,
   initTaskStoreV2,
   openTaskStoreV2,
   readContextTaskV2,
-  readOpenContextTaskV2,
-  readTaskV2,
   selectCurrentTaskV2,
   takeoverTaskV3,
   upgradeTaskV4,
@@ -129,13 +120,11 @@ const commandUsage: Record<string, string> = {
   list:
     'Usage: latch list [--group <id> [--include-archive]] [--json] [--brief]',
   context:
-    'Usage: latch context [task-id] [--json] [--brief | --status | --since-revision <revision>] [--history <timeline|events|both>]',
-  'context-pack': 'Usage: latch context pack --input-file <path> [--json]',
+    contextUsage,
+  'context-pack': contextPackUsage,
   record: recordUsage,
-  knowledge:
-    'Usage: latch knowledge fingerprint --path <path> [--json]\n       latch knowledge check (--path <path> | --task <task-id>) [--json]',
-  benchmark:
-    'Usage: latch benchmark context --case-file <path> --run-file <path> [--baseline-run-file <path>] [--json]',
+  knowledge: knowledgeUsage,
+  benchmark: benchmarkUsage,
   claim:
     'Usage: latch claim <task-id> --expect-revision <revision> [--reason <text>] [--json]',
   takeover:
@@ -191,12 +180,6 @@ function requirePositionals(
   const maximum = Array.isArray(count) ? count[1] : count
   if (positionals.length < minimum || positionals.length > maximum)
     fail('invalid_arguments', commandUsage[command])
-}
-
-function nonNegativeInteger(raw: string | undefined, name: string) {
-  if (raw === undefined || !/^\d+$/.test(raw))
-    fail('invalid_arguments', `${name} must be a non-negative integer.`)
-  return Number(raw)
 }
 
 function groupId(raw: string | undefined) {
@@ -284,11 +267,6 @@ function readPlan(
   if (!planFile) fail('invalid_arguments', '--plan-file is required.')
   const plan = readJsonFile<unknown>(resolve(cwd, planFile))
   return normalizeTaskPlanInput(plan, profile, planFile)
-}
-
-function readInputFile<T>(cwd: string, path: string | undefined, option: string) {
-  if (!path) fail('invalid_arguments', `${option} is required.`)
-  return readJsonFile<T>(resolve(cwd, path))
 }
 
 function mutationJson(
@@ -536,17 +514,6 @@ function runUse(args: string[], cwd: string, actor: string) {
   process.stdout.write(`Current task: ${taskId}\n`)
 }
 
-function validateBrief(jsonOutput: boolean | undefined, brief: boolean | undefined) {
-  if (brief && !jsonOutput)
-    fail('invalid_arguments', '--brief requires --json.')
-}
-
-function contextHistoryView(raw: string | undefined): ContextHistoryView | undefined {
-  if (raw === undefined) return undefined
-  if (raw === 'timeline' || raw === 'events' || raw === 'both') return raw
-  fail('invalid_arguments', '--history must be timeline, events, or both.')
-}
-
 function runList(args: string[], cwd: string, actor: string) {
   const parsed = parseCommand(args, {
     ...commonOptions(),
@@ -572,13 +539,6 @@ function runList(args: string[], cwd: string, actor: string) {
   })}\n`)
 }
 
-function targetTask(cwd: string, actor: string, id: string | undefined) {
-  const store = openTaskStoreV2(cwd)
-  const taskId = id ?? currentTaskIdV2(store, actor)
-  if (!taskId) fail('task_not_found', 'No current Latch v2 task.')
-  return { store, context: readContextTaskV2(store, taskId) }
-}
-
 function currentWritableTask(
   store: ReturnType<typeof openTaskStoreV2>,
   id: string,
@@ -590,226 +550,6 @@ function currentWritableTask(
       `Candidate CLI 0.5.0 only mutates schema_version 5 tasks; the current Latch runner treats task ${task.id} as historical read-only and requires its matching runner for schema_version ${task.schema_version}.`,
     )
   return task
-}
-
-function runContext(args: string[], cwd: string, actor: string) {
-  const parsed = parseCommand(args, {
-    ...commonOptions(),
-    brief: { type: 'boolean' },
-    status: { type: 'boolean' },
-    'since-revision': { type: 'string' },
-    history: { type: 'string' },
-  })
-  if (parsed.values.help) return process.stdout.write(`${commandUsage.context}\n`)
-  requirePositionals('context', parsed.positionals, [0, 1])
-  validateBrief(parsed.values.json, parsed.values.brief)
-  if (
-    (parsed.values.status ||
-      parsed.values['since-revision'] !== undefined ||
-      parsed.values.history !== undefined) &&
-    !parsed.values.json
-  )
-    fail('invalid_arguments', '--status, --since-revision, and --history require --json.')
-  const history = contextHistoryView(parsed.values.history)
-  if (parsed.values.status && history !== undefined)
-    fail('invalid_arguments', '--history cannot be combined with --status.')
-  const selectedViews = [
-    Boolean(parsed.values.brief),
-    Boolean(parsed.values.status),
-    parsed.values['since-revision'] !== undefined,
-  ].filter(Boolean).length
-  if (selectedViews > 1)
-    fail(
-      'invalid_arguments',
-      '--brief, --status, and --since-revision are mutually exclusive.',
-    )
-  if (!parsed.positionals[0] && !isWritableActor(actor))
-    fail(
-      'actor_required',
-      'Actor required for context without task id.\n' +
-        'Pass an explicit task id or set a session actor.',
-    )
-  const { store, context } = targetTask(cwd, actor, parsed.positionals[0])
-  const task = context.task
-  const sinceRevision =
-    parsed.values['since-revision'] !== undefined
-      ? nonNegativeInteger(parsed.values['since-revision'], '--since-revision')
-      : undefined
-  if (sinceRevision !== undefined && sinceRevision > task.revision)
-    fail(
-      'invalid_arguments',
-      `--since-revision cannot exceed current task revision ${task.revision}.`,
-    )
-  if (parsed.values.json)
-    return json(contextJsonV2(store, context, actor, {
-      brief: Boolean(parsed.values.brief),
-      status: Boolean(parsed.values.status),
-      sinceRevision,
-      history,
-    }))
-  process.stdout.write(`${contextHumanV2(store, context, actor)}\n`)
-}
-
-function runContextPack(args: string[], cwd: string, actor: string) {
-  const parsed = parseCommand(args, {
-    ...commonOptions(),
-    'input-file': { type: 'string' },
-  })
-  if (parsed.values.help)
-    return process.stdout.write(`${commandUsage['context-pack']}\n`)
-  if (parsed.positionals.length > 0)
-    fail('invalid_arguments', commandUsage['context-pack'])
-  const request = parseContextPackRequest(
-    readInputFile<unknown>(cwd, parsed.values['input-file'], '--input-file'),
-  )
-
-  let workspaceRoot: string
-  let effectiveRequest = request
-  const automaticSections: ContextPackSectionInput[] = []
-  if (request.task_id) {
-    const store = openTaskStoreV2(cwd)
-    const contextTask = readOpenContextTaskV2(store, request.task_id)
-    const task = contextTask.task
-    const context = contextJsonV2(store, contextTask, actor, true)
-    workspaceRoot = store.paths.workspaceRoot
-    effectiveRequest = {
-      ...request,
-      task_id: task.id,
-      ...(request.orientation
-        ? { orientation: { ...request.orientation, task_id: task.id } }
-        : {}),
-    }
-    automaticSections.push({
-      kind: 'task',
-      content: JSON.stringify(context.task, null, 2),
-    })
-    if ('group' in context)
-      automaticSections.push({
-        kind: 'sibling',
-        content: JSON.stringify(context.group, null, 2),
-      })
-  } else {
-    workspaceRoot = discoverWorkspaceRoot(cwd, { forInit: true })
-  }
-
-  const requestedSections = loadContextPackSections(workspaceRoot, effectiveRequest)
-  const result = buildContextPack(effectiveRequest, [
-    ...automaticSections,
-    ...requestedSections,
-  ])
-  process.stdout.write(result.serialized)
-}
-
-function knowledgeCheckHuman(result: KnowledgeCheckResult) {
-  return [
-    `Knowledge: ${result.path}`,
-    `Freshness: ${result.freshness}`,
-    `Review needed: ${result.review_needed ? 'yes' : 'no'}`,
-    ...(result.fingerprint ? [`Fingerprint: ${result.fingerprint}`] : []),
-    `Files: ${result.files.length}`,
-    ...(result.error ? [`Error: ${result.error}`] : []),
-    ...result.warnings.map((warning) => `Warning: ${warning}`),
-  ].join('\n')
-}
-
-function runKnowledge(args: string[], cwd: string) {
-  const action = args[0]
-  if (!action || action === '--help' || action === '-h')
-    return process.stdout.write(`${commandUsage.knowledge}\n`)
-  if (action !== 'fingerprint' && action !== 'check')
-    fail('invalid_arguments', `Unknown knowledge command: ${action}\n${commandUsage.knowledge}`)
-
-  const parsed = parseCommand(args.slice(1), {
-    ...commonOptions(),
-    path: { type: 'string' },
-    task: { type: 'string' },
-  })
-  if (parsed.values.help)
-    return process.stdout.write(`${commandUsage.knowledge}\n`)
-  if (parsed.positionals.length > 0)
-    fail('invalid_arguments', commandUsage.knowledge)
-
-  if (action === 'fingerprint') {
-    if (!parsed.values.path || parsed.values.task)
-      fail('invalid_arguments', 'knowledge fingerprint requires --path and does not accept --task.')
-    const workspaceRoot = discoverWorkspaceRoot(cwd, { forInit: true })
-    const result = fingerprintKnowledgeDocument(workspaceRoot, parsed.values.path)
-    if (parsed.values.json)
-      return json({ ...jsonEnvelopeV2(), knowledge: result })
-    process.stdout.write([
-      `Knowledge: ${result.path}`,
-      `Algorithm: ${result.algorithm}`,
-      `Fingerprint: ${result.fingerprint}`,
-      `Files: ${result.files.length}`,
-      ...result.warnings.map((warning) => `Warning: ${warning}`),
-    ].join('\n') + '\n')
-    return
-  }
-
-  if (Boolean(parsed.values.path) === Boolean(parsed.values.task))
-    fail('invalid_arguments', 'knowledge check requires exactly one of --path or --task.')
-  if (parsed.values.path) {
-    const workspaceRoot = discoverWorkspaceRoot(cwd, { forInit: true })
-    const result = checkKnowledgeDocument(workspaceRoot, parsed.values.path)
-    if (parsed.values.json)
-      return json({ ...jsonEnvelopeV2(), knowledge: result })
-    process.stdout.write(`${knowledgeCheckHuman(result)}\n`)
-    return
-  }
-
-  const store = openTaskStoreV2(cwd)
-  const task = readTaskV2(store, parsed.values.task!)
-  const result = checkTaskKnowledgeDocuments(store.paths.workspaceRoot, task)
-  if (parsed.values.json)
-    return json({ ...jsonEnvelopeV2(), ...result })
-  process.stdout.write([
-    `Task: ${result.task_id}`,
-    ...result.documents.map(knowledgeCheckHuman),
-  ].join('\n') + '\n')
-}
-
-function runBenchmark(args: string[], cwd: string) {
-  const subject = args[0]
-  if (!subject || subject === '--help' || subject === '-h')
-    return process.stdout.write(`${commandUsage.benchmark}\n`)
-  if (subject !== 'context')
-    fail('invalid_arguments', `Unknown benchmark command: ${subject}\n${commandUsage.benchmark}`)
-  const parsed = parseCommand(args.slice(1), {
-    ...commonOptions(),
-    'case-file': { type: 'string' },
-    'run-file': { type: 'string' },
-    'baseline-run-file': { type: 'string' },
-  })
-  if (parsed.values.help)
-    return process.stdout.write(`${commandUsage.benchmark}\n`)
-  if (parsed.positionals.length > 0)
-    fail('invalid_arguments', commandUsage.benchmark)
-  const benchmarkCase = parseContextBenchCase(
-    readInputFile<unknown>(cwd, parsed.values['case-file'], '--case-file'),
-  )
-  const run = parseContextBenchRun(
-    readInputFile<unknown>(cwd, parsed.values['run-file'], '--run-file'),
-  )
-  const baseline = parsed.values['baseline-run-file']
-    ? parseContextBenchRun(
-        readInputFile<unknown>(
-          cwd,
-          parsed.values['baseline-run-file'],
-          '--baseline-run-file',
-        ),
-      )
-    : undefined
-  const result = evaluateContextBenchmark(benchmarkCase, run, baseline)
-  if (parsed.values.json)
-    return json({ ...jsonEnvelopeV2(), benchmark: result })
-  process.stdout.write([
-    `Benchmark: ${result.case_id}`,
-    `Main: ${result.pass_main ? 'pass' : 'fail'}`,
-    `Failures: ${result.failures.join(', ') || '-'}`,
-    ...(result.token_goal_evaluated
-      ? [`Token goal: ${result.token_goal_miss ? 'miss' : 'pass'}`]
-      : ['Token goal: not evaluated']),
-  ].join('\n') + '\n')
 }
 
 function runClaim(args: string[], cwd: string, actor: string) {

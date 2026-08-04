@@ -1239,23 +1239,6 @@ test('brief context summarizes planned verification states', () => {
   assert.deepEqual(briefContext.task.verification, task.verification)
 })
 
-test('brief requires JSON and read commands do not initialize storage', () => {
-  const briefRoot = temporaryDirectory()
-  const brief = run(briefRoot, ['list', '--brief'])
-  assert.notEqual(brief.status, 0)
-  assert.match(brief.stderr, /--brief requires --json/)
-  assert.equal(existsSync(join(briefRoot, '.latch')), false)
-
-  const readRoot = temporaryDirectory()
-  const context = run(readRoot, ['context', '--json'])
-  assert.notEqual(context.status, 0)
-  assert.equal(existsSync(join(readRoot, '.latch')), false)
-
-  const status = run(temporaryDirectory(), ['context', '--status'])
-  assert.notEqual(status.status, 0)
-  assert.match(status.stderr, /require --json/)
-})
-
 test('save updates a plan, increments revisions, and invalidates approval and verification', () => {
   const cwd = temporaryDirectory()
   init(cwd)

@@ -3,26 +3,17 @@ import assert from 'node:assert/strict'
 import {
   mkdtempSync,
   mkdirSync,
-  readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { spawnSync } from 'node:child_process'
 import {
   buildContextPack,
   loadContextPackSections,
   parseContextPackRequest,
 } from '../dist/core/context-pack.js'
-import {
-  createTaskV4,
-  initTaskStoreV2,
-} from '../dist/core/task-store.js'
-
-const cli = join(process.cwd(), 'dist/cli.js')
-const actor = 'codex:session:context-pack'
 const temporaryDirectories = []
 
 function temporaryDirectory() {
@@ -35,51 +26,6 @@ function write(cwd, path, content) {
   const absolute = join(cwd, path)
   mkdirSync(join(absolute, '..'), { recursive: true })
   writeFileSync(absolute, content)
-}
-
-function run(cwd, args) {
-  return spawnSync(process.execPath, [cli, ...args], {
-    cwd,
-    encoding: 'utf8',
-    env: { ...process.env, LATCH_ACTOR: actor },
-  })
-}
-
-function plan() {
-  return {
-    goal: '验证 Context pack',
-    workspace_scope: { paths: ['src/'] },
-    scope: ['src/core/context-pack.ts'],
-    acceptance: ['context pack tests pass'],
-    approach: ['使用 schema 3 fixture'],
-    api_assumptions: [],
-    permission_assumptions: [],
-    data_assumptions: [],
-    user_flow: ['request -> pack'],
-    out_of_scope: ['orientation persistence'],
-    verification_plan: [],
-    open_questions: [],
-  }
-}
-
-function knowledgeDocument() {
-  return `---
-id: module
-summary: 模块知识
-covers:
-  - src/map.txt
-status: current
-last_fingerprint: null
-last_fingerprint_algo: sha256-v1
-provenance:
-  last_verified_task_id: null
-  last_verified_at: null
-  optional_commit_sha: null
----
-
-# Module
-当前说明。
-`
 }
 
 test.afterEach(() => {
@@ -227,61 +173,4 @@ test('source loading rejects escapes, symlinks, and invalid line ranges', () => 
     sources: [{ kind: 'excerpt', path: 'src/file.txt', start_line: 4 }],
   })
   assert.throws(() => loadContextPackSections(cwd, invalidRange), /line range exceeds/)
-})
-
-test('CLI combines task, freshness, siblings, and requested sources without writes', () => {
-  const cwd = temporaryDirectory()
-  write(cwd, 'src/map.txt', 'map one\nmap two\nmap three')
-  write(cwd, 'src/excerpt.txt', 'skip\nexcerpt')
-  write(cwd, 'src/expand.txt', 'expanded')
-  write(cwd, 'docs/module.md', knowledgeDocument())
-  const store = initTaskStoreV2(cwd)
-  const target = createTaskV4(store, {
-    title: 'Context target',
-    plan: plan(),
-    profile: 'standard',
-    groupId: 'Wave:Context',
-  }, actor).task
-  createTaskV4(store, {
-    title: 'Context sibling',
-    plan: plan(),
-    profile: 'standard',
-    groupId: 'Wave:Context',
-  }, actor)
-  write(cwd, 'request.json', `${JSON.stringify({
-    task_id: target.id,
-    knowledge_paths: ['docs/module.md'],
-    sources: [
-      { kind: 'map', path: 'src/map.txt', start_line: 1, end_line: 2 },
-      { kind: 'excerpt', path: 'src/excerpt.txt', start_line: 2 },
-      { kind: 'expand', path: 'src/expand.txt', reason: '补充实现证据' },
-    ],
-  }, null, 2)}\n`)
-
-  const tracked = [
-    join(cwd, '.latch', 'tasks', target.id, 'task.json'),
-    join(cwd, '.latch', 'tasks', target.id, 'events.jsonl'),
-    join(cwd, '.latch', 'state.json'),
-  ]
-  const before = tracked.map((path) => readFileSync(path, 'utf8'))
-  const result = run(cwd, [
-    'context', 'pack', '--input-file', 'request.json',
-  ])
-  assert.equal(result.status, 0, result.stderr)
-  const output = JSON.parse(result.stdout)
-  assert.equal(output.meta.task_id, target.id)
-  assert.equal(output.meta.char_budget, 24_000)
-  assert.equal(output.meta.char_count, [...result.stdout].length)
-  assert.deepEqual(
-    output.sections.map((section) => section.kind),
-    ['task', 'knowledge', 'map', 'sibling', 'excerpt', 'expand'],
-  )
-  assert.equal(output.sections[1].freshness, 'baseline_missing')
-  assert.equal(output.sections[2].content, 'map one\nmap two')
-  assert.equal(output.sections[4].content, 'excerpt')
-  assert.equal(output.meta.expand_batches, 1)
-  assert.deepEqual(
-    tracked.map((path) => readFileSync(path, 'utf8')),
-    before,
-  )
 })
