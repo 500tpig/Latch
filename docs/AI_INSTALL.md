@@ -39,11 +39,12 @@ pnpm build
 package bin 指向 `dist/cli.js`。构建只更新源码 repo 的本地产物，不代表全局安装、
 npm 发布或 adopter rollout 已完成。
 
-需要更新全局 CLI 时，先记录 `command -v latch` 和当前 package 来源。只有获得单独
-安装授权后，才执行：
+需要更新全局 CLI 时，先记录 `command -v latch` 和当前 package 来源。pnpm 11 使用
+`pnpm add -g .` 将当前本地 package 的 bin 注册到全局。只有获得单独安装授权后，
+才在待发布的源码 repo 执行：
 
 ```bash
-pnpm link --global
+pnpm add -g .
 ```
 
 本命令不属于普通 implementation task 或 release 文档更新授权。

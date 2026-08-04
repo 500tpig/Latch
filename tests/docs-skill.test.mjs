@@ -168,6 +168,13 @@ test('current docs contain no local absolute path or removed command examples', 
   }
 })
 
+test('current install docs use the pnpm 11 global binary command', () => {
+  const install = text('docs/AI_INSTALL.md')
+
+  assert.match(install, /pnpm add -g \./)
+  assert.doesNotMatch(install, /pnpm link --global/)
+})
+
 test('current release surfaces consistently expose schema 5 and keep adopters pending', () => {
   const packageJson = JSON.parse(text('package.json'))
   const index = text('docs/INDEX.md')
