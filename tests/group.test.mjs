@@ -14,13 +14,14 @@ import {
   archiveTaskV2,
   createTaskV2,
   createTaskV4,
+  createTaskV5,
   initTaskStoreV2,
   readArchivedTaskV2,
   readTaskV2,
 } from '../dist/core/task-store.js'
 import {
-  readTaskEventsV3,
-  validateTaskEventV3,
+  readTaskEventsV5,
+  validateTaskEventV5,
 } from '../dist/core/notes-events.js'
 
 const cli = join(process.cwd(), 'dist/cli.js')
@@ -71,7 +72,18 @@ function authorization(paths = ['src/core/task-view.ts']) {
   }
 }
 
-function createV3(store, title, options = {}) {
+function createV5(store, title, options = {}) {
+  return createTaskV5(store, {
+    title,
+    plan: options.plan ?? plan(),
+    profile: options.profile ?? 'standard',
+    ...(options.groupId !== undefined ? { groupId: options.groupId } : {}),
+    ...(options.workBasis ? { workBasis: options.workBasis } : {}),
+    artifacts: options.artifacts ?? [],
+  }, actor).task
+}
+
+function createV4(store, title, options = {}) {
   return createTaskV4(store, {
     title,
     plan: options.plan ?? plan(),
@@ -108,28 +120,28 @@ test.afterEach(() => {
     rmSync(directory, { recursive: true, force: true })
 })
 
-test('schema 4 validates optional group ids without changing their exact value', () => {
+test('schema 5 validates optional group ids without changing their exact value', () => {
   const cwd = temporaryDirectory()
   const store = initTaskStoreV2(cwd)
-  const grouped = createV3(store, 'grouped', { groupId: ' Wave:Alpha ' })
-  const ungrouped = createV3(store, 'ungrouped')
+  const grouped = createV5(store, 'grouped', { groupId: ' Wave:Alpha ' })
+  const ungrouped = createV5(store, 'ungrouped')
 
   assert.equal(grouped.group_id, ' Wave:Alpha ')
   assert.equal('group_id' in ungrouped, false)
   assert.throws(
-    () => createV3(store, 'blank', { groupId: '  ' }),
+    () => createV5(store, 'blank', { groupId: '  ' }),
     /Invalid group_id/,
   )
   assert.throws(
-    () => createV3(store, 'control', { groupId: 'wave:\u0000alpha' }),
+    () => createV5(store, 'control', { groupId: 'wave:\u0000alpha' }),
     /Invalid group_id/,
   )
   assert.throws(
-    () => createV3(store, 'long', { groupId: 'x'.repeat(129) }),
+    () => createV5(store, 'long', { groupId: 'x'.repeat(129) }),
     /Invalid group_id/,
   )
   assert.throws(
-    () => validateTaskEventV3({
+    () => validateTaskEventV5({
       type: 'group_changed',
       task_id: grouped.id,
       actor,
@@ -144,13 +156,13 @@ test('schema 4 validates optional group ids without changing their exact value',
   const v2 = createTaskV2(store, { title: 'v2', plan: plan() }, actor).task
   v2.group_id = 'wave:alpha'
   writeFileSync(taskPath(cwd, v2.id), `${JSON.stringify(v2, null, 2)}\n`)
-  assert.throws(() => readTaskV2(store, v2.id), /schema_version 3 or 4 is required/)
+  assert.throws(() => readTaskV2(store, v2.id), /structured task schema is required/)
 })
 
 test('save changes or clears group metadata without changing lifecycle facts', () => {
   const cwd = temporaryDirectory()
   const store = initTaskStoreV2(cwd)
-  const task = createV3(store, 'save group')
+  const task = createV5(store, 'save group')
   const before = {
     phase: task.phase,
     plan_revision: task.plan_revision,
@@ -171,7 +183,7 @@ test('save changes or clears group metadata without changing lifecycle facts', (
     work_revision: current.work_revision,
     verification: current.verification,
   }, before)
-  let event = readTaskEventsV3(taskDirectory(cwd, task.id)).at(-1)
+  let event = readTaskEventsV5(taskDirectory(cwd, task.id)).at(-1)
   assert.equal(event.type, 'group_changed')
   assert.equal('from' in event, false)
   assert.equal(event.to, 'Wave:Alpha')
@@ -198,7 +210,7 @@ test('save changes or clears group metadata without changing lifecycle facts', (
   assert.equal(cleared.status, 0, cleared.stderr)
   current = readTask(cwd, task.id)
   assert.equal('group_id' in current, false)
-  event = readTaskEventsV3(taskDirectory(cwd, task.id)).at(-1)
+  event = readTaskEventsV5(taskDirectory(cwd, task.id)).at(-1)
   assert.equal(event.type, 'group_changed')
   assert.equal(event.from, 'Wave:Alpha')
   assert.equal('to' in event, false)
@@ -208,23 +220,23 @@ test('save changes or clears group metadata without changing lifecycle facts', (
     'save', v2.id, '--expect-revision', '1', '--group', 'Wave:Alpha',
   ])
   assert.notEqual(denied.status, 0)
-  assert.match(denied.stderr, /legacy_unclaimed/)
+  assert.match(denied.stderr, /Candidate CLI 0\.5\.0 only mutates schema_version 5/)
   const deniedClear = run(cwd, [
     'save', v2.id, '--expect-revision', '1', '--clear-group',
   ])
   assert.notEqual(deniedClear.status, 0)
-  assert.match(deniedClear.stderr, /legacy_unclaimed/)
+  assert.match(deniedClear.stderr, /Candidate CLI 0\.5\.0 only mutates schema_version 5/)
 })
 
 test('list filters exact group members and includes archive only on request', () => {
   const cwd = temporaryDirectory()
   const store = initTaskStoreV2(cwd)
-  const open = createV3(store, 'open alpha', { groupId: 'Wave:Alpha' })
-  const archived = createV3(store, 'done alpha', {
+  const open = createV5(store, 'open alpha', { groupId: 'Wave:Alpha' })
+  const archived = createV4(store, 'done alpha', {
     groupId: 'Wave:Alpha',
     workBasis: authorization(),
   })
-  createV3(store, 'other case', { groupId: 'wave:alpha' })
+  createV5(store, 'other case', { groupId: 'wave:alpha' })
   const blocked = run(cwd, [
     'save', open.id, '--expect-revision', '1',
     '--block-reason', '等待确认', '--waiting-for', '用户', '--json',
@@ -283,8 +295,8 @@ test('list filters exact group members and includes archive only on request', ()
 test('context returns bounded sibling summaries and structured path hints', () => {
   const cwd = temporaryDirectory()
   const store = initTaskStoreV2(cwd)
-  const target = createV3(store, 'target', { groupId: 'Wave:Context' })
-  const pathSibling = createV3(store, 'path sibling', {
+  const target = createV5(store, 'target', { groupId: 'Wave:Context' })
+  const pathSibling = createV5(store, 'path sibling', {
     groupId: 'Wave:Context',
     workBasis: authorization([
       'src/a.ts',
@@ -296,7 +308,7 @@ test('context returns bounded sibling summaries and structured path hints', () =
     ]),
     artifacts: [{ kind: 'prd', path: 'docs/group.md' }],
   })
-  const artifactSibling = createV3(store, 'artifact sibling', {
+  const artifactSibling = createV4(store, 'artifact sibling', {
     groupId: 'Wave:Context',
     artifacts: [{ kind: 'brief', path: 'docs/brief.md' }],
   })
@@ -306,7 +318,7 @@ test('context returns bounded sibling summaries and structured path hints', () =
     outcome: 'done',
   })
   for (let index = 0; index < 19; index += 1)
-    createV3(store, `filler ${String(index).padStart(2, '0')}`, {
+    createV5(store, `filler ${String(index).padStart(2, '0')}`, {
       groupId: 'Wave:Context',
     })
 
@@ -341,7 +353,7 @@ test('context returns bounded sibling summaries and structured path hints', () =
   assert.equal(human.status, 0, human.stderr)
   assert.match(human.stdout, /Sibling:/)
 
-  const ungrouped = createV3(store, 'no group')
+  const ungrouped = createV5(store, 'no group')
   const plain = JSON.parse(
     run(cwd, ['context', ungrouped.id, '--json', '--brief']).stdout,
   )
@@ -351,11 +363,11 @@ test('context returns bounded sibling summaries and structured path hints', () =
 test('a blocked sibling does not prevent another group member from finishing', () => {
   const cwd = temporaryDirectory()
   const store = initTaskStoreV2(cwd)
-  const active = createV3(store, 'active', {
+  const active = createV5(store, 'active', {
     groupId: 'Wave:Independent',
     workBasis: authorization(),
   })
-  const sibling = createV3(store, 'blocked sibling', {
+  const sibling = createV5(store, 'blocked sibling', {
     groupId: 'Wave:Independent',
   })
   const blocked = run(cwd, [
@@ -370,14 +382,14 @@ test('a blocked sibling does not prevent another group member from finishing', (
   })
   const submitted = run(cwd, [
     'submit', active.id, '--expect-revision', revision(cwd, active.id),
-    '--changes', '完成 Group fixture', '--unverified', '',
+    '--changes', '完成 Group fixture',
     '--knowledge-impact-file', impactFile,
     '--no-verify', '--reason', 'plan 无 gate', '--json',
   ])
   assert.equal(submitted.status, 0, submitted.stderr)
   const completed = run(cwd, [
     'done', active.id, '--expect-revision', revision(cwd, active.id),
-    '--followup', '', '--json',
+    '--json',
   ])
   assert.equal(completed.status, 0, completed.stderr)
   assert.equal(readArchivedTaskV2(store, active.id).outcome, 'done')

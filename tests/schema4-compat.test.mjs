@@ -89,7 +89,7 @@ test.afterEach(() => {
     rmSync(directory, { recursive: true, force: true })
 })
 
-function assertLegacyWriterBlocked(sourceRef, expectedVersion) {
+function assertRunnerBoundary(sourceRef, expectedVersion) {
   const legacyCli = buildLegacyCli(sourceRef, expectedVersion)
   const cwd = temporaryDirectory(`latch-schema4-workspace-${expectedVersion}-`)
   runGit(cwd, ['init', '-q'])
@@ -102,8 +102,8 @@ function assertLegacyWriterBlocked(sourceRef, expectedVersion) {
     goal: '验证旧 writer 拒写',
     workspace_scope: { paths: ['plan.json'] },
     scope: ['plan.json'],
-    acceptance: ['0.2.0 cannot write schema 4'],
-    approach: ['pin the 0.2.0 source from 63ff85f^'],
+    acceptance: ['0.4.0 cannot write schema 5'],
+    approach: ['pin the immutable source baseline'],
     api_assumptions: [],
     permission_assumptions: [],
     data_assumptions: [],
@@ -120,7 +120,7 @@ function assertLegacyWriterBlocked(sourceRef, expectedVersion) {
   runGit(cwd, ['commit', '-q', '-m', 'fixture'])
   const checkpoint = runCli(currentCli, cwd, [
     'checkpoint',
-    'schema 4 compatibility',
+    'schema 5 compatibility',
     '--plan-file',
     planPath,
     '--json',
@@ -155,33 +155,9 @@ function assertLegacyWriterBlocked(sourceRef, expectedVersion) {
     `stderr: ${verification.stderr}\nstdout: ${verification.stdout}`,
   )
 
-  const schema3 = JSON.parse(readFileSync(taskPath, 'utf8'))
-  schema3.schema_version = 3
-  delete schema3.min_writer_version
-  writeFileSync(taskPath, `${JSON.stringify(schema3, null, 2)}\n`)
-  const legacyWrite = runCli(legacyCli, cwd, [
-    'save',
-    id,
-    '--expect-revision',
-    '3',
-    '--decision',
-    `${expectedVersion} accepted schema 3`,
-    '--json',
-  ])
-  assert.equal(legacyWrite.status, 0, legacyWrite.stderr)
-
-  const upgrade = runCli(currentCli, cwd, [
-    'upgrade-v4',
-    '--task',
-    id,
-    '--expect-revision',
-    '4',
-    '--json',
-  ])
-  assert.equal(upgrade.status, 0, upgrade.stderr)
-  const upgraded = JSON.parse(readFileSync(taskPath, 'utf8'))
-  assert.equal(upgraded.schema_version, 4)
-  assert.equal(upgraded.min_writer_version, '0.4.0')
+  const candidateTask = JSON.parse(readFileSync(taskPath, 'utf8'))
+  assert.equal(candidateTask.schema_version, 5)
+  assert.equal(candidateTask.min_writer_version, '0.5.0')
   const before = directoryChecksums(directory)
   assert.equal(
     Object.keys(before).some((path) => path.startsWith('evidence/')),
@@ -194,7 +170,7 @@ function assertLegacyWriterBlocked(sourceRef, expectedVersion) {
         'save',
         id,
         '--expect-revision',
-        '5',
+        '3',
         '--decision',
         'old writer must not append this',
         '--json',
@@ -206,7 +182,7 @@ function assertLegacyWriterBlocked(sourceRef, expectedVersion) {
         'approve',
         id,
         '--expect-revision',
-        '5',
+        '3',
         '--reason',
         'old approval must not write',
         '--json',
@@ -218,7 +194,7 @@ function assertLegacyWriterBlocked(sourceRef, expectedVersion) {
         'takeover',
         id,
         '--expect-revision',
-        '5',
+        '3',
         '--reason',
         'old takeover must not write',
         '--json',
@@ -230,7 +206,7 @@ function assertLegacyWriterBlocked(sourceRef, expectedVersion) {
         'abandon',
         id,
         '--expect-revision',
-        '5',
+        '3',
         '--reason',
         'old archive must not write',
         '--json',
@@ -244,9 +220,31 @@ function assertLegacyWriterBlocked(sourceRef, expectedVersion) {
     assert.match(rejected.stderr, /Unsupported or invalid Latch task schema/)
     assert.deepEqual(directoryChecksums(directory), before)
   }
+
+  const schema4Cwd = temporaryDirectory('latch-schema4-candidate-rejection-')
+  const initializedSchema4 = runCli(legacyCli, schema4Cwd, ['init'])
+  assert.equal(initializedSchema4.status, 0, initializedSchema4.stderr)
+  const schema4Plan = join(schema4Cwd, 'plan.json')
+  writeFileSync(schema4Plan, readFileSync(planPath))
+  const schema4Checkpoint = runCli(legacyCli, schema4Cwd, [
+    'checkpoint', 'schema 4 implementation', '--plan-file', schema4Plan, '--json',
+  ])
+  assert.equal(schema4Checkpoint.status, 0, schema4Checkpoint.stderr)
+  const schema4Id = JSON.parse(schema4Checkpoint.stdout).task_id
+  const schema4Directory = join(schema4Cwd, '.latch', 'tasks', schema4Id)
+  const schema4Before = directoryChecksums(schema4Directory)
+  for (const args of [
+    ['save', schema4Id, '--expect-revision', '1', '--decision', 'candidate must refuse', '--json'],
+    ['approve', schema4Id, '--expect-revision', '1', '--reason', 'candidate must refuse', '--json'],
+    ['abandon', schema4Id, '--expect-revision', '1', '--reason', 'candidate must refuse', '--json'],
+  ]) {
+    const rejected = runCli(currentCli, schema4Cwd, args)
+    assert.notEqual(rejected.status, 0)
+    assert.match(rejected.stderr, /requires its matching runner for schema_version 4/)
+    assert.deepEqual(directoryChecksums(schema4Directory), schema4Before)
+  }
 }
 
-test('schema 4 blocks the pinned 0.2.0 and 0.3.0 writers before mutation', () => {
-  assertLegacyWriterBlocked('63ff85f^', '0.2.0')
-  assertLegacyWriterBlocked('63ff85f', '0.3.0')
+test('schema 4 and schema 5 runners reject the opposite task schema before mutation', () => {
+  assertRunnerBoundary('35e6ff0f3fedc4753c04d8a599075c1d0621f411', '0.4.0')
 })

@@ -329,7 +329,7 @@ test('out-of-scope mutation creates a violation and submit rejects it', () => {
   }))
   const submitted = run(cwd, [
     'submit', id, '--expect-revision', revision(cwd, id),
-    '--changes', 'fixture', '--unverified', '',
+    '--changes', 'fixture',
     '--knowledge-impact-file', '.latch/impact.json', '--json',
   ])
   assert.notEqual(submitted.status, 0)
@@ -392,7 +392,7 @@ test('submit invalidates a live mismatch and capture failure records evidence_er
   }))
   const submit = run(cwd, [
     'submit', id, '--expect-revision', revision(cwd, id),
-    '--changes', 'fixture', '--unverified', '',
+    '--changes', 'fixture',
     '--knowledge-impact-file', '.latch/impact.json', '--json',
   ])
   assert.notEqual(submit.status, 0)

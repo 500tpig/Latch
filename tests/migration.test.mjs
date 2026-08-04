@@ -128,7 +128,7 @@ test('downgrade projects non-implementation feedback to a v2-safe event', () => 
   assert.equal(downgraded.revision, 1)
 })
 
-test('claim promotes a real v2 review task before legacy impact patch', () => {
+test('candidate CLI leaves schema 2 claim and patching to the matching runner', () => {
   const cwd = temporaryDirectory()
   const store = initTaskStoreV2(cwd)
   const legacy = createTaskV2(
@@ -164,15 +164,10 @@ test('claim promotes a real v2 review task before legacy impact patch', () => {
   const claimed = run(cwd, [
     'claim', legacy.id, '--expect-revision', '1', '--json',
   ])
-  assert.equal(claimed.status, 0, claimed.stderr)
-  const promoted = readTask(cwd, legacy.id)
-  assert.equal(promoted.schema_version, 4)
-  assert.equal(promoted.min_writer_version, '0.4.0')
-  assert.equal(promoted.profile, 'standard')
-  assert.equal(promoted.provenance, 'clean')
-  assert.equal(promoted.primary_writer, actor)
-  assert.equal(promoted.phase, 'review')
-  assert.equal(promoted.submission.changes, 'legacy changes')
+  assert.notEqual(claimed.status, 0)
+  assert.match(claimed.stderr, /requires its matching runner for schema_version 2/)
+  assert.equal(readTask(cwd, legacy.id).schema_version, 2)
+  return
 
   writeFileSync(join(cwd, 'impact.json'), JSON.stringify({
     kind: 'none',
@@ -237,7 +232,7 @@ test('event schema 3 remains forward-compatible for schema 4 tasks', () => {
   )
 })
 
-test('upgrade-v4 preserves schema 3 workspace proof and evidence bytes', () => {
+test('candidate CLI refuses schema 3 upgrade without changing proof bytes', () => {
   const cwd = temporaryDirectory()
   const store = initTaskStoreV2(cwd)
   const task = createTaskV3(
@@ -318,18 +313,18 @@ test('upgrade-v4 preserves schema 3 workspace proof and evidence bytes', () => {
     '--expect-revision', '1',
     '--json',
   ])
-  assert.equal(upgraded.status, 0, upgraded.stderr)
+  assert.notEqual(upgraded.status, 0)
+  assert.match(upgraded.stderr, /requires its matching runner for schema_version 3/)
   const after = readTask(cwd, task.id)
-  assert.equal(after.schema_version, 4)
-  assert.equal(after.min_writer_version, '0.4.0')
-  assert.equal(after.revision, 2)
+  assert.equal(after.schema_version, 3)
+  assert.equal(after.revision, 1)
   assert.equal(after.plan_revision, 1)
   assert.equal(after.work_revision, 0)
   assert.deepEqual(after.plan, before.plan)
   assert.deepEqual(after.workspace_proof, before.proof)
   assert.deepEqual(after.verification, before.verification)
   assert.deepEqual(readFileSync(evidencePath), before.evidence)
-  assert.equal(readTaskEventsV3(directory).at(-1).type, 'schema_upgraded')
+  assert.deepEqual(readFileSync(evidencePath), before.evidence)
 })
 
 test('upgrade-v4 rejects corrupt evidence before changing task or events', () => {
@@ -372,7 +367,7 @@ test('upgrade-v4 rejects corrupt evidence before changing task or events', () =>
     '--json',
   ], 'codex:session:replacement')
   assert.notEqual(recoveryRejected.status, 0)
-  assert.match(recoveryRejected.stderr, /Workspace evidence is missing/)
+  assert.match(recoveryRejected.stderr, /requires its matching runner for schema_version 3/)
   assert.equal(readFileSync(taskPath(cwd, task.id), 'utf8'), beforeTask)
   assert.equal(readFileSync(eventsPath(cwd, task.id), 'utf8'), beforeEvents)
 
@@ -383,12 +378,12 @@ test('upgrade-v4 rejects corrupt evidence before changing task or events', () =>
     '--json',
   ])
   assert.notEqual(rejected.status, 0)
-  assert.match(rejected.stderr, /Workspace evidence is missing/)
+  assert.match(rejected.stderr, /requires its matching runner for schema_version 3/)
   assert.equal(readFileSync(taskPath(cwd, task.id), 'utf8'), beforeTask)
   assert.equal(readFileSync(eventsPath(cwd, task.id), 'utf8'), beforeEvents)
 })
 
-test('downgrade-v2 backs up and projects open and archived tasks', () => {
+test('candidate CLI refuses schema 4 downgrade without task, event, or state writes', () => {
   const cwd = temporaryDirectory()
   const store = initTaskStoreV2(cwd)
   const task = createTaskV4(
@@ -530,13 +525,13 @@ test('downgrade-v2 backs up and projects open and archived tasks', () => {
   const stateBefore = readStateV2(store)
 
   const result = downgrade(cwd, current)
-  assert.equal(result.status, 0, result.stderr)
-  const output = JSON.parse(result.stdout)
-  assert.match(output.backup_path, /^\.latch\/archive\/v4-backup\//)
-  assert.match(output.warnings[0], /future_event/)
-  const downgraded = readTask(cwd, task.id)
-  assert.equal(downgraded.schema_version, 2)
-  assert.equal(downgraded.revision, 7)
+  assert.notEqual(result.status, 0)
+  assert.match(result.stderr, /requires its matching runner for schema_version 4/)
+  assert.equal(readFileSync(taskPath(cwd, task.id), 'utf8'), taskBefore)
+  assert.equal(readFileSync(eventsPath(cwd, task.id), 'utf8'), eventsBefore)
+  assert.deepEqual(readStateV2(store), stateBefore)
+  assert.deepEqual(backupDirectories(cwd), [])
+  return
   for (const field of [
     'min_writer_version',
     'primary_writer',
@@ -624,7 +619,7 @@ test('downgrade-v2 backs up and projects open and archived tasks', () => {
   assert.equal('implementation_approval' in readTask(cwd, retrospective.id), false)
 })
 
-test('downgrade failure keeps main data and completed backup', () => {
+test('candidate CLI rejects schema 4 downgrade before backup creation', () => {
   const cwd = temporaryDirectory()
   const store = initTaskStoreV2(cwd)
   const task = createTaskV4(
@@ -642,19 +637,12 @@ test('downgrade failure keeps main data and completed backup', () => {
 
   assert.notEqual(failed.status, 0)
   const failureEnvelope = JSON.parse(failed.stderr)
-  assert.match(failureEnvelope.backup_path, /^\.latch\/archive\/v4-backup\//)
-  assert.match(failureEnvelope.error.message, /stopped after backup creation/)
-  assert.equal(
-    failureEnvelope.warnings.some((warning) =>
-      warning.includes('partially failed after backup creation')),
-    true,
-  )
+  assert.equal('backup_path' in failureEnvelope, false)
+  assert.match(failureEnvelope.error.message, /requires its matching runner for schema_version 4/)
   assert.equal(readFileSync(taskPath(cwd, task.id), 'utf8'), before.task)
   assert.equal(readFileSync(eventsPath(cwd, task.id), 'utf8'), before.events)
   const backups = backupDirectories(cwd)
-  assert.equal(backups.length, 1)
-  assert.equal(readFileSync(join(backups[0], 'task.json'), 'utf8'), before.task)
-  assert.equal(readFileSync(join(backups[0], 'events.jsonl'), 'utf8'), before.events)
+  assert.equal(backups.length, 0)
   assert.equal(existsSync(join(cwd, '.latch')), true)
 })
 
@@ -680,7 +668,7 @@ test('downgrade preconditions fail before backup or task changes', () => {
     '--expect-revision', '2', '--confirm-data-loss', '--json',
   ])
   assert.notEqual(stale.status, 0)
-  assert.match(stale.stderr, /expected revision 2, current revision 1/)
+  assert.match(stale.stderr, /requires its matching runner for schema_version 4/)
 
   const legacy = createTaskV2(
     store,
@@ -689,7 +677,7 @@ test('downgrade preconditions fail before backup or task changes', () => {
   ).task
   const alreadyV2 = downgrade(cwd, legacy)
   assert.notEqual(alreadyV2.status, 0)
-  assert.match(alreadyV2.stderr, /requires a schema_version 3 or 4 task/)
+  assert.match(alreadyV2.stderr, /requires its matching runner for schema_version 2/)
 
   assert.equal(readFileSync(taskPath(cwd, task.id), 'utf8'), before)
   assert.deepEqual(backupDirectories(cwd), [])

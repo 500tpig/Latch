@@ -8,11 +8,13 @@ Document-Status: current component of `2026-07-15-latch-final-product-contract.m
 
 Date: 2026-07-15
 
-Revision: 4
+Revision: 5
 
 Released: 2026-07-16 — 全面 current 发布。
 
 Updated: 2026-07-28 — 修订多 gate 判定与 Light 中途重新分类规则。
+
+Updated: 2026-08-03 — current task writer 更新为 schema 5。
 
 **定位：** 承接 handoff 用户流程中尚未落入分章的可执行规则；Light 章「判定表 B」、Group 章「batch 委托」以本节为准，不重开 Actor/Light/Group 已定产品取舍。
 
@@ -103,7 +105,7 @@ Light task 出现 plan change、产品选择或 scope 扩大时，立即停止�
 
 发现要猜、越界、产品选择或 scope 扩大时，不得只因现有 gate 已通过而继续实施。Core 只执行 Skill 请求的结构化 plan/profile 变化，不负责上述语义判断。
 
-### 3.5 「按你推荐」
+### 3.5 「按推荐方案」
 
 Skill 将选取写入 plan 与 authorization.reason；仍须合法 scope；Core 只见结构。
 
@@ -183,14 +185,14 @@ Core 只做确定性投影，不用自然语言判断反馈真实含义。Skill 
 
 ```ts
 // task.json
-provenance: 'clean' | 'mixed'   // 必填于 schema v3 新写入；旧 v2 读缺省 = clean
+provenance: 'clean' | 'mixed'   // 必填于 schema 5 新写入；historical 读缺省 = clean
 ```
 
 | 规则 | 规定 |
 |---|---|
 | 真源 | **仅** `task.provenance`；**禁止**在 `submission` / `closure` 再存第二份权威值 |
 | 缺省（读旧数据） | 键缺失 → 视为 `clean` |
-| 新写入 | schema v3 task 创建时写 `clean`；除非立即已知 mixed |
+| 新写入 | schema 5 task 创建时写 `clean`；除非立即已知 mixed |
 | 置 `mixed` | Skill 在用户**明确** override 路径重叠并行时，经 `save`/等价写命令更新 `task.provenance = mixed`（须 writer + expect_revision）；记 decision 或短 event 可选 |
 | 冲突 | 若实现误在 submission 携带 provenance 字段：**忽略**，以 `task.provenance` 为准；不得用 submission 覆盖 task |
 | 重置为 `clean` | **仅**当用户明确声明隔离已恢复（例如已串行化/已换独立 worktree 且确认无并行脏写）并经 Skill 写入；**不得**因 submit/done/verify/换 phase 自动清回 `clean` |

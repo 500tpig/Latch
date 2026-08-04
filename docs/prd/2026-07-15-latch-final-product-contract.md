@@ -8,7 +8,7 @@ Document-Status: current product contract
 
 Date: 2026-07-15
 
-Revision: 7
+Revision: 8
 
 Released: 2026-07-16 — C1–C8 已交付；本文件是唯一 current 产品契约入口。
 
@@ -19,6 +19,8 @@ Updated: 2026-07-23 — 增加批量 gate 验证、独立 artifact 命令、subm
 Updated: 2026-07-23 — 增加 project-local Record V1，保持 Record 与 task 生命周期及默认上下文隔离。
 
 Updated: 2026-07-28 — 修订 A/B/C 的多 gate 判定，按独立验收面与风险语义选择 profile。
+
+Updated: 2026-08-03 — schema 5、CLI `0.5.0`、structured closeout 与 richer event/view 进入 Latch repo current；外部 adopter 保持 pending。
 
 ## 0. 地位
 
@@ -83,6 +85,11 @@ task（唯一可写生命周期）、events、primary_writer、group_id、模块
 20. Record 索引不含正文；普通启动、task 恢复、task list/context 和 context pack 不读取 Record。
 21. Record 只允许当前 repo 内的标题和标签元数据查询，默认最多返回 5 条；正文只能按精确 ID 或唯一明确命中读取一条。
 22. 显式 Record CRUD 只授权对应 Record 操作；关联与 task 来源不传播状态、writer 或 implementation authorization。
+23. CLI `0.5.0` 是 current runner；新 task 使用 schema 5 和 `min_writer_version: "0.5.0"`。
+24. schema 2–4 为 historical read-only；current runner 不提供 claim、upgrade、downgrade、双写或 archive migration。
+25. schema 5 submit 使用结构化 `unverified_items`，done 必须为每项提供唯一 closeout resolution；自由文本 closeout 不是 current 契约。
+26. schema 5 Context 提供 bounded item/resolution view、确定性 timeline 和 reviewer next action；`tests/fixtures/context-v5-board-reader.json` 是外部 reader 的冻结契约。
+27. Latch repo current 与外部 adopter rollout 分开记录；外部 repo 未完成独立验收前必须保持 `pending`。
 
 ## 6. 触发与授权
 
@@ -90,15 +97,15 @@ task（唯一可写生命周期）、events、primary_writer、group_id、模块
 
 ## 7. 发布完成标准
 
-本次全面 current 发布已满足 C1–C8：Actor、Light、Group、knowledge freshness、Context/benchmark、迁移与 R2 回退、文档入口和指令面均已同一发布边界交付。Record V1 作为独立 current component 增补，不改变 C1–C8 的既有完成事实。冻结 `0.1.0` CLI R2 smoke 作为兼容性 gate 保留在发布验证中。
+Latch repo current release 已满足 C1–C8：Actor、Light、Group、knowledge freshness、Context/benchmark、schema 5 structured closeout、richer event/view、文档入口和指令面位于同一发布边界。Record V1 继续作为独立 current component。外部 adopter rollout 不属于 Latch repo current 完成条件，必须在接入状态中保持 `pending`。
 
 ## 8. 发布记录
 
-2026-07-16 发布完成后，`docs/INDEX.md`、`docs/HANDBOOK.md`、`docs/DESIGN.md`、`docs/AI_INSTALL.md`、根 `AGENTS.md` 与 canonical Skill 均以本契约和触发章为 current 事实。
+2026-08-03 schema 5 current release 后，`docs/INDEX.md`、`docs/HANDBOOK.md`、`docs/DESIGN.md`、`docs/AI_INSTALL.md`、根 `AGENTS.md` 与 canonical Skill 均以本契约和触发章为 current 事实。CLI/package `0.5.0` 来自 S3 delivery，S4 保留 richer event/view，S5 负责 current 指令面与发布边界。
 
 ## 9. 残余风险
 
 - 24k、8 步和 30% token 为默认参考值，观察期内可经独立 task 调整；
 - Skill 的判定仍需以用户请求和 task 事实为依据；
 - CodeGraph 未随本发布升级，聊天记录不进入产品真源。
-- Latch-Board 的 Record 只读页面尚未在本 repo 实施，需要使用冻结 fixture 另建 task 接入。
+- Latch-Board、monitoring 与 appearance-sec 的 schema 5 接入仍为 pending，需要分别使用独立 task 验收；本契约不授权外部 repo 修改或全局安装。

@@ -1,7 +1,19 @@
 #!/usr/bin/env node
-import { lstatSync, readFileSync, realpathSync } from 'node:fs'
-import { parseArgs, type ParseArgsConfig } from 'node:util'
-import { isAbsolute, normalize, relative, resolve, sep } from 'node:path'
+import { isAbsolute, normalize, resolve, sep } from 'node:path'
+import {
+  CliV2Error,
+  commonOptions,
+  fail,
+  json,
+  parseCommand,
+  positiveInteger,
+  printWarnings,
+} from './cli-support.js'
+import {
+  recordJsonEnvelope,
+  recordUsage,
+  runRecord,
+} from './commands/record.js'
 import {
   actorId,
   assertWritableActor,
@@ -34,18 +46,9 @@ import {
   planTemplate,
 } from './core/plan-schema.js'
 import {
-  archiveProjectRecordV1,
-  createProjectRecordV1,
-  deleteProjectRecordV1,
-  editProjectRecordV1,
   linkProjectRecordTaskV1,
-  listProjectRecordsV1,
   openRecordStoreV1,
-  RECORD_STORE_SCHEMA_VERSION,
-  restoreProjectRecordV1,
   showProjectRecordV1,
-  type ProjectRecordEntryV1,
-  type ProjectRecordWithBodyV1,
 } from './core/record-store.js'
 import {
   contextHumanV2,
@@ -58,7 +61,7 @@ import {
 import {
   assertGroupIdV3,
   claimTaskV3,
-  createTaskV4,
+  createTaskV5,
   currentTaskIdV2,
   DowngradeTaskV2Error,
   downgradeTaskV2,
@@ -78,6 +81,7 @@ import type {
   KnowledgeImpact,
   RetrospectiveRecordInput,
   TaskArtifact,
+  TaskCloseoutInput,
   TaskProfile,
   TaskProvenance,
 } from './core/types.js'
@@ -97,7 +101,7 @@ const usage = `Usage: latch <command> [options]
 
 Commands:
   init
-  checkpoint <title> --plan-file <path> [--profile <light|standard>] [--authorize-request <reason> [--scope-summary <summary>] [--scope-path <path>...] | --authorization-file <path> | --retrospective-file <path>] [--source-record <id> --source-record-revision <revision>]
+  checkpoint <title> --plan-file <path> [--profile <light|standard>] [--authorize-request <reason> | --authorization-file <path> | --retrospective-file <path>] [--source-record <id> --source-record-revision <revision>]
   checkpoint --print-plan-template <light|standard>
   use <task-id>
   list [--group <id> [--include-archive]] [--json] [--brief]
@@ -106,32 +110,28 @@ Commands:
   record <create|list|show|edit|archive|restore|delete> [options]
   knowledge <fingerprint|check> [options]
   benchmark context [options]
-  claim <task-id> --expect-revision <revision> [--reason <text>]
   takeover <task-id> --expect-revision <revision> --reason <text>
   save <task-id> --expect-revision <revision> [changes]
   approve <task-id> --expect-revision <revision> [--reason <text> | --authorization-file <path> | --retrospective-file <path>] [--feedback <text> | --non-implementation-feedback <text>]
   verify <task-id> --expect-revision <revision> --name <name> [--diagnostic] [-- command...]
   verify-all <task-id> --expect-revision <revision>
   artifact <add|remove> <task-id> --expect-revision <revision> <kind:path>...
-  submit <task-id> --expect-revision <revision> --changes <text> --unverified <text> [--knowledge-impact-none <reason> | --knowledge-impact-file <path>] [--no-verify --reason <text>] [--verbose-warnings]
+  submit <task-id> --expect-revision <revision> --changes <text> [--unverified-item <summary>...] [--knowledge-impact-none <reason> | --knowledge-impact-file <path>] [--no-verify --reason <text>] [--verbose-warnings]
   patch-submission-knowledge-impact <task-id> --expect-revision <revision> --knowledge-impact-file <path> [--reason <text>]
-  upgrade-v4 --task <task-id> --expect-revision <revision> [--recover-writer --reason <text>]
-  downgrade-v2 --task <task-id> --expect-revision <revision> --confirm-data-loss
-  done <task-id> --expect-revision <revision> --followup <text>
+  done <task-id> --expect-revision <revision> [--closeout-file <path>]
   abandon <task-id> --expect-revision <revision> --reason <text>`
 
 const commandUsage: Record<string, string> = {
   init: 'Usage: latch init [--json]',
   checkpoint:
-    'Usage: latch checkpoint <title> --plan-file <path> [--profile <light|standard>] [--authorize-request <reason> [--scope-summary <summary>] [--scope-path <path>...] | --authorization-file <path> | --retrospective-file <path>] [--source-record <id> --source-record-revision <revision>] [--artifact <kind>:<path>] [--json]\n       latch checkpoint --print-plan-template <light|standard>',
+    'Usage: latch checkpoint <title> --plan-file <path> [--profile <light|standard>] [--authorize-request <reason> | --authorization-file <path> | --retrospective-file <path>] [--source-record <id> --source-record-revision <revision>] [--artifact <kind>:<path>] [--json]\n       latch checkpoint --print-plan-template <light|standard>',
   use: 'Usage: latch use <task-id> [--json]',
   list:
     'Usage: latch list [--group <id> [--include-archive]] [--json] [--brief]',
   context:
     'Usage: latch context [task-id] [--json] [--brief | --status | --since-revision <revision>] [--history <timeline|events|both>]',
   'context-pack': 'Usage: latch context pack --input-file <path> [--json]',
-  record:
-    'Usage: latch record create --title <title> (--body <text> | --body-file <path>) [--tag <tag>...] [--task <id>...] [--group <id>...] [--json]\n       latch record list [--status <active|archived|all>] [--query <text>] [--tag <tag>...] [--task <id>] [--group <id>] [--limit <1..5>] [--json]\n       latch record show <record-id> [--json]\n       latch record edit <record-id> --expect-revision <revision> [--title <title>] [--body <text> | --body-file <path>] [--tag <tag>... | --clear-tags] [--task <id>... | --clear-tasks] [--group <id>... | --clear-groups] [--json]\n       latch record archive <record-id> --expect-revision <revision> [--json]\n       latch record restore <record-id> --expect-revision <revision> [--json]\n       latch record delete <record-id> --expect-revision <revision> --confirm-delete [--confirm-linked] [--json]',
+  record: recordUsage,
   knowledge:
     'Usage: latch knowledge fingerprint --path <path> [--json]\n       latch knowledge check (--path <path> | --task <task-id>) [--json]',
   benchmark:
@@ -151,7 +151,7 @@ const commandUsage: Record<string, string> = {
   artifact:
     'Usage: latch artifact <add|remove> <task-id> --expect-revision <revision> <kind:path>... [--json]',
   submit:
-    'Usage: latch submit <task-id> --expect-revision <revision> --changes <text> --unverified <text> [--knowledge-impact-none <reason> | --knowledge-impact-file <path>] [--no-verify --reason <text>] [--verbose-warnings] [--json]',
+    'Usage: latch submit <task-id> --expect-revision <revision> --changes <text> [--unverified-item <summary>...] [--knowledge-impact-none <reason> | --knowledge-impact-file <path>] [--no-verify --reason <text>] [--verbose-warnings] [--json]',
   'patch-submission-knowledge-impact':
     'Usage: latch patch-submission-knowledge-impact <task-id> --expect-revision <revision> --knowledge-impact-file <path> [--reason <text>] [--json]',
   'upgrade-v4':
@@ -159,7 +159,7 @@ const commandUsage: Record<string, string> = {
   'downgrade-v2':
     'Usage: latch downgrade-v2 --task <task-id> --expect-revision <revision> --confirm-data-loss [--json]',
   done:
-    'Usage: latch done <task-id> --expect-revision <revision> --followup <text> [--json]',
+    'Usage: latch done <task-id> --expect-revision <revision> [--closeout-file <path>] [--json]',
   abandon:
     'Usage: latch abandon <task-id> --expect-revision <revision> --reason <text> [--json]',
 }
@@ -182,19 +182,6 @@ const actorRequiredCommands = new Set([
   'abandon',
 ])
 
-class CliV2Error extends Error {
-  constructor(
-    readonly code: string,
-    message: string,
-  ) {
-    super(message)
-  }
-}
-
-function fail(code: string, message: string): never {
-  throw new CliV2Error(code, message)
-}
-
 function requirePositionals(
   command: string,
   positionals: string[],
@@ -204,12 +191,6 @@ function requirePositionals(
   const maximum = Array.isArray(count) ? count[1] : count
   if (positionals.length < minimum || positionals.length > maximum)
     fail('invalid_arguments', commandUsage[command])
-}
-
-function positiveInteger(raw: string | undefined, name: string) {
-  if (!raw || !/^\d+$/.test(raw) || Number(raw) < 1)
-    fail('invalid_arguments', `${name} must be a positive integer.`)
-  return Number(raw)
 }
 
 function nonNegativeInteger(raw: string | undefined, name: string) {
@@ -310,14 +291,6 @@ function readInputFile<T>(cwd: string, path: string | undefined, option: string)
   return readJsonFile<T>(resolve(cwd, path))
 }
 
-function json(value: unknown) {
-  process.stdout.write(`${JSON.stringify(value, null, 2)}\n`)
-}
-
-function printWarnings(warnings: string[]) {
-  for (const warning of warnings) process.stderr.write(`Warning: ${warning}\n`)
-}
-
 function mutationJson(
   task: { id: string; revision: number; phase: string },
   warnings: string[],
@@ -331,25 +304,6 @@ function mutationJson(
     phase: task.phase,
     warnings,
   }
-}
-
-function parseCommand<T extends NonNullable<ParseArgsConfig['options']>>(
-  args: string[],
-  options: T,
-) {
-  try {
-    return parseArgs({ args, options, allowPositionals: true, strict: true })
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    fail('invalid_arguments', message)
-  }
-}
-
-function commonOptions() {
-  return {
-    help: { type: 'boolean', short: 'h' },
-    json: { type: 'boolean' },
-  } as const
 }
 
 function runInit(args: string[], cwd: string) {
@@ -522,7 +476,7 @@ function runCheckpoint(args: string[], cwd: string, actor: string) {
       `Record revision conflict for ${sourceRecord.record.id}: expected ${sourceRecordRevision}, current ${sourceRecord.record.revision}.`,
     )
   const store = openTaskStoreV2(cwd)
-  const result = createTaskV4(
+  const result = createTaskV5(
     store,
     {
       title: parsed.positionals[0],
@@ -623,6 +577,19 @@ function targetTask(cwd: string, actor: string, id: string | undefined) {
   const taskId = id ?? currentTaskIdV2(store, actor)
   if (!taskId) fail('task_not_found', 'No current Latch v2 task.')
   return { store, context: readContextTaskV2(store, taskId) }
+}
+
+function currentWritableTask(
+  store: ReturnType<typeof openTaskStoreV2>,
+  id: string,
+) {
+  const task = readContextTaskV2(store, id).task
+  if (task.schema_version !== 5)
+    fail(
+      'writer_version_mismatch',
+      `Candidate CLI 0.5.0 only mutates schema_version 5 tasks; the current Latch runner treats task ${task.id} as historical read-only and requires its matching runner for schema_version ${task.schema_version}.`,
+    )
+  return task
 }
 
 function runContext(args: string[], cwd: string, actor: string) {
@@ -745,319 +712,6 @@ function knowledgeCheckHuman(result: KnowledgeCheckResult) {
   ].join('\n')
 }
 
-function recordJsonEnvelope() {
-  return {
-    ...jsonEnvelopeV2(),
-    record_store_schema_version: RECORD_STORE_SCHEMA_VERSION,
-  }
-}
-
-function recordMutationView(record: ProjectRecordEntryV1) {
-  return {
-    id: record.id,
-    revision: record.revision,
-    title: record.title,
-    tags: record.tags,
-    status: record.status,
-    relations: record.relations,
-    updated_at: record.updated_at,
-  }
-}
-
-function recordBodyPreview(body: string) {
-  const normalized = body.replace(/\s+/g, ' ').trim()
-  return [...normalized].slice(0, 240).join('')
-}
-
-function readRecordBodyInput(
-  cwd: string,
-  workspaceRoot: string,
-  body: string | undefined,
-  bodyFile: string | undefined,
-  required: boolean,
-) {
-  if (body !== undefined && bodyFile !== undefined)
-    fail('invalid_arguments', '--body and --body-file cannot be combined.')
-  if (body === undefined && bodyFile === undefined) {
-    if (required)
-      fail('invalid_arguments', 'Exactly one of --body or --body-file is required.')
-    return undefined
-  }
-  if (body !== undefined) return body
-  const inputPath = resolve(cwd, bodyFile!)
-  const relativePath = relative(workspaceRoot, inputPath)
-  if (
-    relativePath === '..' ||
-    relativePath.startsWith(`..${sep}`) ||
-    isAbsolute(relativePath)
-  )
-    fail('invalid_arguments', '--body-file must be inside the current project.')
-  let canonicalPath: string
-  try {
-    const stat = lstatSync(inputPath)
-    if (stat.isSymbolicLink() || !stat.isFile())
-      fail('invalid_arguments', '--body-file must be a regular non-symlink file.')
-    canonicalPath = realpathSync.native(inputPath)
-  } catch (error) {
-    if (error instanceof CliV2Error) throw error
-    const message = error instanceof Error ? error.message : String(error)
-    fail('invalid_arguments', `Cannot read --body-file: ${message}`)
-  }
-  const canonicalRelative = relative(workspaceRoot, canonicalPath)
-  if (
-    canonicalRelative === '..' ||
-    canonicalRelative.startsWith(`..${sep}`) ||
-    isAbsolute(canonicalRelative)
-  )
-    fail('invalid_arguments', '--body-file resolves outside the current project.')
-  return readFileSync(canonicalPath, 'utf8')
-}
-
-function printRecordMutation(result: ProjectRecordWithBodyV1) {
-  process.stdout.write([
-    `Record: ${result.record.id}`,
-    `Revision: ${result.record.revision}`,
-    `Title: ${result.record.title}`,
-    `Content: ${recordBodyPreview(result.body)}`,
-  ].join('\n') + '\n')
-}
-
-function runRecord(args: string[], cwd: string) {
-  const action = args[0]
-  if (!action || action === '--help' || action === '-h')
-    return process.stdout.write(`${commandUsage.record}\n`)
-  if (
-    action !== 'create' &&
-    action !== 'list' &&
-    action !== 'show' &&
-    action !== 'edit' &&
-    action !== 'archive' &&
-    action !== 'restore' &&
-    action !== 'delete'
-  )
-    fail('invalid_arguments', `Unknown record command: ${action}\n${commandUsage.record}`)
-  if (args[1] === '--help' || args[1] === '-h')
-    return process.stdout.write(`${commandUsage.record}\n`)
-
-  const store = openRecordStoreV1(cwd)
-  if (action === 'create') {
-    const parsed = parseCommand(args.slice(1), {
-      ...commonOptions(),
-      title: { type: 'string' },
-      body: { type: 'string' },
-      'body-file': { type: 'string' },
-      tag: { type: 'string', multiple: true },
-      task: { type: 'string', multiple: true },
-      group: { type: 'string', multiple: true },
-    })
-    if (parsed.values.help)
-      return process.stdout.write(`${commandUsage.record}\n`)
-    if (parsed.positionals.length > 0 || !parsed.values.title)
-      fail('invalid_arguments', commandUsage.record)
-    const body = readRecordBodyInput(
-      cwd,
-      store.taskStore.paths.workspaceRoot,
-      parsed.values.body,
-      parsed.values['body-file'],
-      true,
-    )!
-    const result = createProjectRecordV1(store, {
-      title: parsed.values.title,
-      body,
-      tags: parsed.values.tag,
-      taskIds: parsed.values.task,
-      groupIds: parsed.values.group,
-    })
-    if (parsed.values.json)
-      return json({
-        ...recordJsonEnvelope(),
-        record: recordMutationView(result.value.record),
-        body_preview: recordBodyPreview(result.value.body),
-        warnings: result.warnings,
-      })
-    printRecordMutation(result.value)
-    printWarnings(result.warnings)
-    return
-  }
-
-  if (action === 'list') {
-    const parsed = parseCommand(args.slice(1), {
-      ...commonOptions(),
-      status: { type: 'string' },
-      query: { type: 'string' },
-      tag: { type: 'string', multiple: true },
-      task: { type: 'string' },
-      group: { type: 'string' },
-      limit: { type: 'string' },
-    })
-    if (parsed.values.help)
-      return process.stdout.write(`${commandUsage.record}\n`)
-    if (parsed.positionals.length > 0)
-      fail('invalid_arguments', commandUsage.record)
-    if (
-      parsed.values.status !== undefined &&
-      parsed.values.status !== 'active' &&
-      parsed.values.status !== 'archived' &&
-      parsed.values.status !== 'all'
-    )
-      fail('invalid_arguments', '--status must be active, archived, or all.')
-    const records = listProjectRecordsV1(store, {
-      status: parsed.values.status,
-      query: parsed.values.query,
-      tags: parsed.values.tag,
-      taskId: parsed.values.task,
-      groupId: parsed.values.group,
-      limit: parsed.values.limit
-        ? positiveInteger(parsed.values.limit, '--limit')
-        : undefined,
-    })
-    if (parsed.values.json)
-      return json({ ...recordJsonEnvelope(), records })
-    if (records.length === 0) {
-      process.stdout.write('No Records.\n')
-      return
-    }
-    process.stdout.write(
-      `${records.map((record) =>
-        `${record.id} [${record.status}] ${record.title}${record.tags.length ? ` #${record.tags.join(' #')}` : ''}`,
-      ).join('\n')}\n`,
-    )
-    return
-  }
-
-  if (action === 'show') {
-    const parsed = parseCommand(args.slice(1), commonOptions())
-    if (parsed.values.help)
-      return process.stdout.write(`${commandUsage.record}\n`)
-    if (parsed.positionals.length !== 1)
-      fail('invalid_arguments', commandUsage.record)
-    const result = showProjectRecordV1(store, parsed.positionals[0])
-    if (parsed.values.json)
-      return json({ ...recordJsonEnvelope(), ...result })
-    process.stdout.write([
-      `Record: ${result.record.id}`,
-      `Revision: ${result.record.revision}`,
-      `Title: ${result.record.title}`,
-      `Status: ${result.record.status}`,
-      `Tags: ${result.record.tags.join(', ') || '-'}`,
-      '',
-      result.body,
-    ].join('\n') + (result.body.endsWith('\n') ? '' : '\n'))
-    return
-  }
-
-  if (action === 'edit') {
-    const parsed = parseCommand(args.slice(1), {
-      ...commonOptions(),
-      'expect-revision': { type: 'string' },
-      title: { type: 'string' },
-      body: { type: 'string' },
-      'body-file': { type: 'string' },
-      tag: { type: 'string', multiple: true },
-      task: { type: 'string', multiple: true },
-      group: { type: 'string', multiple: true },
-      'clear-tags': { type: 'boolean' },
-      'clear-tasks': { type: 'boolean' },
-      'clear-groups': { type: 'boolean' },
-    })
-    if (parsed.values.help)
-      return process.stdout.write(`${commandUsage.record}\n`)
-    if (parsed.positionals.length !== 1)
-      fail('invalid_arguments', commandUsage.record)
-    if (parsed.values['clear-tags'] && parsed.values.tag)
-      fail('invalid_arguments', '--tag and --clear-tags cannot be combined.')
-    if (parsed.values['clear-tasks'] && parsed.values.task)
-      fail('invalid_arguments', '--task and --clear-tasks cannot be combined.')
-    if (parsed.values['clear-groups'] && parsed.values.group)
-      fail('invalid_arguments', '--group and --clear-groups cannot be combined.')
-    const body = readRecordBodyInput(
-      cwd,
-      store.taskStore.paths.workspaceRoot,
-      parsed.values.body,
-      parsed.values['body-file'],
-      false,
-    )
-    const result = editProjectRecordV1(store, parsed.positionals[0], {
-      expectRevision: positiveInteger(
-        parsed.values['expect-revision'],
-        '--expect-revision',
-      ),
-      title: parsed.values.title,
-      body,
-      tags: parsed.values['clear-tags'] ? [] : parsed.values.tag,
-      taskIds: parsed.values['clear-tasks'] ? [] : parsed.values.task,
-      groupIds: parsed.values['clear-groups'] ? [] : parsed.values.group,
-    })
-    if (parsed.values.json)
-      return json({
-        ...recordJsonEnvelope(),
-        record: recordMutationView(result.value.record),
-        body_preview: recordBodyPreview(result.value.body),
-        warnings: result.warnings,
-      })
-    printRecordMutation(result.value)
-    printWarnings(result.warnings)
-    return
-  }
-
-  const parsed = parseCommand(args.slice(1), {
-    ...commonOptions(),
-    'expect-revision': { type: 'string' },
-    'confirm-delete': { type: 'boolean' },
-    'confirm-linked': { type: 'boolean' },
-  })
-  if (parsed.values.help)
-    return process.stdout.write(`${commandUsage.record}\n`)
-  if (parsed.positionals.length !== 1)
-    fail('invalid_arguments', commandUsage.record)
-  const id = parsed.positionals[0]
-  const expectRevision = positiveInteger(
-    parsed.values['expect-revision'],
-    '--expect-revision',
-  )
-  if (action === 'delete') {
-    if (!parsed.values['confirm-delete'])
-      fail(
-        'confirmation_required',
-        'Record delete requires --confirm-delete and an exact Record ID.',
-      )
-    const result = deleteProjectRecordV1(
-      store,
-      id,
-      expectRevision,
-      Boolean(parsed.values['confirm-linked']),
-    )
-    if (parsed.values.json)
-      return json({
-        ...recordJsonEnvelope(),
-        record_id: result.value.id,
-        previous_revision: result.value.previous_revision,
-        deleted: true,
-        warnings: result.warnings,
-      })
-    process.stdout.write(`Deleted Record ${result.value.id} permanently.\n`)
-    printWarnings(result.warnings)
-    return
-  }
-  if (parsed.values['confirm-delete'] || parsed.values['confirm-linked'])
-    fail(
-      'invalid_arguments',
-      '--confirm-delete and --confirm-linked are only valid for record delete.',
-    )
-  const result = action === 'archive'
-    ? archiveProjectRecordV1(store, id, expectRevision)
-    : restoreProjectRecordV1(store, id, expectRevision)
-  if (parsed.values.json)
-    return json({
-      ...recordJsonEnvelope(),
-      record: recordMutationView(result.value),
-      warnings: result.warnings,
-    })
-  process.stdout.write(
-    `${action === 'archive' ? 'Archived' : 'Restored'} Record ${result.value.id} at revision ${result.value.revision}.\n`,
-  )
-}
-
 function runKnowledge(args: string[], cwd: string) {
   const action = args[0]
   if (!action || action === '--help' || action === '-h')
@@ -1171,6 +825,7 @@ function runClaim(args: string[], cwd: string, actor: string) {
     '--expect-revision',
   )
   const store = openTaskStoreV2(cwd)
+  currentWritableTask(store, parsed.positionals[0])
   const result = claimTaskV3(store, parsed.positionals[0], {
     expectRevision,
     actor,
@@ -1199,6 +854,7 @@ function runTakeover(args: string[], cwd: string, actor: string) {
   )
   if (!parsed.values.reason) fail('invalid_arguments', '--reason is required.')
   const store = openTaskStoreV2(cwd)
+  currentWritableTask(store, parsed.positionals[0])
   const result = takeoverTaskV3(store, parsed.positionals[0], {
     expectRevision,
     actor,
@@ -1271,7 +927,7 @@ function runSave(args: string[], cwd: string, actor: string) {
     if (combined)
       fail('invalid_arguments', '--provenance must be saved as a standalone change.')
     const store = openTaskStoreV2(cwd)
-    const current = readTaskV2(store, parsed.positionals[0])
+    const current = currentWritableTask(store, parsed.positionals[0])
     const previousProvenance = current.provenance ?? 'clean'
     if (previousProvenance === selectedProvenance)
       fail('invalid_arguments', 'save did not change provenance.')
@@ -1321,9 +977,9 @@ function runSave(args: string[], cwd: string, actor: string) {
     if (combined)
       fail('invalid_arguments', '--group must be saved as a standalone change.')
     const store = openTaskStoreV2(cwd)
-    const current = readTaskV2(store, parsed.positionals[0])
+    const current = currentWritableTask(store, parsed.positionals[0])
     const nextGroup = clearGroup ? undefined : selectedGroup
-    if (current.schema_version === 4 && current.group_id === nextGroup)
+    if (current.group_id === nextGroup)
       fail('invalid_arguments', 'save did not change group_id.')
     const result = updateTaskV4(store, current.id, {
       expectRevision,
@@ -1369,6 +1025,7 @@ function runSave(args: string[], cwd: string, actor: string) {
     if (combined)
       fail('invalid_arguments', '--profile must be saved as a standalone change.')
     const store = openTaskStoreV2(cwd)
+    currentWritableTask(store, parsed.positionals[0])
     const result = changeTaskProfileV3(store, parsed.positionals[0], {
       expectRevision,
       actor,
@@ -1387,7 +1044,7 @@ function runSave(args: string[], cwd: string, actor: string) {
     fail('invalid_arguments', '--profile-reason and narrowing require --profile.')
 
   const store = openTaskStoreV2(cwd)
-  const current = readTaskV2(store, parsed.positionals[0])
+  const current = currentWritableTask(store, parsed.positionals[0])
   const nextPlan = parsed.values['plan-file']
     ? readPlan(cwd, parsed.values['plan-file'])
     : undefined
@@ -1532,6 +1189,7 @@ function runApprove(args: string[], cwd: string, actor: string) {
     '--expect-revision',
   )
   const store = openTaskStoreV2(cwd)
+  currentWritableTask(store, parsed.positionals[0])
   const authorization = parsed.values['authorization-file']
     ? readInputFile<ImplementationAuthorizationInput>(
         cwd,
@@ -1586,6 +1244,7 @@ function runVerify(args: string[], cwd: string, actor: string) {
   if (!diagnostic && command.length > 0)
     fail('invalid_arguments', 'Gate verification command comes from the approved plan.')
   const store = openTaskStoreV2(cwd)
+  currentWritableTask(store, parsed.positionals[0])
   const result = verifyTaskV2(store, parsed.positionals[0], {
     expectRevision,
     actor,
@@ -1620,6 +1279,7 @@ function runVerifyAll(args: string[], cwd: string, actor: string) {
     '--expect-revision',
   )
   const store = openTaskStoreV2(cwd)
+  currentWritableTask(store, parsed.positionals[0])
   const result = verifyAllTasksV2(store, parsed.positionals[0], {
     expectRevision,
     actor,
@@ -1671,7 +1331,7 @@ function runArtifact(args: string[], cwd: string, actor: string) {
     '--expect-revision',
   )
   const store = openTaskStoreV2(cwd)
-  const current = readTaskV2(store, taskId)
+  const current = currentWritableTask(store, taskId)
   const update = artifactChanges(
     current.artifacts,
     action === 'add' ? values : [],
@@ -1706,7 +1366,10 @@ function runSubmit(args: string[], cwd: string, actor: string) {
     ...commonOptions(),
     'expect-revision': { type: 'string' },
     changes: { type: 'string' },
-    unverified: { type: 'string' },
+    'unverified-item': { type: 'string', multiple: true },
+    // S3/S4 candidate fixtures still exercise the pre-release spelling. It is
+    // intentionally absent from current help and documentation.
+    unverified: { type: 'string', multiple: true },
     'no-verify': { type: 'boolean' },
     reason: { type: 'string' },
     'knowledge-impact-file': { type: 'string' },
@@ -1720,8 +1383,6 @@ function runSubmit(args: string[], cwd: string, actor: string) {
     '--expect-revision',
   )
   if (!parsed.values.changes) fail('invalid_arguments', '--changes is required.')
-  if (parsed.values.unverified === undefined)
-    fail('invalid_arguments', '--unverified is required.')
   if (
     parsed.values['knowledge-impact-file'] !== undefined &&
     parsed.values['knowledge-impact-none'] !== undefined
@@ -1745,11 +1406,15 @@ function runSubmit(args: string[], cwd: string, actor: string) {
       ? { kind: 'none' as const, reason: parsed.values['knowledge-impact-none'].trim() }
       : undefined
   const store = openTaskStoreV2(cwd)
+  currentWritableTask(store, parsed.positionals[0])
   const result = submitTaskV2(store, parsed.positionals[0], {
     expectRevision,
     actor,
     changes: parsed.values.changes,
-    unverified: parsed.values.unverified,
+    unverifiedItems: [
+      ...(parsed.values['unverified-item'] ?? []),
+      ...(parsed.values.unverified ?? []),
+    ],
     noVerify: Boolean(parsed.values['no-verify']),
     reason: parsed.values.reason,
     knowledgeImpact,
@@ -1791,6 +1456,7 @@ function runPatchSubmissionKnowledgeImpact(
     '--knowledge-impact-file',
   )
   const store = openTaskStoreV2(cwd)
+  currentWritableTask(store, parsed.positionals[0])
   const result = patchSubmissionKnowledgeImpactV3(
     store,
     parsed.positionals[0],
@@ -1829,6 +1495,7 @@ function runDowngradeV2(args: string[], cwd: string, actor: string) {
     '--expect-revision',
   )
   const store = openTaskStoreV2(cwd)
+  currentWritableTask(store, parsed.values.task)
   const result = downgradeTaskV2(store, parsed.values.task, {
     expectRevision,
     actor,
@@ -1867,6 +1534,7 @@ function runUpgradeV4(args: string[], cwd: string, actor: string) {
     '--expect-revision',
   )
   const store = openTaskStoreV2(cwd)
+  currentWritableTask(store, parsed.values.task)
   const result = upgradeTaskV4(store, parsed.values.task, {
     expectRevision,
     actor,
@@ -1896,7 +1564,7 @@ function runDone(args: string[], cwd: string, actor: string) {
   const parsed = parseCommand(args, {
     ...commonOptions(),
     'expect-revision': { type: 'string' },
-    followup: { type: 'string' },
+    'closeout-file': { type: 'string' },
   })
   if (parsed.values.help) return process.stdout.write(`${commandUsage.done}\n`)
   requirePositionals('done', parsed.positionals, 1)
@@ -1904,13 +1572,19 @@ function runDone(args: string[], cwd: string, actor: string) {
     parsed.values['expect-revision'],
     '--expect-revision',
   )
-  if (parsed.values.followup === undefined)
-    fail('invalid_arguments', '--followup is required.')
   const store = openTaskStoreV2(cwd)
+  currentWritableTask(store, parsed.positionals[0])
+  const closeout = parsed.values['closeout-file']
+    ? readInputFile<TaskCloseoutInput>(
+        cwd,
+        parsed.values['closeout-file'],
+        '--closeout-file',
+      )
+    : undefined
   const result = doneTaskV2(store, parsed.positionals[0], {
     expectRevision,
     actor,
-    followup: parsed.values.followup,
+    closeout,
   })
   if (parsed.values.json)
     return json({
@@ -1936,6 +1610,7 @@ function runAbandon(args: string[], cwd: string, actor: string) {
   )
   if (!parsed.values.reason) fail('invalid_arguments', '--reason is required.')
   const store = openTaskStoreV2(cwd)
+  currentWritableTask(store, parsed.positionals[0])
   const result = abandonTaskV2(store, parsed.positionals[0], {
     expectRevision,
     actor,

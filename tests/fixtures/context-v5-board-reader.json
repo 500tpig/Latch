@@ -1,0 +1,144 @@
+{
+  "fixture_schema_version": 1,
+  "purpose": "Schema 5 reader contract for richer Context views consumed by Board or external readers.",
+  "contract_status": "current",
+  "external_adopter_status": "pending",
+  "task_schema_version": 5,
+  "min_writer_version": "0.5.0",
+  "events_schema_version": 3,
+  "sample_limit": 8,
+  "views": {
+    "open": {
+      "phase": "dev",
+      "schema5_view": {
+        "unverified_items": {
+          "total": 0,
+          "sample_limit": 8,
+          "sample": [],
+          "truncated": false
+        },
+        "reviewer_next_action": "verify_or_submit"
+      }
+    },
+    "review_truncated": {
+      "phase": "review",
+      "schema5_view": {
+        "unverified_items": {
+          "total": 10,
+          "sample_limit": 8,
+          "sample": [
+            { "item_id": "U1", "summary": "Reader item 1" },
+            { "item_id": "U2", "summary": "Reader item 2" },
+            { "item_id": "U3", "summary": "Reader item 3" },
+            { "item_id": "U4", "summary": "Reader item 4" },
+            { "item_id": "U5", "summary": "Reader item 5" },
+            { "item_id": "U6", "summary": "Reader item 6" },
+            { "item_id": "U7", "summary": "Reader item 7" },
+            { "item_id": "U8", "summary": "Reader item 8" }
+          ],
+          "truncated": true
+        },
+        "reviewer_next_action": "prepare_closeout"
+      },
+      "timeline": {
+        "submitted_title": "提交验收：10 项待处理",
+        "unverified_item_ids_total": 10,
+        "unverified_item_ids_sample_limit": 8,
+        "unverified_item_ids_truncated": true
+      }
+    },
+    "archived_mixed": {
+      "phase": "review",
+      "schema5_view": {
+        "unverified_items": {
+          "total": 3,
+          "sample_limit": 8,
+          "sample": [
+            { "item_id": "U1", "summary": "Resolved browser check" },
+            { "item_id": "U2", "summary": "Accepted compatibility risk" },
+            { "item_id": "U3", "summary": "Release observation follow-up" }
+          ],
+          "truncated": false
+        },
+        "reviewer_next_action": "track_followup_items",
+        "closeout": {
+          "resolution_counts": {
+            "resolved": 1,
+            "accepted_risk": 1,
+            "followup": 1
+          },
+          "resolutions": {
+            "total": 3,
+            "sample_limit": 8,
+            "sample": [
+              {
+                "item_id": "U1",
+                "outcome": "resolved",
+                "summary": "Browser check passed"
+              },
+              {
+                "item_id": "U2",
+                "outcome": "accepted_risk",
+                "summary": "User accepts the compatibility risk",
+                "accepted_by": "user"
+              },
+              {
+                "item_id": "U3",
+                "outcome": "followup",
+                "summary": "Observe production for one week",
+                "owner": "https://github.com/orgs/example/teams/runtime"
+              }
+            ],
+            "truncated": false
+          },
+          "followup_next_action": "track_followup_items"
+        }
+      },
+      "timeline": {
+        "done_title": "完成归档：3 项 closeout",
+        "done_next_action": "跟进 closeout 中标记的 follow-up。"
+      }
+    },
+    "archived_without_followup": {
+      "phase": "review",
+      "schema5_view": {
+        "closeout": {
+          "resolution_counts": {
+            "resolved": 1,
+            "accepted_risk": 0,
+            "followup": 0
+          },
+          "resolutions": {
+            "total": 1,
+            "sample_limit": 8,
+            "sample": [
+              {
+                "item_id": "U1",
+                "outcome": "resolved",
+                "summary": "Manual check passed"
+              }
+            ],
+            "truncated": false
+          },
+          "no_followup_reason": "no_followup_resolution_items"
+        }
+      },
+      "timeline": {
+        "done_impact_fragment": "没有额外 follow-up"
+      }
+    },
+    "historical_archive": {
+      "historical_schema": true,
+      "preserves_string_projection": [
+        "closure.unverified",
+        "closure.followup"
+      ]
+    }
+  },
+  "out_of_scope": [
+    "Board UI",
+    "event payload changes",
+    "closeout validator changes",
+    "global install"
+  ]
+}

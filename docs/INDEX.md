@@ -11,15 +11,15 @@
 
 ### [使用手册](HANDBOOK.md)
 
-schema 4 writer 边界、v2 命令、phase、验证、review 和 archive 流程。
+schema 5 current writer、historical read-only、phase、验证、review 和结构化 closeout。
 
 ### [设计边界](DESIGN.md)
 
-产品定位、schema 4 机器拒写、当前事实、关键取舍和非目标。
+产品定位、schema 5 机器拒写、当前事实、reader contract、关键取舍和非目标。
 
 ### [本机安装](AI_INSTALL.md)
 
-个人 macOS 环境的 v2 CLI、canonical skill、项目初始化、备份和回退步骤。
+个人 macOS 环境的 CLI `0.5.0`、canonical Skill、项目初始化、备份和安装回退边界。
 
 ### [文档分层](ARTIFACTS.md)
 
@@ -54,35 +54,37 @@ Latch、Latch-Board、appearance-sec 和 monitoring 的当前兼容状态。
 - 用途：记录 gate 前后工作区 evidence、mutation 分类、proof generation、`verify-all` 停止规则和只读 Git 边界的设计基线；
 - 边界：current 行为以 [使用手册](HANDBOOK.md)和[设计边界](DESIGN.md)为准，该文件不单独授权后续变更。
 
-## 规划中设计
+## Schema 5 release 基线
 
-### [Latch 工作流改进与 S4 candidate](briefs/2026-07-31-latch-v5-workflow-contract.md)
+### [Latch schema 5 工作流设计基线](briefs/2026-07-31-latch-v5-workflow-contract.md)
 
-- 状态：`candidate-planning`；
-- Source-Task：`20260803021354850-冻结-s4-schema-5-event-view-candidate-规划-2eae7e`，Plan Revision 2；
+- 状态：`implemented-baseline`；
+- Current-Release-Task：`20260803033739558-s5-schema-5-current-release-836ec7`，Plan Revision 1；
+- S4-Planning-Task：`20260803021354850-冻结-s4-schema-5-event-view-candidate-规划-2eae7e`，Plan Revision 2；
 - 规划 source baseline：`35e6ff0f3fedc4753c04d8a599075c1d0621f411`；
 - 当前基线：S1 未初始化停止边界已完成、验收并通过 commit `d83fe11` 交付；
 - 已交付试点：S2 schema 4 Light authoring 已由 commit
   `0a14c714753a106a89a94e6d0af464a15024cc2e` 交付；
 - 已交付 candidate：S3 schema 5 结构化 closeout 已由 candidate delivery commit
   `f08f66999799dda713fe43c50a5b4b08958e15dd` 交付，CLI/package `0.5.0` 来自 S3，不是 S2；
-- 已冻结 candidate：S4 schema 5 event/view 丰富展示，入口为
+- 已交付 candidate：S4 schema 5 event/view 丰富展示已由 commit
+  `18bfb36d59ee9f789f051ba5ea372a2e35246ba2` 交付，规划入口为
   [S4 event/view candidate](plans/latch-v5/04-schema5-event-view-candidate.json)；
 - 取代关系：`plans/latch-v5/backlog/03-schema5-structured-closeout.json` 和
   `plans/latch-v5/backlog/04-schema5-event-view.json` 仅保留 superseded 指针；
-- 切片边界：S4 不修改 event payload、event validator、closeout 规则、S3 最低 fixture、
-  Board UI、外部 repo 或全局安装；
+- current release：schema 5 是 current writer；schema 2–4 为 historical read-only；
+  structured closeout 与 richer event/view 已进入 current；
 - 规划入口：[Latch 工作流改进计划与对话交接](plans/latch-v5/README.md)；
-- 边界：不修改当前 schema 4、CLI `0.4.0` 或 current 产品契约，不构成 S4 implementation、
-  S5 current release、外部 adopter 或 Git 操作授权。
+- 边界：Latch-Board、monitoring、appearance-sec、全局安装和 Git delivery 仍需独立授权；
+  当前状态见[接入状态](ADOPTER_SYNC.md)。
 
 ## 当前产品契约
 
 ### [Latch 最终产品契约](prd/2026-07-15-latch-final-product-contract.md)
 
-- 状态：`approved`，Revision 6；
+- 状态：`approved`，Revision 8；
 - Source-Task：`20260714084358411-重审-latch-最终任务与知识上下文设计-51d5e1`；
-- 用途：Latch 唯一 current 产品契约；包含触发、Actor、Light、Group、knowledge、Context、Record 与 R2 回退。
+- 用途：Latch 唯一 current 产品契约；包含触发、Actor、Light、Group、knowledge、Context、Record、schema 5 structured closeout 与 historical read-only。
 
 ### [Project Record V1](prd/2026-07-23-latch-record-v1.md)
 

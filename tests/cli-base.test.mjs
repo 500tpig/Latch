@@ -112,7 +112,7 @@ test('top-level and command help have no side effects', () => {
     ['record', '--help'],
     ['record', 'create', '--help'],
     ['submit', '--help'],
-    ['upgrade-v4', '--help'],
+    ['done', '--help'],
   ]) {
     const cwd = temporaryDirectory()
     const result = run(cwd, args)
@@ -126,6 +126,7 @@ test('top-level and command help have no side effects', () => {
   assert.match(checkpointHelp.stdout, /--authorization-file/)
   assert.match(checkpointHelp.stdout, /--retrospective-file/)
   assert.match(checkpointHelp.stdout, /--source-record/)
+  assert.doesNotMatch(checkpointHelp.stdout, /--scope-summary|--scope-path/)
   assert.match(
     checkpointHelp.stdout,
     /checkpoint --print-plan-template <light\|standard>/,
@@ -142,10 +143,37 @@ test('top-level and command help have no side effects', () => {
   assert.match(contextHelp.stdout, /--status/)
   assert.match(contextHelp.stdout, /--since-revision/)
   assert.match(contextHelp.stdout, /--history <timeline\|events\|both>/)
-  assert.match(run(temporaryDirectory(), ['submit', '--help']).stdout, /--verbose-warnings/)
-  const upgradeHelp = run(temporaryDirectory(), ['upgrade-v4', '--help'])
-  assert.match(upgradeHelp.stdout, /--recover-writer/)
-  assert.match(upgradeHelp.stdout, /--reason <text>/)
+  const submitHelp = run(temporaryDirectory(), ['submit', '--help']).stdout
+  assert.match(submitHelp, /--verbose-warnings/)
+  assert.match(submitHelp, /--unverified-item/)
+  assert.doesNotMatch(submitHelp, /--unverified <summary>/)
+  assert.match(run(temporaryDirectory(), ['done', '--help']).stdout, /--closeout-file/)
+  const topHelp = run(temporaryDirectory(), ['--help']).stdout
+  assert.doesNotMatch(topHelp, /upgrade-v4|downgrade-v2|claim <task-id>/)
+})
+
+test('current submit flag writes structured schema 5 unverified items', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const created = checkpoint(cwd, 'structured submit input', {
+    verification_plan: [],
+  })
+  const approved = run(cwd, [
+    'approve', created.task_id, '--expect-revision', '1',
+    '--reason', 'approved', '--json',
+  ])
+  assert.equal(approved.status, 0, approved.stderr)
+  const submitted = run(cwd, [
+    'submit', created.task_id, '--expect-revision', '2',
+    '--changes', 'current flag',
+    '--unverified-item', '浏览器验收待完成',
+    '--knowledge-impact-none', 'fixture does not change module knowledge',
+    '--no-verify', '--reason', 'fixture has no gates', '--json',
+  ])
+  assert.equal(submitted.status, 0, submitted.stderr)
+  assert.deepEqual(readTask(cwd, created.task_id).submission.unverified_items, [
+    { item_id: 'U1', summary: '浏览器验收待完成' },
+  ])
 })
 
 test('checkpoint templates are side-effect-free shape scaffolds that require completion', () => {
@@ -395,8 +423,8 @@ test('checkpoint is create-only, requires a full plan, and returns warnings', ()
   assert.notEqual(firstData.task_id, secondData.task_id)
   assert.equal(taskIds(cwd).length, 2)
   const firstTask = readTask(cwd, firstData.task_id)
-  assert.equal(firstTask.schema_version, 4)
-  assert.equal(firstTask.min_writer_version, '0.4.0')
+  assert.equal(firstTask.schema_version, 5)
+  assert.equal(firstTask.min_writer_version, '0.5.0')
   assert.equal(firstTask.profile, 'standard')
   assert.equal(firstTask.provenance, 'clean')
   assert.deepEqual(firstTask.artifacts, [
@@ -682,6 +710,32 @@ test('context 按精确 ID 只读归档 task 并保持 mutation 为 open-only', 
     expectRevision: 1,
     actor: 'codex:session:test-session',
     outcome: 'done',
+    eventFields: {
+      resolved_count: 0,
+      accepted_risk_count: 0,
+      followup_count: 0,
+    },
+    update(task) {
+      task.submission = {
+        plan_revision: task.plan_revision,
+        work_revision: task.work_revision,
+        changes: 'Context archive fixture',
+        verified: '',
+        unverified_items: [],
+        knowledge_impact: {
+          kind: 'none',
+          reason: 'Context archive fixture does not change module contracts.',
+        },
+        submitted_at: '2026-07-31T00:00:00.000Z',
+      }
+      task.closure = {
+        changes: task.submission.changes,
+        verified: task.submission.verified,
+        unverified_items: [],
+        resolutions: [],
+        accepted_at: '2026-07-31T00:00:00.000Z',
+      }
+    },
   }).task
   const archivedDirectory = join(
     cwd,
@@ -773,6 +827,40 @@ test('context 按精确 ID 只读归档 task 并保持 mutation 为 open-only', 
   assert.match(missing.stderr, /Task not found/)
 })
 
+test('archiveTaskV2 atomically rejects schema 5 done without structured closeout', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const created = checkpoint(cwd, 'schema 5 done invariant')
+  const store = openTaskStoreV2(cwd)
+  const openDirectory = join(cwd, '.latch', 'tasks', created.task_id)
+  const taskJsonPath = join(openDirectory, 'task.json')
+  const eventsPath = join(openDirectory, 'events.jsonl')
+  const taskBefore = readFileSync(taskJsonPath, 'utf8')
+  const eventsBefore = readFileSync(eventsPath, 'utf8')
+
+  assert.throws(
+    () => archiveTaskV2(store, created.task_id, {
+      expectRevision: 1,
+      actor: 'codex:session:test-session',
+      outcome: 'done',
+      eventFields: {
+        resolved_count: 0,
+        accepted_risk_count: 0,
+        followup_count: 0,
+      },
+    }),
+    /schema 5 done task.*submission is required/,
+  )
+  assert.equal(readFileSync(taskJsonPath, 'utf8'), taskBefore)
+  assert.equal(readFileSync(eventsPath, 'utf8'), eventsBefore)
+  assert.equal(existsSync(openDirectory), true)
+  for (const month of readdirSync(join(cwd, '.latch', 'archive')))
+    assert.equal(
+      existsSync(join(cwd, '.latch', 'archive', month, created.task_id)),
+      false,
+    )
+})
+
 test('context 按精确 ID 兼容读取 schema 2 archive', () => {
   const cwd = temporaryDirectory()
   init(cwd)
@@ -780,6 +868,10 @@ test('context 按精确 ID 兼容读取 schema 2 archive', () => {
     verification_plan: [],
   })
   const store = openTaskStoreV2(cwd)
+  const schema4 = readTask(cwd, created.task_id)
+  schema4.schema_version = 4
+  schema4.min_writer_version = '0.4.0'
+  writeFileSync(taskPath(cwd, created.task_id), `${JSON.stringify(schema4, null, 2)}\n`)
   const archived = archiveTaskV2(store, created.task_id, {
     expectRevision: 1,
     actor: 'codex:session:test-session',
@@ -796,9 +888,13 @@ test('context 按精确 ID 兼容读取 schema 2 archive', () => {
   assert.equal(context.archived, true)
   assert.equal(context.outcome, 'abandoned')
   assert.equal(context.last_open_phase, 'plan')
+  assert.equal(context.historical_schema, true)
   assert.equal(context.task.schema_version, 2)
   assert.equal(context.recent_events.at(-1).type, 'abandoned')
   assert.equal(context.history_incomplete, false)
+  const human = run(cwd, ['context', archived.id])
+  assert.equal(human.status, 0, human.stderr)
+  assert.match(human.stdout, /Historical schema: yes/)
 })
 
 test('context history selector keeps defaults compatible and projects raw or readable history', () => {
@@ -1186,7 +1282,7 @@ test('save updates a plan, increments revisions, and invalidates approval and ve
     work_revision: 1,
     changes: 'old',
     verified: 'tests',
-    unverified: '',
+    unverified_items: [],
     submitted_at: new Date().toISOString(),
   }
   writeFileSync(path, `${JSON.stringify(seeded, null, 2)}\n`)

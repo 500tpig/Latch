@@ -10,6 +10,10 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import {
+  openTaskStoreV2,
+  readTaskV2,
+} from '../dist/core/task-store.js'
 
 const cli = join(process.cwd(), 'dist/cli.js')
 const temporaryDirectories = []
@@ -124,6 +128,12 @@ function submit(cwd, id, extra = []) {
     '--changes', '实现完成', '--unverified', '未做浏览器验收',
     '--knowledge-impact-file', impactPath, ...extra, '--json',
   ])
+}
+
+function writeCloseout(cwd, resolutions) {
+  const path = join('.latch', `closeout-${Math.random()}.json`)
+  writeFileSync(join(cwd, path), `${JSON.stringify({ resolutions }, null, 2)}\n`)
+  return path
 }
 
 function archivedTask(cwd, id) {
@@ -295,7 +305,7 @@ test('work revision change makes prior gates and submission stale', () => {
   assert.equal(readTask(cwd, id).work_revision, 2)
   const stale = run(cwd, [
     'submit', id, '--expect-revision', revision(cwd, id),
-    '--changes', 'second', '--unverified', '', '--json',
+    '--changes', 'second', '--json',
   ])
   assert.notEqual(stale.status, 0)
 })
@@ -434,7 +444,7 @@ test('submit reports every missing knowledge artifact and a copyable repair comm
 
   const result = run(cwd, [
     'submit', id, '--expect-revision', '2',
-    '--changes', '实现完成', '--unverified', '',
+    '--changes', '实现完成',
     '--knowledge-impact-file', 'impact.json',
     '--no-verify', '--reason', '纯文档', '--json',
   ])
@@ -477,22 +487,172 @@ test('done freezes current submission into closure, archives, clears current, an
   approve(cwd, id)
   assert.equal(submit(cwd, id, ['--no-verify', '--reason', '纯文档']).status, 0)
   const expected = revision(cwd, id)
+  const closeout = writeCloseout(cwd, [{
+    item_id: 'U1',
+    outcome: 'followup',
+    followup: {
+      action: '后续观察',
+      owner: {
+        kind: 'external',
+        account_uri: 'mailto:runtime@example.com',
+      },
+    },
+  }])
   const done = run(cwd, [
-    'done', id, '--expect-revision', expected, '--followup', '后续观察', '--json',
+    'done', id, '--expect-revision', expected, '--closeout-file', closeout, '--json',
   ])
   assert.equal(done.status, 0, done.stderr)
   const archived = archivedTask(cwd, id)
   assert.equal(archived.outcome, 'done')
   assert.equal(archived.closure.changes, '实现完成')
-  assert.equal(archived.closure.followup, '后续观察')
+  assert.equal(archived.closure.resolutions[0].followup.action, '后续观察')
+  assert.equal(
+    archived.closure.resolutions[0].followup.owner.account_uri,
+    'mailto:runtime@example.com',
+  )
+  const archivedContext = JSON.parse(run(cwd, ['context', id, '--json']).stdout)
+  assert.equal(
+    archivedContext.task.schema5_view.closeout.followup_next_action,
+    'track_followup_items',
+  )
+  assert.equal(
+    archivedContext.task.schema5_view.closeout.resolutions.sample[0].summary,
+    '后续观察',
+  )
   const state = JSON.parse(readFileSync(join(cwd, '.latch', 'state.json'), 'utf8'))
   assert.deepEqual(state.actors, {})
 
   const retry = run(cwd, [
-    'done', id, '--expect-revision', expected, '--followup', 'ignored', '--json',
+    'done', id, '--expect-revision', expected, '--json',
   ])
   assert.equal(retry.status, 0, retry.stderr)
   assert.equal(JSON.parse(retry.stdout).outcome, 'done')
+})
+
+test('schema 5 closeout rejects incomplete, duplicate, unknown, and unstable owner inputs atomically', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const id = checkpoint(cwd, plan({ verification_plan: [] }), 'atomic closeout')
+  approve(cwd, id)
+  const submitted = submit(cwd, id, [
+    '--unverified', '第二项',
+    '--unverified', '第三项',
+    '--no-verify', '--reason', 'fixture',
+  ])
+  assert.equal(submitted.status, 0, submitted.stderr)
+  const beforeTask = readFileSync(taskPath(cwd, id), 'utf8')
+  const beforeEvents = readFileSync(eventsPath(cwd, id), 'utf8')
+  const attempts = [
+    [],
+    [
+      { item_id: 'U1', outcome: 'resolved', resolution: '完成' },
+      { item_id: 'U1', outcome: 'resolved', resolution: '重复' },
+      { item_id: 'U3', outcome: 'resolved', resolution: '完成' },
+    ],
+    [
+      { item_id: 'U1', outcome: 'resolved', resolution: '完成' },
+      { item_id: 'U2', outcome: 'resolved', resolution: '完成' },
+      { item_id: 'U9', outcome: 'resolved', resolution: '未知' },
+    ],
+    [
+      { item_id: 'U1', outcome: 'resolved', resolution: '完成' },
+      { item_id: 'U2', outcome: 'accepted_risk', reason: '普通 reason 不构成用户接受' },
+      {
+        item_id: 'U3',
+        outcome: 'followup',
+        followup: {
+          action: '继续观察',
+          owner: { kind: 'external', account_uri: 'role:release-manager' },
+        },
+      },
+    ],
+    [
+      { item_id: 'U1', outcome: 'resolved', resolution: '完成' },
+      {
+        item_id: 'U2',
+        outcome: 'accepted_risk',
+        user_acceptance: { statement: '用户明确接受' },
+      },
+      {
+        item_id: 'U3',
+        outcome: 'followup',
+        followup: {
+          action: '继续观察',
+          owner: {
+            kind: 'external',
+            account_uri: 'https://user:secret@example.com/teams/runtime',
+          },
+        },
+      },
+    ],
+    ...['mailto:@', 'mailto:a@', 'mailto:@example.com'].map((accountUri) => [
+      { item_id: 'U1', outcome: 'resolved', resolution: '完成' },
+      {
+        item_id: 'U2',
+        outcome: 'accepted_risk',
+        user_acceptance: { statement: '用户明确接受' },
+      },
+      {
+        item_id: 'U3',
+        outcome: 'followup',
+        followup: {
+          action: '继续观察',
+          owner: { kind: 'external', account_uri: accountUri },
+        },
+      },
+    ]),
+  ]
+  for (const resolutions of attempts) {
+    const result = run(cwd, [
+      'done', id, '--expect-revision', revision(cwd, id),
+      '--closeout-file', writeCloseout(cwd, resolutions), '--json',
+    ])
+    assert.notEqual(result.status, 0)
+    assert.equal(readFileSync(taskPath(cwd, id), 'utf8'), beforeTask)
+    assert.equal(readFileSync(eventsPath(cwd, id), 'utf8'), beforeEvents)
+  }
+})
+
+test('task store validates persisted mailto owner local part and domain', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const id = checkpoint(cwd, plan({ verification_plan: [] }), 'persisted mailto')
+  approve(cwd, id)
+  const submitted = submit(cwd, id, ['--no-verify', '--reason', 'fixture'])
+  assert.equal(submitted.status, 0, submitted.stderr)
+  const task = readTask(cwd, id)
+  task.closure = {
+    changes: task.submission.changes,
+    verified: task.submission.verified,
+    unverified_items: structuredClone(task.submission.unverified_items),
+    resolutions: [{
+      item_id: 'U1',
+      outcome: 'followup',
+      followup: {
+        action: '继续观察',
+        owner: {
+          kind: 'external',
+          account_uri: 'mailto:runtime@example.com',
+        },
+      },
+    }],
+    accepted_at: '2026-07-31T00:00:00.000Z',
+  }
+  writeFileSync(taskPath(cwd, id), `${JSON.stringify(task, null, 2)}\n`)
+  const store = openTaskStoreV2(cwd)
+  assert.equal(
+    readTaskV2(store, id).closure.resolutions[0].followup.owner.account_uri,
+    'mailto:runtime@example.com',
+  )
+
+  for (const accountUri of ['mailto:@', 'mailto:a@', 'mailto:@example.com']) {
+    task.closure.resolutions[0].followup.owner.account_uri = accountUri
+    writeFileSync(taskPath(cwd, id), `${JSON.stringify(task, null, 2)}\n`)
+    assert.throws(
+      () => readTaskV2(store, id),
+      /Invalid closure\.resolutions\.followup\.owner/,
+    )
+  }
 })
 
 test('done rejects stale submission and abandon requires reason and archives outcome', () => {
@@ -505,7 +665,7 @@ test('done rejects stale submission and abandon requires reason and archives out
   task.work_revision += 1
   writeFileSync(taskPath(cwd, doneId), `${JSON.stringify(task, null, 2)}\n`)
   const stale = run(cwd, [
-    'done', doneId, '--expect-revision', revision(cwd, doneId), '--followup', '',
+    'done', doneId, '--expect-revision', revision(cwd, doneId),
   ])
   assert.notEqual(stale.status, 0)
   assert.match(stale.stderr, /valid submission/)
