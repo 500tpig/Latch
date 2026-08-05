@@ -40,14 +40,21 @@ Latch、Latch-Board、appearance-sec 和 monitoring 的当前兼容状态。
 
 ### [观察期](OBSERVATION.md)
 
-10 张真实 v2 task 的起点、样本规则、进度检查、证据来源和评估方式。
+真实使用观察规则入口，含两段：
+
+- **v2 观察期**：10 张真实 v2 task 的起点、样本规则、进度检查与证据边界；
+- **Schema 5 观察期**：schema 5 current writer 窗口的起点
+  （`20260804032944615` / `2026-08-04T03:42:02.974Z`）、合格/排除规则、
+  `unverified_items` 与 structured closeout 等字段、进度检查格式；固定 10 张样本
+  评估尚未开始。
 
 ### [观察期评估](briefs/2026-07-27-latch-v2-observation-evaluation.md)
 
 - 状态：`approved`；
 - Source-Task：`20260727101723730-评估-latch-v2-观察期结果并规划改进-7184ec`；
-- 用途：记录固定 10 张样本的正式评估、扩大样本对照、证据边界和分层改进建议；
-- 边界：不修改 current 产品契约，不直接授权 CLI、Core、Skill 或外部 repo 变更。
+- 用途：记录 **v2** 固定 10 张样本的正式评估、扩大样本对照、证据边界和分层改进建议；
+- 边界：不修改 current 产品契约，不直接授权 CLI、Core、Skill 或外部 repo 变更；
+  不替代 schema 5 观察期评估（schema 5 满 10 张后另建评估 task）。
 
 ## 已实现设计基线
 
