@@ -149,6 +149,9 @@ delivery remains separate and needs separate authorization.
 - Takeover transfers writer ownership only, never implementation approval.
 - Run all current named gates before submit. Prefer `verify-all` for pending gates;
   instruction-only commands such as `echo`, `printf`, and `true` are not evidence.
+- After an in-scope correction during `dev` or `check` with existing proof, do not
+  use review-only `approve --feedback`; run `verify-all` so its preflight advances
+  the proof generation and reruns every stale named gate.
 - New and updated plans require repo-relative POSIX `workspace_scope.paths`; never
   infer machine scope from prose, authorization, or artifacts.
 - New tasks use schema 5 with minimum writer `0.5.0`. Schema 2–4 tasks are

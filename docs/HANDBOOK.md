@@ -232,6 +232,10 @@ outcome、workspace effect 和 proof status 是三组独立事实；只有命令
 evidence 完整、covered workspace 无净 mutation、结果绑定当前 work revision 与
 proof generation，且没有 unresolved violation 时，gate 才能 pass。
 
+已有 proof 后在 `dev` 或 `check` 阶段完成 scope 内小修正时，不调用 review 专用的
+`approve --feedback`。直接运行 `verify-all`；其 preflight 会先把 live baseline 记录为
+新的 proof generation，再执行因 generation 变化而失效的全部 named gate。
+
 evidence 覆盖 Git-visible staged、unstaged、untracked、delete、rename、mode、symlink
 和 submodule 状态，以及 scope 或 artifact 精确引用的 ignored 文件。ignored 目录不
 递归扫描。完整 before、after 和 delta 保存在 task 的 `evidence/` sidecar；human

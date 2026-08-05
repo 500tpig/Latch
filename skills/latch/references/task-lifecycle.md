@@ -27,6 +27,7 @@ Read this reference for plan structure, checkpoint and approve details, feedback
 - Run every named gate from the approved plan with the task's selected runner: `verify <task-id> --expect-revision <n> --name <gate-name> --json`.
 - A gate passes only when its command succeeds, workspace evidence is complete, covered workspace is unchanged, and its proof binds the current work revision and generation with no unresolved violation.
 - Preserve gate mutations for user inspection. Do not reset, clean, stash, or auto-approve a wider scope; scope changes return to plan and require explicit approval.
+- For an in-scope correction made during `dev` or `check` after proof exists, do not use review-only `approve --feedback`; run `verify-all`. Its preflight records the live baseline as a new proof generation before running every named gate made stale by the generation change.
 - `verify-all` stops on command failure, evidence error, workspace mutation, scope violation, or gate-to-gate baseline mismatch. Reuse each successful JSON revision and rerun all stale named gates on the current generation.
 - Use diagnostic argv only after `--`; diagnostic results never satisfy submit gates.
 - Submit only after all current named gates pass. For an approved plan without gates, use `--no-verify` with a concrete reason.

@@ -352,6 +352,20 @@ test('canonical skill keeps high-frequency scope and isolation rules in the main
   assert.match(skill, /`artifact add\|remove` for artifact-only changes/)
 })
 
+test('dev and check corrections use verify-all instead of review feedback', () => {
+  const contents = [
+    text('skills/latch/SKILL.md'),
+    text(lifecycleReference),
+    text('docs/HANDBOOK.md'),
+  ]
+  for (const content of contents) {
+    assert.match(content, /`dev` or `check`|`dev` 或 `check`/)
+    assert.match(content, /`approve --feedback`/)
+    assert.match(content, /`verify-all`/)
+    assert.match(content, /proof generation/)
+  }
+})
+
 test('task lifecycle avoids redundant gate plans without allowing execution skips', () => {
   const lifecycle = text(lifecycleReference)
   assert.match(lifecycle, /every gate must add distinct proof/)

@@ -375,6 +375,38 @@ test('verify-all mutation stales earlier proof, stops later gates, and restorati
   assert.equal(readTask(cwd, id).revision, beforeContextRevision)
 })
 
+test('verify-all rebases a preexisting check correction before rerunning stale gates', () => {
+  const cwd = temporaryRepo()
+  const id = createTask(cwd, plan([
+    { name: 'first', command: [process.execPath, '-e', 'process.exit(0)'] },
+    { name: 'second', command: [process.execPath, '-e', 'process.exit(0)'] },
+  ]))
+  const initial = run(cwd, [
+    'verify-all', id, '--expect-revision', revision(cwd, id), '--json',
+  ])
+  assert.equal(initial.status, 0, initial.stderr)
+  assert.equal(readTask(cwd, id).phase, 'check')
+  assert.equal(readTask(cwd, id).workspace_proof.generation, 1)
+
+  writeFileSync(join(cwd, 'tracked.txt'), 'corrected\n')
+  const corrected = run(cwd, [
+    'verify-all', id, '--expect-revision', revision(cwd, id), '--json',
+  ])
+  assert.equal(corrected.status, 0, corrected.stderr)
+  const output = JSON.parse(corrected.stdout)
+  assert.deepEqual(output.executed.map((item) => item.name), ['first', 'second'])
+  assert.match(
+    output.warnings.join('\n'),
+    /Workspace baseline changed before verify-all; proof generation advanced to 2/,
+  )
+  assert.deepEqual(output.remaining, [])
+
+  const task = readTask(cwd, id)
+  assert.equal(task.workspace_proof.generation, 2)
+  assert.equal(task.verification.gate.first.proof.ended_generation, 2)
+  assert.equal(task.verification.gate.second.proof.ended_generation, 2)
+})
+
 test('submit invalidates a live mismatch and capture failure records evidence_error without running gate', () => {
   const cwd = temporaryRepo()
   const id = createTask(cwd, plan([
