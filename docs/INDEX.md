@@ -33,6 +33,11 @@ Task 数据、项目文档和 artifact 的职责边界。
 
 Latch、Latch-Board、appearance-sec 和 monitoring 的当前兼容状态。
 
+### [Agent 使用反馈](AGENT_FEEDBACK.md)
+
+非默认流程。仅在用户明确要求时，按证据门槛向同一条 Project Record「Agent 使用反馈」
+追加；与 v2 / Schema 5 观察期的 archive 定量样本分离。
+
 ### [观察期](OBSERVATION.md)
 
 10 张真实 v2 task 的起点、样本规则、进度检查、证据来源和评估方式。
