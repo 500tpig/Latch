@@ -163,8 +163,10 @@ and explicit `done` authorization.
 - After an in-scope correction during `dev` or `check` with existing proof, do not
   use review-only `approve --feedback`; run `verify-all` so its preflight advances
   the proof generation and reruns every stale named gate.
-- New and updated plans require repo-relative POSIX `workspace_scope.paths`; never
-  infer machine scope from prose, authorization, or artifacts.
+- `workspace_scope.paths` must be repo-relative POSIX paths. Exact files omit `/`;
+  directory prefixes include it. Checkpoint and plan-file save reject an existing
+  directory missing `/` before task mutation; missing paths remain valid. Never
+  infer scope from prose, authorization, or artifacts.
 - New tasks use schema 5 with minimum writer `0.5.0`. Schema 2–4 tasks are
   historical read-only under CLI `0.5.0`. Never migrate during reads, startup,
   build, or verification.

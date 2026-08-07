@@ -154,6 +154,22 @@ export function pathInWorkspaceScope(path: string, scope: WorkspaceScope) {
   )
 }
 
+export function workspaceScopeDescendantCandidate(
+  path: string,
+  scope: WorkspaceScope,
+) {
+  let match: string | undefined
+  for (const candidate of scope.paths) {
+    if (
+      candidate.endsWith('/') ||
+      !path.startsWith(`${candidate}/`)
+    )
+      continue
+    if (!match || candidate.length > match.length) match = candidate
+  }
+  return match
+}
+
 function explicitIgnoredCandidates(
   scope: WorkspaceScope,
   artifacts: TaskArtifact[],

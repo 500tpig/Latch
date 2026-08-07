@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { lstatSync } from 'node:fs'
 import { isAbsolute, normalize, resolve, sep } from 'node:path'
 import {
   CliV2Error,
@@ -36,6 +37,7 @@ import {
 } from './core/actor.js'
 import { injectHostActor } from './host-adapter.js'
 import {
+  discoverWorkspaceRoot,
   NotInitializedError,
 } from './core/paths.js'
 import {
@@ -271,7 +273,24 @@ function readPlan(
 ) {
   if (!planFile) fail('invalid_arguments', '--plan-file is required.')
   const plan = readJsonFile<unknown>(resolve(cwd, planFile))
-  return normalizeTaskPlanInput(plan, profile, planFile)
+  const normalized = normalizeTaskPlanInput(plan, profile, planFile)
+  const workspaceRoot = discoverWorkspaceRoot(cwd)
+  for (const candidate of normalized.workspace_scope.paths) {
+    if (candidate.endsWith('/')) continue
+    try {
+      if (!lstatSync(resolve(workspaceRoot, candidate)).isDirectory()) continue
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code === 'ENOENT' || code === 'ENOTDIR') continue
+      throw error
+    }
+    throw new Error(
+      `Invalid plan.workspace_scope.paths in ${planFile}: ${candidate} is an existing directory. ` +
+        'Paths without a trailing "/" are exact files; ' +
+        `use ${candidate}/ for a directory prefix.`,
+    )
+  }
+  return normalized
 }
 
 function mutationJson(

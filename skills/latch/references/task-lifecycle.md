@@ -5,7 +5,7 @@ Read this reference for plan structure, checkpoint and approve details, feedback
 ## Plan and authorization
 
 - Create a task only from a complete plan file. Keep paths, identifiers, keys, and commands in inline code, and keep each plan item to one sentence.
-- New/updated plans need normalized repo-relative POSIX `workspace_scope.paths`; never infer it from prose, authorization, or artifacts.
+- New and updated plans require normalized repo-relative POSIX `workspace_scope.paths`; exact files omit `/`, while directory prefixes include it. Checkpoint and plan-file save reject an existing directory missing `/` before task mutation, while missing paths remain valid. A later descendant violation may suggest the corrected prefix but never changes the plan. Never infer scope from prose, authorization, or artifacts.
 - New tasks use schema 5 with minimum writer `0.5.0`. CLI `0.5.0` reads schema 2–5 but rejects schema 2–4 mutations. Historical tasks remain read-only; never migrate during context, build, or verification.
 - Shape validation keeps history readable; writable validation requires `workspace_scope`. Scaffolds are shape-only. Before `work_basis` writes, run authorizable validation by profile. Before approval, chat shows short decision highlights and the task id; full plan stays in the task store for Latch-Board or the selected runner's `context`. Do not paste full plan JSON or dump all plan fields by default.
 - Use `source: user_request` for a complete low-risk request, `source: user_delta` for a precise low-risk addition to the current plan, and `source: user_approve` after explicit approval of the current Standard plan.

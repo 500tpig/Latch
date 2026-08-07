@@ -1,6 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
 import {
   cleanupTemporaryDirectories,
@@ -349,6 +355,68 @@ test('checkpoint rejects missing or invalid plan without creating task', () => {
   assert.match(invalidKind.stderr, /expected "gate" \| "diagnostic"/)
   assert.match(invalidKind.stderr, /Minimal legal value: "gate"/)
   assert.deepEqual(taskIds(cwd), [])
+})
+
+test('checkpoint rejects existing directory paths without a trailing slash before writing', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  mkdirSync(join(cwd, 'src', 'features', 'ui'), { recursive: true })
+  writeFileSync(join(cwd, 'src', 'features', 'card.ts'), 'export {}\n')
+  symlinkSync('ui', join(cwd, 'src', 'features', 'ui-link'))
+  const statePath = join(cwd, '.latch', 'state.json')
+  const stateBefore = readFileSync(statePath, 'utf8')
+
+  const invalidPlan = plan({
+    workspace_scope: { paths: ['src/features/ui'] },
+  })
+  const standard = run(cwd, [
+    'checkpoint',
+    'Invalid Standard directory scope',
+    '--plan-file',
+    writePlan(cwd, invalidPlan, 'invalid-standard-directory.json'),
+    '--json',
+  ])
+  assert.notEqual(standard.status, 0)
+  const envelope = JSON.parse(standard.stderr)
+  assert.equal(envelope.schema_version, 2)
+  assert.equal(envelope.error.code, 'command_failed')
+  assert.match(envelope.error.message, /src\/features\/ui is an existing directory/)
+  assert.match(envelope.error.message, /exact files/)
+  assert.match(envelope.error.message, /src\/features\/ui\//)
+
+  const light = run(cwd, [
+    'checkpoint',
+    'Invalid Light directory scope',
+    '--plan-file',
+    writePlan(cwd, invalidPlan, 'invalid-light-directory.json'),
+    '--profile',
+    'light',
+  ])
+  assert.notEqual(light.status, 0)
+  assert.match(light.stderr, /src\/features\/ui is an existing directory/)
+  assert.deepEqual(taskIds(cwd), [])
+  assert.equal(readFileSync(statePath, 'utf8'), stateBefore)
+
+  for (const [name, path] of [
+    ['directory prefix', 'src/features/ui/'],
+    ['exact file', 'src/features/card.ts'],
+    ['missing path', 'src/features/future'],
+    ['directory symlink', 'src/features/ui-link'],
+  ]) {
+    const result = run(cwd, [
+      'checkpoint',
+      `Valid ${name}`,
+      '--plan-file',
+      writePlan(
+        cwd,
+        plan({ workspace_scope: { paths: [path] } }),
+        `valid-${name.replace(' ', '-')}.json`,
+      ),
+      '--json',
+    ])
+    assert.equal(result.status, 0, result.stderr)
+  }
+  assert.equal(taskIds(cwd).length, 4)
 })
 
 test('artifact paths must remain relative to workspace root', () => {

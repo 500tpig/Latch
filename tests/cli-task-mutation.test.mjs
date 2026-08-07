@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   chmodSync,
+  mkdirSync,
   readFileSync,
   writeFileSync,
 } from 'node:fs'
@@ -78,6 +79,46 @@ test('save updates a plan, increments revisions, and invalidates approval and ve
   assert.equal('implementation_approval' in task, false)
   assert.equal('submission' in task, false)
   assert.deepEqual(task.verification, { gate: {}, diagnostic: {} })
+})
+
+test('save rejects an existing directory path without mutating task, event, or state', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const created = checkpoint(cwd)
+  mkdirSync(join(cwd, 'src', 'features', 'ui'), { recursive: true })
+  const directory = join(cwd, '.latch', 'tasks', created.task_id)
+  const taskFile = join(directory, 'task.json')
+  const eventsFile = join(directory, 'events.jsonl')
+  const stateFile = join(cwd, '.latch', 'state.json')
+  const before = {
+    task: readFileSync(taskFile, 'utf8'),
+    events: readFileSync(eventsFile, 'utf8'),
+    state: readFileSync(stateFile, 'utf8'),
+  }
+  const changedPlan = writePlan(
+    cwd,
+    plan({ workspace_scope: { paths: ['src/features/ui'] } }),
+    'invalid-directory-save.json',
+  )
+
+  const result = run(cwd, [
+    'save',
+    created.task_id,
+    '--expect-revision',
+    '1',
+    '--plan-file',
+    changedPlan,
+    '--json',
+  ])
+
+  assert.notEqual(result.status, 0)
+  const envelope = JSON.parse(result.stderr)
+  assert.equal(envelope.schema_version, 2)
+  assert.match(envelope.error.message, /src\/features\/ui is an existing directory/)
+  assert.equal(readFileSync(taskFile, 'utf8'), before.task)
+  assert.equal(readFileSync(eventsFile, 'utf8'), before.events)
+  assert.equal(readFileSync(stateFile, 'utf8'), before.state)
+  assert.equal(readTask(cwd, created.task_id).revision, 1)
 })
 
 test('save records decision, artifact, and blocked events in one revision', () => {

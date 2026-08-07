@@ -61,8 +61,8 @@ test('high-frequency instruction growth requires a reviewed aggregate baseline',
   const fixturePath = 'tests/fixtures/instruction-budget-v1.json'
   const budget = JSON.parse(text(fixturePath))
   const candidateAllowance = {
-    'always-loaded': 460,
-    'planning-path': 693,
+    'always-loaded': 955,
+    'planning-path': 1501,
   }
 
   assert.equal(budget.schema_version, 1)

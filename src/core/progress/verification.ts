@@ -23,6 +23,7 @@ import {
   compareWorkspaceSnapshots,
   pathInWorkspaceScope,
   readWorkspaceEvidence,
+  workspaceScopeDescendantCandidate,
   writeWorkspaceEvidence,
 } from '../workspace-evidence.js'
 import {
@@ -604,6 +605,21 @@ export function verifyTaskV2(
   const mutationWarning = mutation
     ? `Gate ${name} changed ${delta.changed_count} covered path(s): ${delta.in_scope_count} in scope, ${delta.out_of_scope_count} out of scope; proof pass was denied.`
     : undefined
+  const descendantMismatch = delta.changes
+    .filter((change) => change.scope === 'out_of_scope')
+    .map((change) => ({
+      path: change.path,
+      candidate: workspaceScopeDescendantCandidate(change.path, scope),
+    }))
+    .filter(
+      (value): value is { path: string; candidate: string } =>
+        value.candidate !== undefined,
+    )
+    .sort((left, right) => left.path.localeCompare(right.path))[0]
+  const scopeHint = descendantMismatch
+    ? `Workspace scope path ${descendantMismatch.candidate} is an exact file path and does not include descendant ${descendantMismatch.path}; ` +
+      `if the plan intends a directory prefix, change it to ${descendantMismatch.candidate}/ and obtain approval before verifying again.`
+    : undefined
   const baselineWarning =
     before.counts.tracked_dirty +
       before.counts.untracked +
@@ -617,6 +633,7 @@ export function verifyTaskV2(
       ...warnings,
       ...written.warnings,
       ...(mutationWarning ? [mutationWarning] : []),
+      ...(scopeHint ? [scopeHint] : []),
       ...(baselineWarning ? [baselineWarning] : []),
     ],
     verification: result,

@@ -99,7 +99,11 @@ authorizable validation 只在创建或更新 work basis 前执行。授权要�
 新建或更新 plan 必须提供 `workspace_scope.paths`。该字段只接受 repo-relative POSIX
 精确文件路径或以 `/` 结尾的目录前缀；不接受绝对路径、repo escape、glob 或 Git
 pathspec magic。它是 gate scope 分类的唯一机器来源，`plan.scope`、work basis 和
-artifact 均不替代该字段。
+artifact 均不替代该字段。不带 `/` 的条目只表示精确文件，不包含后代 path；目录前缀
+必须以 `/` 结尾。`checkpoint` 和带 `--plan-file` 的 `save` 遇到未带 `/` 的现存目录时，
+会在 task、revision、event、state 或 plan 写入前失败并给出目录前缀建议。当前不存在的
+path 和目录 symlink 不会被自动解释为目录；后续 verify 发现 exact path 的后代越界时，
+warning 会建议将该条目改为以 `/` 结尾的目录前缀，但不会修改 plan 或扩大 scope。
 
 无新增参数时，`checkpoint` 创建 standard plan task。`--authorization-file` 只接受
 `source: user_request`，并原子创建 light task、写入 work basis、进入 dev 且将

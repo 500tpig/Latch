@@ -18,7 +18,9 @@ import {
   captureWorkspaceSnapshot,
   compareWorkspaceSnapshots,
   parseGitStatusPorcelainV2,
+  pathInWorkspaceScope,
   readWorkspaceEvidence,
+  workspaceScopeDescendantCandidate,
   writeWorkspaceEvidence,
 } from '../dist/core/workspace-evidence.js'
 import { assertWritableTaskPlan } from '../dist/core/plan-schema.js'
@@ -272,6 +274,36 @@ test('workspace scope validation normalizes duplicates and rejects escapes, glob
     )
 })
 
+test('workspace scope keeps exact files separate from directory prefixes', () => {
+  const exact = { paths: ['src/features/ui'] }
+  assert.equal(pathInWorkspaceScope('src/features/ui', exact), true)
+  assert.equal(pathInWorkspaceScope('src/features/ui/card.ts', exact), false)
+  assert.equal(pathInWorkspaceScope('src/features/ui-kit', exact), false)
+  assert.equal(
+    workspaceScopeDescendantCandidate('src/features/ui/card.ts', exact),
+    'src/features/ui',
+  )
+  assert.equal(
+    workspaceScopeDescendantCandidate('src/features/ui-kit/card.ts', exact),
+    undefined,
+  )
+
+  const directory = { paths: ['src/features/ui/'] }
+  assert.equal(pathInWorkspaceScope('src/features/ui/card.ts', directory), true)
+  assert.equal(
+    workspaceScopeDescendantCandidate('src/features/ui/card.ts', directory),
+    undefined,
+  )
+
+  assert.equal(
+    workspaceScopeDescendantCandidate(
+      'src/features/ui/card.ts',
+      { paths: ['src', 'src/features/ui'] },
+    ),
+    'src/features/ui',
+  )
+})
+
 test('clean workspace passes and in-scope mutation denies pass', () => {
   const cleanRoot = temporaryRepo()
   const cleanId = createTask(cleanRoot, plan([
@@ -334,6 +366,41 @@ test('out-of-scope mutation creates a violation and submit rejects it', () => {
   ])
   assert.notEqual(submitted.status, 0)
   assert.match(submitted.stderr, /unresolved workspace violation/)
+})
+
+test('verify suggests a directory prefix for descendants of an exact missing path', () => {
+  const command = [
+    process.execPath,
+    '-e',
+    "require('fs').mkdirSync('candidate', { recursive: true }); require('fs').writeFileSync('candidate/child.txt', 'created\\n')",
+  ]
+  const createFixture = () => {
+    const cwd = temporaryRepo()
+    const id = createTask(cwd, plan([
+      { name: 'descendant', command },
+    ], ['candidate']))
+    return { cwd, id }
+  }
+
+  const jsonFixture = createFixture()
+  const result = verify(jsonFixture.cwd, jsonFixture.id, 'descendant')
+  assert.notEqual(result.status, 0)
+  const output = JSON.parse(result.stdout)
+  assert.equal(output.verification.failure_reason, 'scope_violation')
+  assert.match(
+    output.warnings.join('\n'),
+    /candidate is an exact file path and does not include descendant candidate\/child\.txt/,
+  )
+  assert.match(output.warnings.join('\n'), /change it to candidate\//)
+
+  const humanFixture = createFixture()
+  const human = run(humanFixture.cwd, [
+    'verify', humanFixture.id,
+    '--expect-revision', revision(humanFixture.cwd, humanFixture.id),
+    '--name', 'descendant',
+  ])
+  assert.notEqual(human.status, 0)
+  assert.match(human.stderr, /change it to candidate\//)
 })
 
 test('verify-all mutation stales earlier proof, stops later gates, and restoration does not revive old proof', () => {
