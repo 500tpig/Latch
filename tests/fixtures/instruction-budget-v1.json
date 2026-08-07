@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "estimator": "unicode-han-1-other-0.25-v1",
+  "estimator_note": "A stable engineering estimate for comparing instruction surfaces, not a model token count or tokenizer output.",
   "policy": "reviewed-aggregate-ratchet",
   "surfaces": [
     {
@@ -9,8 +10,9 @@
         "AGENTS.md",
         "skills/latch/SKILL.md"
       ],
-      "reviewed_baseline": 3045,
-      "review_reason": "Standard plan 聊天改为重点摘要加 task id，完整 plan 指向 Board/CLI 后，审查并接受 always-loaded 基线。"
+      "reviewed_baseline": 3513,
+      "hard_cap": 4000,
+      "review_reason": "Re-reviewed against the current complete always-loaded surface at 3513 stable engineering estimate units; accepted as a reviewed baseline, not a model token count."
     },
     {
       "name": "planning-path",
@@ -19,8 +21,9 @@
         "skills/latch/SKILL.md",
         "skills/latch/references/task-lifecycle.md"
       ],
-      "reviewed_baseline": 4499,
-      "review_reason": "Standard plan 默认聊天改为决策重点与 task id，禁止字段倾倒后，审查并接受 planning 路径基线。"
+      "reviewed_baseline": 5300,
+      "hard_cap": 6000,
+      "review_reason": "Re-reviewed against the current complete planning-path surface at 5300 stable engineering estimate units; accepted as a reviewed baseline, not a model token count."
     }
   ]
 }

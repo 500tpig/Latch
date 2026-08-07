@@ -57,16 +57,33 @@ function estimatedInstructionTokens(content) {
   return Math.round(han + other / 4)
 }
 
+function classifyInstructionEstimate(surface, estimate) {
+  if (estimate > surface.hard_cap) {
+    return {
+      status: 'hard-cap-exceeded',
+      message: `${surface.name} exceeds its hard cap; redesign or split the instruction surface; do not only raise hard_cap.`,
+    }
+  }
+  if (estimate > surface.reviewed_baseline) {
+    return {
+      status: 'review-required',
+      message: `${surface.name} exceeds its reviewed baseline; update reviewed_baseline and review_reason after review.`,
+    }
+  }
+  return {
+    status: 'within-reviewed-baseline',
+    message: `${surface.name} remains within its reviewed baseline.`,
+  }
+}
+
 test('high-frequency instruction growth requires a reviewed aggregate baseline', () => {
   const fixturePath = 'tests/fixtures/instruction-budget-v1.json'
   const budget = JSON.parse(text(fixturePath))
-  const candidateAllowance = {
-    'always-loaded': 955,
-    'planning-path': 1501,
-  }
 
   assert.equal(budget.schema_version, 1)
   assert.equal(budget.estimator, 'unicode-han-1-other-0.25-v1')
+  assert.match(budget.estimator_note, /stable engineering estimate/i)
+  assert.match(budget.estimator_note, /not a model token count or tokenizer output/i)
   assert.equal(budget.policy, 'reviewed-aggregate-ratchet')
   assert.deepEqual(
     budget.surfaces.map(({ name }) => name),
@@ -83,18 +100,66 @@ test('high-frequency instruction growth requires a reviewed aggregate baseline',
   for (const surface of budget.surfaces) {
     assert.equal(Number.isInteger(surface.reviewed_baseline), true)
     assert.ok(surface.reviewed_baseline > 0)
+    assert.equal(Number.isInteger(surface.hard_cap), true)
+    assert.ok(surface.hard_cap > surface.reviewed_baseline + 1)
     assert.ok(surface.review_reason.trim().length >= 20)
+    assert.match(surface.review_reason, /re-reviewed/i)
+    assert.match(surface.review_reason, new RegExp(String(surface.reviewed_baseline)))
     const estimate = surface.paths.reduce(
       (total, path) => total + estimatedInstructionTokens(text(path)),
       0,
     )
-    const reviewedCandidateLimit =
-      surface.reviewed_baseline + candidateAllowance[surface.name]
-    assert.ok(
-      estimate <= reviewedCandidateLimit,
-      `${surface.name} estimate ${estimate} exceeds reviewed candidate limit ${reviewedCandidateLimit}; keep required safety and schema routing rules, review the growth, then update this candidate allowance`,
+    const currentOutcome = classifyInstructionEstimate(surface, estimate)
+    assert.equal(
+      currentOutcome.status,
+      'within-reviewed-baseline',
+      currentOutcome.message,
     )
+
+    const shrinkOutcome = classifyInstructionEstimate(
+      surface,
+      Math.max(0, surface.reviewed_baseline - 1),
+    )
+    assert.equal(shrinkOutcome.status, 'within-reviewed-baseline')
+
+    const reviewRequired = classifyInstructionEstimate(
+      surface,
+      surface.reviewed_baseline + 1,
+    )
+    assert.equal(reviewRequired.status, 'review-required')
+    assert.match(reviewRequired.message, /update reviewed_baseline and review_reason/i)
+
+    const hardCapExceeded = classifyInstructionEstimate(
+      surface,
+      surface.hard_cap + 1,
+    )
+    assert.equal(hardCapExceeded.status, 'hard-cap-exceeded')
+    assert.match(
+      hardCapExceeded.message,
+      /redesign or split.*do not only raise hard_cap/i,
+    )
+    assert.notEqual(reviewRequired.status, hardCapExceeded.status)
   }
+})
+
+test('always-loaded scope safety semantics stay in the canonical skill', () => {
+  const skill = text('skills/latch/SKILL.md')
+  const semantics = [
+    ['repo-relative POSIX scope paths', /`workspace_scope\.paths` must be repo-relative POSIX paths/],
+    ['exact files omit slash', /Exact files omit `\//],
+    ['directory prefixes include slash', /directory prefixes include it\./],
+    [
+      'existing directories without slash fail before mutation',
+      /Checkpoint and plan-file save reject an existing\s+directory missing `\//,
+    ],
+    ['missing paths remain valid', /missing paths remain valid/],
+    [
+      'scope is not inferred from prose authorization or artifacts',
+      /Never\s+infer scope from prose, authorization, or artifacts/,
+    ],
+  ]
+
+  for (const [name, pattern] of semantics) assert.match(skill, pattern, name)
 })
 
 test('canonical skill has valid minimal frontmatter', () => {
