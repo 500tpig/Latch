@@ -1,6 +1,7 @@
 import type { ContextTaskReadV2, TaskStoreV2 } from '../task-store.js'
 import { currentTaskIdV2, listGroupTasksV3, listTasksV2, taskHistoryIncompleteForTaskV2 } from '../task-store.js'
 import type { TaskV2 } from '../types.js'
+import type { WorkspaceLiveStatus } from '../progress/shared.js'
 import { schema5DetailView } from './closeout.js'
 import { groupContext, workspaceProofView } from './list-status.js'
 import type { GroupListOptions } from './list-status.js'
@@ -36,8 +37,8 @@ export function listHumanV2(
   ].join('\n')
 }
 
-function schema5HumanLines(task: TaskV2) {
-  const view = schema5DetailView(task)
+function schema5HumanLines(task: TaskV2, liveStatus?: WorkspaceLiveStatus) {
+  const view = schema5DetailView(task, liveStatus)
   if (!view) return []
   const lines = [
     `Unverified items: ${view.unverified_items.total} ` +
@@ -116,7 +117,7 @@ export function contextHumanV2(
     `Workspace scope: ${task.plan.workspace_scope?.paths.join(' | ') || '-'}`,
     `Acceptance: ${task.plan.acceptance.join(' | ') || '-'}`,
     `Open questions: ${task.plan.open_questions.join(' | ') || '-'}`,
-    ...schema5HumanLines(task),
+    ...schema5HumanLines(task, workspaceProof?.live_status),
     `Artifacts: ${task.artifacts.map((item) => `${item.kind}:${item.path}`).join(' | ') || '-'}`,
     `History incomplete: ${historyIncomplete ? 'yes' : 'no'}`,
     ...(workspaceProof

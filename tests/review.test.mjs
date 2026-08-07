@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   mkdtempSync,
+  mkdirSync,
   readFileSync,
   readdirSync,
   rmSync,
@@ -144,6 +145,14 @@ function archivedTask(cwd, id) {
       )
     } catch {}
   throw new Error(`Archived task not found: ${id}`)
+}
+
+function openTaskFiles(cwd, id) {
+  return {
+    task: readFileSync(taskPath(cwd, id), 'utf8'),
+    events: readFileSync(eventsPath(cwd, id), 'utf8'),
+    state: readFileSync(join(cwd, '.latch', 'state.json'), 'utf8'),
+  }
 }
 
 test.afterEach(() => {
@@ -345,6 +354,194 @@ test('non-implementation correction preserves review proof and submission', () =
   assert.doesNotMatch(human.stdout, /Approved/)
 })
 
+test('stale review exposes reopen recovery and starts a new auditable work revision', () => {
+  const cwd = temporaryDirectory()
+  mkdirSync(join(cwd, 'src'), { recursive: true })
+  writeFileSync(join(cwd, 'src', 'cli.ts'), 'baseline\n')
+  init(cwd)
+  const id = checkpoint(cwd)
+  approve(cwd, id)
+  assert.equal(verify(cwd, id, 'first').status, 0)
+  assert.equal(verify(cwd, id, 'second').status, 0)
+  assert.equal(submit(cwd, id).status, 0)
+
+  const currentStatus = JSON.parse(
+    run(cwd, ['context', id, '--json', '--status']).stdout,
+  ).task
+  assert.equal(currentStatus.next_action, 'prepare_closeout')
+
+  writeFileSync(join(cwd, 'src', 'cli.ts'), 'changed after submit\n')
+  const staleStatus = JSON.parse(
+    run(cwd, ['context', id, '--json', '--status']).stdout,
+  ).task
+  assert.equal(staleStatus.workspace_proof.live_status, 'mismatch')
+  assert.equal(staleStatus.next_action, 'reopen_review')
+
+  const handoffStatus = JSON.parse(
+    run(
+      cwd,
+      ['context', id, '--json', '--status'],
+      'codex:session:replacement',
+    ).stdout,
+  ).task
+  assert.equal(handoffStatus.next_action, 'takeover')
+  assert.equal(handoffStatus.after_takeover_next_action, 'reopen_review')
+
+  const brief = JSON.parse(
+    run(cwd, ['context', id, '--json', '--brief']).stdout,
+  ).task
+  assert.equal(brief.schema5_view.reviewer_next_action, 'reopen_review')
+  const human = run(cwd, ['context', id])
+  assert.equal(human.status, 0, human.stderr)
+  assert.match(human.stdout, /Reviewer next action: reopen_review/)
+
+  const before = readTask(cwd, id)
+  const deniedDone = run(cwd, [
+    'done', id, '--expect-revision', revision(cwd, id), '--json',
+  ])
+  assert.notEqual(deniedDone.status, 0)
+  assert.match(deniedDone.stderr, /submission proof is stale/)
+
+  const reopened = run(cwd, [
+    'reopen-review', id, '--expect-revision', revision(cwd, id),
+    '--reason', '提交后工作区内容发生变化', '--json',
+  ])
+  assert.equal(reopened.status, 0, reopened.stderr)
+  const after = readTask(cwd, id)
+  assert.equal(after.phase, 'dev')
+  assert.equal(after.work_revision, before.work_revision + 1)
+  assert.equal(after.submission, undefined)
+  assert.deepEqual(after.plan, before.plan)
+  assert.equal(after.plan_revision, before.plan_revision)
+  assert.deepEqual(after.implementation_approval, before.implementation_approval)
+  assert.deepEqual(after.work_basis, before.work_basis)
+  assert.equal(after.primary_writer, before.primary_writer)
+  assert.equal(after.provenance, before.provenance)
+  assert.deepEqual(after.artifacts, before.artifacts)
+  assert.deepEqual(after.verification, before.verification)
+  assert.deepEqual(after.workspace_proof, before.workspace_proof)
+
+  const events = readFileSync(eventsPath(cwd, id), 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line))
+  const decision = events.findLast((event) => event.type === 'decision_recorded')
+  assert.equal(decision.answer, '提交后工作区内容发生变化')
+  assert.equal(events.at(-1).type, 'work_started')
+  assert.equal(
+    events.filter((event) => event.type === 'review_feedback').length,
+    0,
+  )
+  const timeline = JSON.parse(
+    run(cwd, ['context', id, '--json', '--history', 'timeline']).stdout,
+  ).timeline
+  assert.equal(timeline.at(-2).event_type, 'decision_recorded')
+  assert.equal(timeline.at(-1).event_type, 'work_started')
+
+  const verified = run(cwd, [
+    'verify-all', id, '--expect-revision', revision(cwd, id), '--json',
+  ])
+  assert.equal(verified.status, 0, verified.stderr)
+  assert.deepEqual(
+    JSON.parse(verified.stdout).executed.map((item) => item.name),
+    ['first', 'second'],
+  )
+  const resubmitted = submit(cwd, id)
+  assert.equal(resubmitted.status, 0, resubmitted.stderr)
+  assert.equal(readTask(cwd, id).phase, 'review')
+})
+
+test('reopen-review rejects current proof and invalid lifecycle states without writes', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const id = checkpoint(cwd, plan({ verification_plan: [] }), 'reopen guards')
+  approve(cwd, id)
+  assert.equal(submit(cwd, id, ['--no-verify', '--reason', 'fixture']).status, 0)
+
+  function denied(args, actor = 'codex:session:review') {
+    const before = openTaskFiles(cwd, id)
+    const result = run(cwd, ['reopen-review', id, ...args, '--json'], actor)
+    assert.notEqual(result.status, 0)
+    assert.deepEqual(openTaskFiles(cwd, id), before)
+    return JSON.parse(result.stderr)
+  }
+
+  const current = denied([
+    '--expect-revision', revision(cwd, id), '--reason', '无效恢复',
+  ])
+  assert.equal(current.error.code, 'command_failed')
+  assert.match(current.error.message, /requires stale submission proof/)
+
+  const missingReason = denied(['--expect-revision', revision(cwd, id)])
+  assert.equal(missingReason.error.code, 'invalid_arguments')
+
+  const conflict = denied([
+    '--expect-revision', String(Number(revision(cwd, id)) - 1),
+    '--reason', '旧 revision',
+  ])
+  assert.match(conflict.error.message, /Task changed: expected revision/)
+
+  const writerMismatch = denied([
+    '--expect-revision', revision(cwd, id), '--reason', '错误 writer',
+  ], 'codex:session:other')
+  assert.match(writerMismatch.error.message, /Writer mismatch/)
+
+  const blockedTask = readTask(cwd, id)
+  blockedTask.blocked = {
+    reason: '等待输入',
+    waiting_for: '用户',
+    blocked_at: blockedTask.updated_at,
+  }
+  blockedTask.plan.verification_plan = [{
+    name: 'new-gate',
+    command: [process.execPath, '-e', 'process.exit(0)'],
+    kind: 'gate',
+  }]
+  writeFileSync(taskPath(cwd, id), `${JSON.stringify(blockedTask, null, 2)}\n`)
+  const blocked = denied([
+    '--expect-revision', revision(cwd, id), '--reason', 'blocked',
+  ])
+  assert.match(blocked.error.message, /Task is blocked/)
+
+  const retrospective = readTask(cwd, id)
+  delete retrospective.blocked
+  delete retrospective.implementation_approval
+  retrospective.work_basis = {
+    kind: 'retrospective_record',
+    recorded_at: retrospective.updated_at,
+    reason: '事后记录',
+    implemented_before_task: true,
+    scope_summary: '已有实现',
+    plan_revision: retrospective.plan_revision,
+    work_revision: retrospective.work_revision,
+  }
+  writeFileSync(taskPath(cwd, id), `${JSON.stringify(retrospective, null, 2)}\n`)
+  const retrospectiveResult = denied([
+    '--expect-revision', revision(cwd, id), '--reason', 'retrospective',
+  ])
+  assert.match(retrospectiveResult.error.message, /retrospective work cannot be reopened/)
+
+  const devTask = readTask(cwd, id)
+  devTask.phase = 'dev'
+  writeFileSync(taskPath(cwd, id), `${JSON.stringify(devTask, null, 2)}\n`)
+  const wrongPhase = denied([
+    '--expect-revision', revision(cwd, id), '--reason', 'dev',
+  ])
+  assert.match(wrongPhase.error.message, /requires a task in review/)
+
+  const historical = readTask(cwd, id)
+  historical.phase = 'review'
+  historical.schema_version = 4
+  historical.min_writer_version = '0.4.0'
+  historical.submission.unverified = '未验证项'
+  delete historical.submission.unverified_items
+  writeFileSync(taskPath(cwd, id), `${JSON.stringify(historical, null, 2)}\n`)
+  const historicalResult = denied([
+    '--expect-revision', revision(cwd, id), '--reason', 'historical',
+  ])
+  assert.equal(historicalResult.error.code, 'writer_version_mismatch')
+})
+
 test('context timeline rewrites technical review feedback for user reading', () => {
   const cwd = temporaryDirectory()
   init(cwd)
@@ -527,6 +724,14 @@ test('done freezes current submission into closure, archives, clears current, an
   ])
   assert.equal(retry.status, 0, retry.stderr)
   assert.equal(JSON.parse(retry.stdout).outcome, 'done')
+
+  const archiveBefore = JSON.stringify(archivedTask(cwd, id))
+  const reopenArchive = run(cwd, [
+    'reopen-review', id, '--expect-revision', expected,
+    '--reason', 'archive 不可恢复', '--json',
+  ])
+  assert.notEqual(reopenArchive.status, 0)
+  assert.equal(JSON.stringify(archivedTask(cwd, id)), archiveBefore)
 })
 
 test('schema 5 closeout rejects incomplete, duplicate, unknown, and unstable owner inputs atomically', () => {
@@ -668,7 +873,7 @@ test('done rejects stale submission and abandon requires reason and archives out
     'done', doneId, '--expect-revision', revision(cwd, doneId),
   ])
   assert.notEqual(stale.status, 0)
-  assert.match(stale.stderr, /valid submission/)
+  assert.match(stale.stderr, /submission proof is stale/)
 
   task.phase = 'plan'
   writeFileSync(taskPath(cwd, doneId), `${JSON.stringify(task, null, 2)}\n`)

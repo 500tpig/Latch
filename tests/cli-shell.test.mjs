@@ -23,6 +23,7 @@ test('top-level and command help have no side effects', () => {
     ['checkpoint', '--help'],
     ['save', '--help'],
     ['verify-all', '--help'],
+    ['reopen-review', '--help'],
     ['artifact', '--help'],
     ['record', '--help'],
     ['record', 'create', '--help'],
@@ -63,6 +64,10 @@ test('top-level and command help have no side effects', () => {
   assert.match(submitHelp, /--unverified-item/)
   assert.doesNotMatch(submitHelp, /--unverified <summary>/)
   assert.match(run(temporaryDirectory(), ['done', '--help']).stdout, /--closeout-file/)
+  assert.match(
+    run(temporaryDirectory(), ['reopen-review', '--help']).stdout,
+    /--reason <text>/,
+  )
   const topHelp = run(temporaryDirectory(), ['--help']).stdout
   assert.doesNotMatch(topHelp, /upgrade-v4|downgrade-v2|claim <task-id>/)
 })

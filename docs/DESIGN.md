@@ -33,6 +33,7 @@ Latch 是个人 macOS 开发环境中的本地任务状态记录器。它帮助 
 - workspace evidence 覆盖 Git-visible 脏路径、非 ignored untracked 路径，以及 scope 或 artifact 精确引用的 ignored 文件；不递归扫描 ignored 目录。
 - schema 5 submission 使用结构化 `unverified_items`，closeout 为每项保存 `resolved`、`accepted_risk` 或 `followup` resolution；不保留自由文本 closeout 双路径。
 - schema 5 Context 在最小 lifecycle 投影之外提供 bounded item、resolution 摘要和 reviewer next action；`tests/fixtures/context-v5-board-reader.json` 是 Board/adopter 的冻结读取契约。
+- schema 5 review submission 的 proof stale 时，Context 使用 `reopen_review` 替代 closeout 动作；writer mismatch 仍先返回 `takeover`，并通过 bounded `after_takeover_next_action` 预告接管后的恢复动作。
 - `docs/INDEX.md` 指向唯一 current 产品契约；既有七个分章与 Record 分章按主题覆盖历史 v2 基线。
 
 ## 关键取舍
@@ -41,6 +42,7 @@ Latch 是个人 macOS 开发环境中的本地任务状态记录器。它帮助 
 - 每张 implementation task 单独获得 direct approval；
 - plan 和 work revision 使旧结果明确失效；
 - proof generation 表示稳定的 covered workspace baseline；工作区 mismatch 或 gate mutation 使旧 generation 的 named gate proof stale。
+- stale review 使用显式 `reopen-review` 返回 `dev`、推进 work revision 并移除旧 submission，之后重新运行 `verify-all` 并提交；proof 或 Git 状态恢复不伪装成 implementation feedback，也不允许在 review 中刷新 gate 后复用旧 submission。
 - scope 内 mutation 拒绝当前 gate pass；scope 外 mutation 还创建 unresolved violation，并在恢复或重新批准前阻止 submit。
 - `context` 只读计算 live workspace status，不推进 generation，也不写 task、event 或 evidence。
 - 不同 task 可以在同一 workspace 独立推进；共享 worktree 风险通过 warning 提示；

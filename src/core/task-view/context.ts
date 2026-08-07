@@ -1,7 +1,14 @@
 import { artifactDelivery, artifactWarnings } from '../artifact-status.js'
 import type { ContextTaskReadV2, TaskStoreV2 } from '../task-store.js'
 import { currentTaskIdV2, taskHistoryIncompleteForTaskV2 } from '../task-store.js'
-import { archivedContextMetadata, briefTask, fullTask, groupContext, statusTask } from './list-status.js'
+import {
+  archivedContextMetadata,
+  briefTask,
+  fullTask,
+  groupContext,
+  statusTask,
+  workspaceProofView,
+} from './list-status.js'
 import type { ContextJsonOptions } from './list-status.js'
 import { jsonEnvelopeV2 } from './shared.js'
 import { timelineEvents } from './timeline.js'
@@ -55,7 +62,10 @@ export function contextJsonV2(
       ? statusTask(store, task, actor, context.archived)
       : options.brief
         ? briefTask(store, task, context.archived)
-        : fullTask(task),
+        : fullTask(
+            task,
+            workspaceProofView(store, task, context.archived)?.live_status,
+          ),
     ...(!options.status && includeRawEvents
       ? { recent_events: options.brief ? events.slice(-5) : events }
       : {}),

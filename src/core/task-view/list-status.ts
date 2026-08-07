@@ -1,9 +1,12 @@
-import { join } from 'node:path'
 import { isWritableActor } from '../actor.js'
+import {
+  currentWorkspaceLiveStatus,
+  submissionProofStatus,
+  type WorkspaceLiveStatus,
+} from '../progress/shared.js'
 import type { ContextTaskReadV2, TaskStoreV2 } from '../task-store.js'
 import { currentTaskIdV2, listGroupTasksV3, listTasksV2 } from '../task-store.js'
-import type { TaskV2, WorkspaceSnapshot } from '../types.js'
-import { captureWorkspaceSnapshot, compareWorkspaceSnapshots, readWorkspaceEvidence } from '../workspace-evidence.js'
+import type { TaskV2 } from '../types.js'
 import { briefClosure, briefSubmission, schema5DetailView, schema5UnverifiedItems } from './closeout.js'
 import { jsonEnvelopeV2 } from './shared.js'
 import type { ContextHistoryView } from './timeline.js'
@@ -118,7 +121,7 @@ export function listJsonV2(
 
 function briefVerificationPlan(
   task: TaskV2,
-  liveStatus?: 'match' | 'mismatch' | 'unknown',
+  liveStatus?: WorkspaceLiveStatus,
 ) {
   return task.plan.verification_plan.map((item) => {
     const result = task.verification[item.kind][item.name]
@@ -164,49 +167,9 @@ export function workspaceProofView(
   archived: boolean,
 ) {
   if (!task.workspace_proof) return undefined
-  let liveStatus: 'match' | 'mismatch' | 'unknown' = 'unknown'
-  if (!archived && task.plan.workspace_scope) {
-    const live = captureWorkspaceSnapshot(
-      store.paths.workspaceRoot,
-      task.plan.workspace_scope,
-      task.artifacts,
-    )
-    if (live.complete) {
-      try {
-        const baseline = readWorkspaceEvidence<WorkspaceSnapshot>(
-          join(store.paths.tasksDir, task.id),
-          task.workspace_proof.baseline_ref,
-        )
-        const directory = join(store.paths.tasksDir, task.id)
-        for (const gate of task.plan.verification_plan.filter(
-          (item) => item.kind === 'gate',
-        )) {
-          const result = task.verification.gate[gate.name]
-          if (
-            result?.status !== 'pass' ||
-            result.work_revision !== task.work_revision ||
-            result.proof?.ended_generation !== task.workspace_proof.generation
-          )
-            continue
-          if (!result.proof)
-            throw new Error(`Gate ${gate.name} has no workspace proof.`)
-          readWorkspaceEvidence(directory, result.proof.before_ref)
-          readWorkspaceEvidence(directory, result.proof.after_ref)
-          readWorkspaceEvidence(directory, result.proof.delta_ref)
-        }
-        liveStatus =
-          compareWorkspaceSnapshots(
-            baseline,
-            live,
-            task.plan.workspace_scope,
-          ).status === 'unchanged'
-            ? 'match'
-            : 'mismatch'
-      } catch {
-        liveStatus = 'unknown'
-      }
-    }
-  }
+  const liveStatus = archived
+    ? 'unknown'
+    : (currentWorkspaceLiveStatus(store, task) ?? 'unknown')
   return {
     generation: task.workspace_proof.generation,
     baseline_dirty:
@@ -276,7 +239,7 @@ function writerState(task: TaskV2, actor: string) {
 
 function gateSummary(
   task: TaskV2,
-  liveStatus?: 'match' | 'mismatch' | 'unknown',
+  liveStatus?: WorkspaceLiveStatus,
 ) {
   const statuses = briefVerificationPlan(task, liveStatus)
     .filter((item) => item.kind === 'gate')
@@ -290,10 +253,27 @@ function gateSummary(
   }
 }
 
+function ownedNextAction(task: TaskV2, liveStatus?: WorkspaceLiveStatus) {
+  if (task.blocked) return 'unblock'
+  if (task.phase === 'plan')
+    return task.plan.open_questions.length > 0
+      ? 'resolve_open_questions'
+      : 'approve'
+  if (task.phase === 'review') {
+    if (submissionProofStatus(task, liveStatus) === 'stale')
+      return 'reopen_review'
+    return schema5UnverifiedItems(task).length > 0
+      ? 'prepare_closeout'
+      : 'review_or_archive'
+  }
+  const gates = gateSummary(task, liveStatus)
+  return gates.total > 0 && gates.pass !== gates.total ? 'verify' : 'submit'
+}
+
 function nextAction(
   task: TaskV2,
   actor: string,
-  liveStatus?: 'match' | 'mismatch' | 'unknown',
+  liveStatus?: WorkspaceLiveStatus,
 ) {
   const writer = writerState(task, actor)
   if (writer.caller_capability === 'read_only') return 'read_only'
@@ -301,17 +281,7 @@ function nextAction(
   if (writer.task_status === 'schema_upgrade_required')
     return writer.status === 'primary_writer' ? 'upgrade_v4' : 'read_only'
   if (writer.status === 'writer_mismatch') return 'takeover'
-  if (task.blocked) return 'unblock'
-  if (task.phase === 'plan')
-    return task.plan.open_questions.length > 0
-      ? 'resolve_open_questions'
-      : 'approve'
-  if (task.phase === 'review')
-    return schema5UnverifiedItems(task).length > 0
-      ? 'prepare_closeout'
-      : 'review_or_archive'
-  const gates = gateSummary(task, liveStatus)
-  return gates.total > 0 && gates.pass !== gates.total ? 'verify' : 'submit'
+  return ownedNextAction(task, liveStatus)
 }
 
 export function statusTask(
@@ -322,6 +292,7 @@ export function statusTask(
 ) {
   const workspaceProof = workspaceProofView(store, task, archived)
   const unverifiedItems = schema5UnverifiedItems(task)
+  const writer = writerState(task, actor)
   return {
     id: task.id,
     title: task.title,
@@ -338,7 +309,7 @@ export function statusTask(
     provenance: task.provenance ?? 'clean',
     ...(task.blocked ? { blocked: task.blocked } : {}),
     authorization: authorizationState(task),
-    writer: writerState(task, actor),
+    writer,
     ...(workspaceProof ? { workspace_proof: workspaceProof } : {}),
     gates: gateSummary(
       task,
@@ -353,12 +324,21 @@ export function statusTask(
     next_action: archived
       ? 'read_only'
       : nextAction(task, actor, workspaceProof?.live_status),
+    ...(!archived &&
+    task.schema_version === 5 &&
+    writer.status === 'writer_mismatch' &&
+    task.phase === 'review' &&
+    submissionProofStatus(task, workspaceProof?.live_status) === 'stale'
+      ? {
+          after_takeover_next_action: 'reopen_review',
+        }
+      : {}),
     updated_at: task.updated_at,
   }
 }
 
-export function fullTask(task: TaskV2) {
-  const schema5View = schema5DetailView(task)
+export function fullTask(task: TaskV2, liveStatus?: WorkspaceLiveStatus) {
+  const schema5View = schema5DetailView(task, liveStatus)
   return schema5View
     ? {
         ...task,
@@ -369,7 +349,7 @@ export function fullTask(task: TaskV2) {
 
 export function briefTask(store: TaskStoreV2, task: TaskV2, archived = false) {
   const workspaceProof = workspaceProofView(store, task, archived)
-  const schema5View = schema5DetailView(task)
+  const schema5View = schema5DetailView(task, workspaceProof?.live_status)
   return {
     id: task.id,
     title: task.title,

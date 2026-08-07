@@ -791,7 +791,7 @@ test('done revalidates double binding, knowledge impact, and proof', () => {
     'done', task.id, '--expect-revision', revision(cwd, task.id),
   ])
   assert.notEqual(stale.status, 0)
-  assert.match(stale.stderr, /plan_revision is stale/)
+  assert.match(stale.stderr, /submission proof is stale/)
 
   current = readTask(cwd, task.id)
   current.submission.plan_revision = current.plan_revision

@@ -47,6 +47,21 @@
         "unverified_item_ids_truncated": true
       }
     },
+    "review_stale": {
+      "phase": "review",
+      "status": {
+        "next_action": "reopen_review",
+        "writer_mismatch_next_action": "takeover",
+        "after_takeover_next_action": "reopen_review"
+      },
+      "schema5_view": {
+        "reviewer_next_action": "reopen_review"
+      },
+      "timeline": {
+        "decision_event_type": "decision_recorded",
+        "work_event_type": "work_started"
+      }
+    },
     "archived_mixed": {
       "phase": "review",
       "schema5_view": {

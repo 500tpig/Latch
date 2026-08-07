@@ -15,6 +15,8 @@ export type {
   VerifyTaskV2Input,
   VerifyTaskV2Result,
 } from './progress/verification.js'
+export { reopenReviewTaskV3 } from './progress/review-recovery.js'
+export type { ReopenReviewTaskV3Input } from './progress/review-recovery.js'
 export {
   abandonTaskV2,
   doneTaskV2,

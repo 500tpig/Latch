@@ -82,6 +82,7 @@ import {
   changeTaskProfileV3,
   doneTaskV2,
   patchSubmissionKnowledgeImpactV3,
+  reopenReviewTaskV3,
   submitTaskV2,
   verifyAllTasksV2,
   verifyTaskV2,
@@ -106,6 +107,7 @@ Commands:
   approve <task-id> --expect-revision <revision> [--reason <text> | --authorization-file <path> | --retrospective-file <path>] [--feedback <text> | --non-implementation-feedback <text>]
   verify <task-id> --expect-revision <revision> --name <name> [--diagnostic] [-- command...]
   verify-all <task-id> --expect-revision <revision>
+  reopen-review <task-id> --expect-revision <revision> --reason <text>
   artifact <add|remove> <task-id> --expect-revision <revision> <kind:path>...
   submit <task-id> --expect-revision <revision> --changes <text> [--unverified-item <summary>...] [--knowledge-impact-none <reason> | --knowledge-impact-file <path>] [--no-verify --reason <text>] [--verbose-warnings]
   patch-submission-knowledge-impact <task-id> --expect-revision <revision> --knowledge-impact-file <path> [--reason <text>]
@@ -137,6 +139,8 @@ const commandUsage: Record<string, string> = {
     'Usage: latch verify <task-id> --expect-revision <revision> --name <name> [--diagnostic] [-- command...] [--json]',
   'verify-all':
     'Usage: latch verify-all <task-id> --expect-revision <revision> [--json]',
+  'reopen-review':
+    'Usage: latch reopen-review <task-id> --expect-revision <revision> --reason <text> [--json]',
   artifact:
     'Usage: latch artifact <add|remove> <task-id> --expect-revision <revision> <kind:path>... [--json]',
   submit:
@@ -162,6 +166,7 @@ const actorRequiredCommands = new Set([
   'approve',
   'verify',
   'verify-all',
+  'reopen-review',
   'artifact',
   'submit',
   'patch-submission-knowledge-impact',
@@ -1055,6 +1060,36 @@ function runVerifyAll(args: string[], cwd: string, actor: string) {
   if (result.failed || result.stoppedReason) process.exitCode = 1
 }
 
+function runReopenReview(args: string[], cwd: string, actor: string) {
+  const parsed = parseCommand(args, {
+    ...commonOptions(),
+    'expect-revision': { type: 'string' },
+    reason: { type: 'string' },
+  })
+  if (parsed.values.help)
+    return process.stdout.write(`${commandUsage['reopen-review']}\n`)
+  requirePositionals('reopen-review', parsed.positionals, 1)
+  const expectRevision = positiveInteger(
+    parsed.values['expect-revision'],
+    '--expect-revision',
+  )
+  if (!parsed.values.reason?.trim())
+    fail('invalid_arguments', '--reason is required.')
+  const store = openTaskStoreV2(cwd)
+  currentWritableTask(store, parsed.positionals[0])
+  const result = reopenReviewTaskV3(store, parsed.positionals[0], {
+    expectRevision,
+    actor,
+    reason: parsed.values.reason,
+  })
+  if (parsed.values.json)
+    return json(mutationJson(result.task, result.warnings, expectRevision))
+  process.stdout.write(
+    `Reopened ${result.task.id} for implementation at work revision ${result.task.work_revision}.\n`,
+  )
+  printWarnings(result.warnings)
+}
+
 function runArtifact(args: string[], cwd: string, actor: string) {
   const parsed = parseCommand(args, {
     ...commonOptions(),
@@ -1419,6 +1454,8 @@ function run(argv: string[], cwd: string) {
       return runVerify(args, cwd, actor)
     case 'verify-all':
       return runVerifyAll(args, cwd, actor)
+    case 'reopen-review':
+      return runReopenReview(args, cwd, actor)
     case 'artifact':
       return runArtifact(args, cwd, actor)
     case 'submit':

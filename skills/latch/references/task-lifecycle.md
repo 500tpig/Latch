@@ -34,7 +34,8 @@ Read this reference for plan structure, checkpoint and approve details, feedback
 - Submit performs a live workspace and evidence-integrity preflight. A mismatch advances proof generation, rejects submit, and does not run gates automatically; `context` reports live status read-only.
 - Prefer `--knowledge-impact-none <reason>` for a concrete no-impact record; use `--knowledge-impact-file <path>` for `updated` or other structured impacts. Read [knowledge and context](knowledge-and-context.md) before preparing or correcting `knowledge_impact`.
 - Report non-`tracked` artifact delivery and untracked-worktree warnings as delivery risks; do not invent artifact ownership or turn them into automatic lifecycle failures.
-- Submit the current work revision to `review` and wait for user acceptance. Never run `done` automatically.
+- Submit current work to `review` and wait. For `reopen_review`, use explicitly
+  authorized `reopen-review`, then `verify-all` and a new submission. Never auto-`done`.
 
 ## Finish
 

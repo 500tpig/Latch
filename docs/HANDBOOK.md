@@ -293,6 +293,30 @@ submit 还会检查 live snapshot、evidence sidecar 完整性、work revision�
 generation 和 unresolved violation。live baseline mismatch 会先写入新的 generation
 并使旧 proof stale，再拒绝 submit；该过程不会自动执行 gate。
 
+### 恢复 stale review
+
+review 中已有 submission，但 work revision、plan revision、proof generation、gate
+结果或 live workspace baseline 已失效时，Context 返回 `reopen_review`，不再返回
+`prepare_closeout` 或 `review_or_archive`：
+
+```bash
+latch reopen-review <task-id> --expect-revision 11 \
+  --reason "提交后工作区内容发生变化"
+```
+
+命令只接受 schema 5 open task，且要求当前 writer、匹配 revision、非 blocked、有效
+implementation authorization、已有 submission 和 stale proof。成功后 phase 回到
+`dev`，`work_revision` 推进，旧 submission 被移除；plan、plan revision、授权、writer、
+provenance、artifact、verification 与 workspace proof 历史保持不变。
+
+恢复不会运行 gate、修改 Git worktree、自动 submit 或自动归档，也不会生成
+`review_feedback`。后续必须依次执行 `verify-all`、重新 `submit`、review 和明确授权后的
+`done`。proof 仍 current 时继续既有 closeout 流程，不调用 `reopen-review`。
+
+writer mismatch 与 stale proof 同时存在时，`next_action` 仍为 `takeover`；status JSON
+通过 `after_takeover_next_action: "reopen_review"` 提供接管后的下一步。blocked 状态仍先
+执行 `unblock`。
+
 context 会在 `artifact_delivery` 中标记 task 已声明 artifact 的 Git 状态：`tracked`、`untracked`、`ignored`、`missing` 或 `unknown`。submit 对非 `tracked` artifact 继续逐项返回非阻断 warning。worktree 中的 untracked 文件默认合并为一条 warning，包含总数和稳定排序后的最多 8 个样本；`submit --verbose-warnings` 返回完整逐文件清单。两种形式都不自动推断文件归属或迁移原因。Git 状态不把 ignored 文件自动解释为「本地知识」，也不增加 submit 或 done 门禁。
 
 ### 修正 review submission 的知识影响
@@ -331,7 +355,10 @@ latch done <task-id> --expect-revision 11 --closeout-file closeout.json
 latch abandon <task-id> --expect-revision 5 --reason "用户取消"
 ```
 
-`done` 只接受 review 中当前 work revision 的有效 submission。`abandon` 必须提供原因。AI 只有获得明确用户授权后才能执行这两个命令。
+`done` 只接受 review 中 proof current 的 submission，包括匹配的 work revision、plan
+revision、proof generation、gate 结果和 live workspace baseline。stale submission 必须先
+使用 `reopen-review` 恢复。`abandon` 必须提供原因。AI 只有获得明确用户授权后才能执行
+这两个命令。
 
 执行 `done` 前，先读取 bounded brief，并将当前 `submission.unverified_items` 与 review
 期间新增的明确验收事实进行比较。归档请求本身不表示接受剩余风险。`resolved` 需要

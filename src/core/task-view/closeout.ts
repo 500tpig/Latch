@@ -1,3 +1,7 @@
+import {
+  submissionProofStatus,
+  type WorkspaceLiveStatus,
+} from '../progress/shared.js'
 import type { CloseoutResolution, TaskV2, UnverifiedItem } from '../types.js'
 import { concise, SCHEMA5_VIEW_SAMPLE_LIMIT } from './shared.js'
 
@@ -59,11 +63,19 @@ function resolutionPreview(resolution: CloseoutResolution) {
   }
 }
 
-function schema5ReviewerNextAction(task: TaskV2) {
+function schema5ReviewerNextAction(
+  task: TaskV2,
+  liveStatus?: WorkspaceLiveStatus,
+) {
   if (task.closure) {
     const counts = schema5CloseoutCounts(task)
     return counts.followup > 0 ? 'track_followup_items' : 'read_only_archive'
   }
+  if (
+    task.phase === 'review' &&
+    submissionProofStatus(task, liveStatus) === 'stale'
+  )
+    return 'reopen_review'
   if (task.phase === 'review')
     return schema5UnverifiedItems(task).length > 0
       ? 'prepare_closeout'
@@ -84,12 +96,15 @@ function schema5CloseoutView(task: TaskV2) {
   }
 }
 
-export function schema5DetailView(task: TaskV2) {
+export function schema5DetailView(
+  task: TaskV2,
+  liveStatus?: WorkspaceLiveStatus,
+) {
   if (task.schema_version !== 5) return undefined
   const unverifiedItems: UnverifiedItem[] = schema5UnverifiedItems(task)
   return {
     unverified_items: boundedView(unverifiedItems),
-    reviewer_next_action: schema5ReviewerNextAction(task),
+    reviewer_next_action: schema5ReviewerNextAction(task, liveStatus),
     ...(task.closure ? { closeout: schema5CloseoutView(task) } : {}),
   }
 }

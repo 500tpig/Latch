@@ -138,6 +138,17 @@ latch done <task-id> --expect-revision <n> --closeout-file closeout.json --json
 Do not rerun an already passed, non-stale full build solely for closeout. Git
 delivery remains separate and needs separate authorization.
 
+### Review proof recovery
+
+For `reopen_review`, writer/blocked recovery stays first. With explicit authorization:
+
+```bash
+latch reopen-review <task-id> --expect-revision <n> --reason "Why the submitted proof is stale" --json
+```
+
+Return to `dev` without feedback or gates/Git; then `verify-all`, `submit`, review,
+and explicit `done` authorization.
+
 ## Invariants
 
 - Missing canonical actor or writer mismatch is fail closed. Grok and Codex are

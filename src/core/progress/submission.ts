@@ -26,8 +26,10 @@ import {
 } from '../workspace-evidence.js'
 import {
   assertSubmissionProof,
+  assertSubmissionGateProof,
   assertValidWorkBasis,
   cliArgument,
+  currentWorkspaceLiveStatus,
   gatePlan,
   missingCurrentGates,
   profileOf,
@@ -285,7 +287,7 @@ export function patchSubmissionKnowledgeImpactV3(
   if (submission.work_revision !== current.work_revision)
     throw new Error('Patch denied: submission work_revision mismatch.')
   assertValidWorkBasis(current)
-  assertSubmissionProof(current)
+  assertSubmissionGateProof(current)
   assertKnowledgeImpact(input.knowledgeImpact, current.artifacts, 'patch input')
 
   return updateTaskV4(store, current.id, {
@@ -459,11 +461,8 @@ export function doneTaskV2(
   if (current.phase !== 'review')
     throw new Error(`Cannot complete task in phase ${current.phase}.`)
   const submission = current.submission
-  if (!submission || submission.work_revision !== current.work_revision)
-    throw new Error('Current work revision does not have a valid submission.')
+  if (!submission) throw new Error('Current task does not have a submission.')
   if (usesLightProofPackage(current)) {
-    if (submission.plan_revision !== current.plan_revision)
-      throw new Error('Current submission plan_revision is stale.')
     if (!submission.knowledge_impact)
       throw new Error('Current submission does not have knowledge_impact.')
     assertKnowledgeImpact(
@@ -473,7 +472,7 @@ export function doneTaskV2(
     )
     assertValidWorkBasis(current)
   }
-  assertSubmissionProof(current)
+  assertSubmissionProof(current, currentWorkspaceLiveStatus(store, current))
   const unverifiedItems = current.schema_version === 5
     ? (submission.unverified_items ?? [])
     : []
