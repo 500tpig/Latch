@@ -272,11 +272,13 @@ function ownedNextAction(task: TaskV2, liveStatus?: WorkspaceLiveStatus) {
   return gates.total > 0 && gates.pass !== gates.total ? 'verify' : 'submit'
 }
 
-function nextAction(
+export function nextAction(
   task: TaskV2,
   actor: string,
   liveStatus?: WorkspaceLiveStatus,
+  archived = false,
 ) {
+  if (archived) return 'read_only'
   const writer = writerState(task, actor)
   if (writer.caller_capability === 'read_only') return 'read_only'
   if (writer.task_status === 'legacy_unclaimed') return 'claim'
@@ -323,9 +325,12 @@ export function statusTask(
           resolution_pending_count: task.closure ? 0 : unverifiedItems.length,
         }
       : {}),
-    next_action: archived
-      ? 'read_only'
-      : nextAction(task, actor, workspaceProof?.live_status),
+    next_action: nextAction(
+      task,
+      actor,
+      workspaceProof?.live_status,
+      archived,
+    ),
     ...(!archived &&
     task.schema_version === 5 &&
     writer.status === 'writer_mismatch' &&

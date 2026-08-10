@@ -145,6 +145,10 @@ blocked、gate 计数、workspace proof 摘要和 `next_action`。存在 proof b
 返回该 revision 之后的 event，以及当前最小状态；调用方必须已有对应 baseline，
 delta 不能替代完整 context。
 
+所有成功 task mutation 的 JSON 顶层也返回 `next_action`。该字段与
+`context --json --status` 共用派生规则，以 mutation 完成后的 phase、writer、gate 和
+live workspace proof 为准；`done` 与 `abandon` 返回 `read_only`。human 输出保持不变。
+
 `context --json --review` 是 review 与 closeout 的紧凑入口。它保留 `goal`、
 `scope`、`acceptance`、writer、lifecycle、named gate 状态、live workspace proof、
 有界的 submission、unverified item 与 closeout 摘要，可独立判断 `takeover`、
@@ -441,7 +445,10 @@ Latch 使用批准 plan 的 `workspace_scope.paths` 分类 gate mutation，但�
 归属或隔离不同 task。验证命令针对整个 worktree；需要代码隔离时由用户使用外部 Git
 worktree，Latch 不负责创建或合并它。
 
-同一连续写入流程中，成功 mutation 的 JSON 返回值包含新的 `revision`。下一条命令直接使用该值作为 `--expect-revision`，不得只为获取 revision 重读 context。发生 revision conflict、进入新的用户输入边界、warning 需要重新判断或任务语义变化时，再刷新 status；冲突 mutation 不得自动重试。
+同一连续写入流程中，成功 mutation 的 JSON 返回值包含新的 `revision` 和 mutation
+后的 `next_action`。下一条命令直接使用该 revision 作为 `--expect-revision`，不得只为 revision 重读 context；
+也不得只为获取下一步动作重读 context。发生 `revision conflict`、进入新的用户输入边界、
+warning 需要重新判断或任务语义变化时，再刷新 status；冲突 mutation 不得自动重试。
 
 ### Session actor 宿主
 

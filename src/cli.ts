@@ -56,6 +56,10 @@ import {
   listJsonV2,
 } from './core/task-view.js'
 import {
+  nextAction,
+  workspaceProofView,
+} from './core/task-view/list-status.js'
+import {
   assertGroupIdV3,
   claimTaskV3,
   createTaskV5,
@@ -78,6 +82,7 @@ import type {
   TaskCloseoutInput,
   TaskProfile,
   TaskProvenance,
+  TaskV2,
 } from './core/types.js'
 import {
   abandonTaskV2,
@@ -313,16 +318,26 @@ function readPlan(
 }
 
 function mutationJson(
-  task: { id: string; revision: number; phase: string },
+  store: ReturnType<typeof openTaskStoreV2>,
+  task: TaskV2,
+  actor: string,
   warnings: string[],
   previousRevision?: number,
+  archived = false,
 ) {
+  const workspaceProof = workspaceProofView(store, task, archived)
   return {
     ...jsonEnvelopeV2(),
     task_id: task.id,
     ...(previousRevision !== undefined ? { previous_revision: previousRevision } : {}),
     revision: task.revision,
     phase: task.phase,
+    next_action: nextAction(
+      task,
+      actor,
+      workspaceProof?.live_status,
+      archived,
+    ),
     warnings,
   }
 }
@@ -541,7 +556,8 @@ function runCheckpoint(args: string[], cwd: string, actor: string) {
       )
     }
   }
-  if (parsed.values.json) return json(mutationJson(result.task, result.warnings))
+  if (parsed.values.json)
+    return json(mutationJson(store, result.task, actor, result.warnings))
   process.stdout.write(`Created ${result.task.id} at revision ${result.task.revision}\n`)
   printWarnings(result.warnings)
 }
@@ -615,7 +631,9 @@ function runClaim(args: string[], cwd: string, actor: string) {
     reason: parsed.values.reason,
   })
   if (parsed.values.json)
-    return json(mutationJson(result.task, result.warnings, expectRevision))
+    return json(
+      mutationJson(store, result.task, actor, result.warnings, expectRevision),
+    )
   process.stdout.write(
     `Claimed ${result.task.id} for ${actor} and upgraded it to schema v4.\n`,
   )
@@ -644,7 +662,9 @@ function runTakeover(args: string[], cwd: string, actor: string) {
     reason: parsed.values.reason,
   })
   if (parsed.values.json)
-    return json(mutationJson(result.task, result.warnings, expectRevision))
+    return json(
+      mutationJson(store, result.task, actor, result.warnings, expectRevision),
+    )
   process.stdout.write(`Transferred ${result.task.id} to ${actor}.\n`)
   printWarnings(result.warnings)
 }
@@ -730,7 +750,9 @@ function runSave(args: string[], cwd: string, actor: string) {
       },
     })
     if (parsed.values.json)
-      return json(mutationJson(result.task, result.warnings, expectRevision))
+      return json(
+        mutationJson(store, result.task, actor, result.warnings, expectRevision),
+      )
     process.stdout.write(
       `Changed ${result.task.id} provenance to ${selectedProvenance}.\n`,
     )
@@ -780,7 +802,9 @@ function runSave(args: string[], cwd: string, actor: string) {
       },
     })
     if (parsed.values.json)
-      return json(mutationJson(result.task, result.warnings, expectRevision))
+      return json(
+        mutationJson(store, result.task, actor, result.warnings, expectRevision),
+      )
     process.stdout.write(
       nextGroup === undefined
         ? `Cleared ${result.task.id} group.\n`
@@ -817,7 +841,9 @@ function runSave(args: string[], cwd: string, actor: string) {
       userRequestedNarrowing: Boolean(parsed.values['user-requested-narrowing']),
     })
     if (parsed.values.json)
-      return json(mutationJson(result.task, result.warnings, expectRevision))
+      return json(
+        mutationJson(store, result.task, actor, result.warnings, expectRevision),
+      )
     process.stdout.write(
       `Changed ${result.task.id} profile to ${result.task.profile}.\n`,
     )
@@ -924,7 +950,9 @@ function runSave(args: string[], cwd: string, actor: string) {
   })
 
   if (parsed.values.json)
-    return json(mutationJson(result.task, result.warnings, current.revision))
+    return json(
+      mutationJson(store, result.task, actor, result.warnings, current.revision),
+    )
   process.stdout.write(
     `Saved ${result.task.id}: revision ${current.revision} -> ${result.task.revision}\n`,
   )
@@ -1002,7 +1030,9 @@ function runApprove(args: string[], cwd: string, actor: string) {
     retrospective,
   })
   if (parsed.values.json)
-    return json(mutationJson(result.task, result.warnings, expectRevision))
+    return json(
+      mutationJson(store, result.task, actor, result.warnings, expectRevision),
+    )
   const action =
     parsed.values['non-implementation-feedback'] !== undefined
       ? 'Recorded non-implementation feedback for'
@@ -1042,7 +1072,7 @@ function runVerify(args: string[], cwd: string, actor: string) {
   })
   if (parsed.values.json)
     json({
-      ...mutationJson(result.task, result.warnings, expectRevision),
+      ...mutationJson(store, result.task, actor, result.warnings, expectRevision),
       verification: result.verification,
     })
   else {
@@ -1082,7 +1112,7 @@ function runVerifyAll(args: string[], cwd: string, actor: string) {
   }))
   if (parsed.values.json)
     json({
-      ...mutationJson(result.task, result.warnings, expectRevision),
+      ...mutationJson(store, result.task, actor, result.warnings, expectRevision),
       executed,
       failed: result.failed?.name ?? null,
       stopped_reason: result.stoppedReason ?? null,
@@ -1126,7 +1156,9 @@ function runReopenReview(args: string[], cwd: string, actor: string) {
     reason: parsed.values.reason,
   })
   if (parsed.values.json)
-    return json(mutationJson(result.task, result.warnings, expectRevision))
+    return json(
+      mutationJson(store, result.task, actor, result.warnings, expectRevision),
+    )
   process.stdout.write(
     `Reopened ${result.task.id} for implementation at work revision ${result.task.work_revision}.\n`,
   )
@@ -1172,7 +1204,9 @@ function runArtifact(args: string[], cwd: string, actor: string) {
     },
   })
   if (parsed.values.json)
-    return json(mutationJson(result.task, result.warnings, expectRevision))
+    return json(
+      mutationJson(store, result.task, actor, result.warnings, expectRevision),
+    )
   process.stdout.write(
     `Updated ${result.task.id} artifacts: revision ${expectRevision} -> ${result.task.revision}\n`,
   )
@@ -1239,7 +1273,9 @@ function runSubmit(args: string[], cwd: string, actor: string) {
     verboseWarnings: Boolean(parsed.values['verbose-warnings']),
   })
   if (parsed.values.json)
-    return json(mutationJson(result.task, result.warnings, expectRevision))
+    return json(
+      mutationJson(store, result.task, actor, result.warnings, expectRevision),
+    )
   process.stdout.write(`Submitted ${result.task.id} for review.\n`)
   printWarnings(result.warnings)
 }
@@ -1286,7 +1322,9 @@ function runPatchSubmissionKnowledgeImpact(
     },
   )
   if (parsed.values.json)
-    return json(mutationJson(result.task, result.warnings, expectRevision))
+    return json(
+      mutationJson(store, result.task, actor, result.warnings, expectRevision),
+    )
   process.stdout.write(`Patched ${result.task.id} submission knowledge impact.\n`)
   printWarnings(result.warnings)
 }
@@ -1320,7 +1358,7 @@ function runDowngradeV2(args: string[], cwd: string, actor: string) {
   })
   if (parsed.values.json)
     return json({
-      ...mutationJson(result.task, result.warnings, expectRevision),
+      ...mutationJson(store, result.task, actor, result.warnings, expectRevision),
       backup_path: result.backupPath,
     })
   process.stdout.write(
@@ -1361,7 +1399,7 @@ function runUpgradeV4(args: string[], cwd: string, actor: string) {
   })
   if (parsed.values.json)
     return json({
-      ...mutationJson(result.task, result.warnings, expectRevision),
+      ...mutationJson(store, result.task, actor, result.warnings, expectRevision),
       task_schema_version: result.task.schema_version,
       primary_writer: result.task.primary_writer,
       writer_recovered: recoverWriter,
@@ -1406,7 +1444,14 @@ function runDone(args: string[], cwd: string, actor: string) {
   })
   if (parsed.values.json)
     return json({
-      ...mutationJson(result.task, result.warnings, expectRevision),
+      ...mutationJson(
+        store,
+        result.task,
+        actor,
+        result.warnings,
+        expectRevision,
+        true,
+      ),
       outcome: result.task.outcome,
       archived: true,
     })
@@ -1436,7 +1481,14 @@ function runAbandon(args: string[], cwd: string, actor: string) {
   })
   if (parsed.values.json)
     return json({
-      ...mutationJson(result.task, result.warnings, expectRevision),
+      ...mutationJson(
+        store,
+        result.task,
+        actor,
+        result.warnings,
+        expectRevision,
+        true,
+      ),
       outcome: result.task.outcome,
       archived: true,
     })
