@@ -10,7 +10,11 @@ import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import {
   cleanupTemporaryDirectories,
+  checkpoint,
+  init,
+  readTask,
   run,
+  taskPath,
   temporaryDirectory,
 } from './cli-test-support.mjs'
 
@@ -22,6 +26,7 @@ test('top-level and command help have no side effects', () => {
     ['--help'],
     ['checkpoint', '--help'],
     ['save', '--help'],
+    ['approve', '--help'],
     ['verify-all', '--help'],
     ['reopen-review', '--help'],
     ['artifact', '--help'],
@@ -55,6 +60,16 @@ test('top-level and command help have no side effects', () => {
   const saveHelp = run(temporaryDirectory(), ['save', '--help'])
   assert.match(saveHelp.stdout, /--provenance <clean\|mixed>/)
   assert.match(saveHelp.stdout, /--provenance-reason/)
+  const approveHelp = run(temporaryDirectory(), ['approve', '--help']).stdout
+  assert.match(
+    approveHelp,
+    /\(--reason <text> \| --authorization-file <path> \| --retrospective-file <path>\)/,
+  )
+  assert.match(
+    approveHelp,
+    /--feedback <text> \[--authorization-file <path>\]/,
+  )
+  assert.match(approveHelp, /--non-implementation-feedback <text>/)
   const contextHelp = run(temporaryDirectory(), ['context', '--help'])
   assert.match(contextHelp.stdout, /--status/)
   assert.match(contextHelp.stdout, /--since-revision/)
@@ -70,6 +85,92 @@ test('top-level and command help have no side effects', () => {
   )
   const topHelp = run(temporaryDirectory(), ['--help']).stdout
   assert.doesNotMatch(topHelp, /upgrade-v4|downgrade-v2|claim <task-id>/)
+})
+
+test('approve rejects conflicting modes before reading or mutating a task', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const created = checkpoint(cwd)
+  const id = created.task_id
+  const before = readFileSync(taskPath(cwd, id), 'utf8')
+  const conflictingInputs = [
+    ['--reason', 'approve plan', '--feedback', 'change implementation'],
+    [
+      '--reason',
+      'approve plan',
+      '--non-implementation-feedback',
+      'wording only',
+    ],
+    [
+      '--reason',
+      'approve plan',
+      '--authorization-file',
+      'missing-authorization.json',
+    ],
+    [
+      '--reason',
+      'approve plan',
+      '--retrospective-file',
+      'missing-retrospective.json',
+    ],
+    [
+      '--authorization-file',
+      'missing-authorization.json',
+      '--retrospective-file',
+      'missing-retrospective.json',
+    ],
+    [
+      '--authorization-file',
+      'missing-authorization.json',
+      '--non-implementation-feedback',
+      'wording only',
+    ],
+    [
+      '--retrospective-file',
+      'missing-retrospective.json',
+      '--feedback',
+      'change implementation',
+    ],
+    [
+      '--retrospective-file',
+      'missing-retrospective.json',
+      '--non-implementation-feedback',
+      'wording only',
+    ],
+    [
+      '--feedback',
+      'change implementation',
+      '--non-implementation-feedback',
+      'wording only',
+    ],
+  ]
+
+  for (const input of conflictingInputs) {
+    const uninitializedRoot = temporaryDirectory()
+    const beforeStore = run(uninitializedRoot, [
+      'approve',
+      'missing-task',
+      '--expect-revision',
+      '1',
+      ...input,
+      '--json',
+    ])
+    assert.notEqual(beforeStore.status, 0)
+    assert.equal(JSON.parse(beforeStore.stderr).error.code, 'invalid_arguments')
+    assert.equal(existsSync(join(uninitializedRoot, '.latch')), false)
+
+    const result = run(cwd, [
+      'approve',
+      id,
+      '--expect-revision',
+      String(readTask(cwd, id).revision),
+      ...input,
+      '--json',
+    ])
+    assert.notEqual(result.status, 0)
+    assert.equal(JSON.parse(result.stderr).error.code, 'invalid_arguments')
+    assert.equal(readFileSync(taskPath(cwd, id), 'utf8'), before)
+  }
 })
 
 test('unknown command and flag fail before creating .latch', () => {

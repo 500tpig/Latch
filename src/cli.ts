@@ -136,7 +136,9 @@ const commandUsage: Record<string, string> = {
   save:
     'Usage: latch save <task-id> --expect-revision <revision> [--plan-file <path>] [--feedback <text>] [--decision <text>] [--artifact <kind>:<path>] [--remove-artifact <kind>:<path>] [--block-reason <text> --waiting-for <text> | --unblock] [--profile <light|standard> --profile-reason <text> [--user-requested-narrowing] | --provenance <clean|mixed> --provenance-reason <text> | --group <id> | --clear-group] [--json]',
   approve:
-    'Usage: latch approve <task-id> --expect-revision <revision> [--reason <text> | --authorization-file <path> | --retrospective-file <path>] [--feedback <text> | --non-implementation-feedback <text>] [--json]',
+    'Usage: latch approve <task-id> --expect-revision <revision> (--reason <text> | --authorization-file <path> | --retrospective-file <path>) [--json]\n' +
+    '       latch approve <task-id> --expect-revision <revision> --feedback <text> [--authorization-file <path>] [--json]\n' +
+    '       latch approve <task-id> --expect-revision <revision> --non-implementation-feedback <text> [--json]',
   verify:
     'Usage: latch verify <task-id> --expect-revision <revision> --name <name> [--diagnostic] [-- command...] [--json]',
   'verify-all':
@@ -925,28 +927,33 @@ function runApprove(args: string[], cwd: string, actor: string) {
   if (parsed.values.help) return process.stdout.write(`${commandUsage.approve}
 `)
   requirePositionals('approve', parsed.positionals, 1)
-  if (parsed.values.reason && parsed.values.feedback)
-    fail('invalid_arguments', '--reason and --feedback cannot be combined.')
-  if (
-    parsed.values['non-implementation-feedback'] !== undefined &&
-    (parsed.values.reason ||
-      parsed.values.feedback ||
-      parsed.values['authorization-file'] ||
-      parsed.values['retrospective-file'])
-  )
+  const hasReason = parsed.values.reason !== undefined
+  const hasFeedback = parsed.values.feedback !== undefined
+  const hasNonImplementationFeedback =
+    parsed.values['non-implementation-feedback'] !== undefined
+  const hasAuthorization = parsed.values['authorization-file'] !== undefined
+  const hasRetrospective = parsed.values['retrospective-file'] !== undefined
+
+  if (hasNonImplementationFeedback &&
+      (hasReason || hasFeedback || hasAuthorization || hasRetrospective))
     fail(
       'invalid_arguments',
       '--non-implementation-feedback cannot be combined with approval or implementation feedback inputs.',
     )
-  if (parsed.values['authorization-file'] && parsed.values['retrospective-file'])
+  if (
+    hasFeedback &&
+    (hasReason || hasRetrospective)
+  )
+    fail(
+      'invalid_arguments',
+      '--feedback cannot be combined with --reason or --retrospective-file.',
+    )
+  if (hasAuthorization && hasRetrospective)
     fail(
       'invalid_arguments',
       '--authorization-file and --retrospective-file cannot be combined.',
     )
-  if (
-    parsed.values.reason &&
-    (parsed.values['authorization-file'] || parsed.values['retrospective-file'])
-  )
+  if (hasReason && (hasAuthorization || hasRetrospective))
     fail('invalid_arguments', '--reason cannot be combined with structured work_basis.')
   const expectRevision = positiveInteger(
     parsed.values['expect-revision'],

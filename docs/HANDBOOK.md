@@ -79,8 +79,10 @@ latch context [task-id] --json --since-revision <revision>
 的最小合法 JSON（shape scaffold），不创建 `.latch`，也不要求 `title`、`--plan-file` 或
 canonical actor。Light scaffold 只包含 `goal`、`workspace_scope`、`scope`、
 `acceptance`、`approach` 和 `verification_plan`；Standard scaffold 继续包含完整
-12 字段。两个 scaffold 都只保证对应 authoring input 的结构合法，不能直接获得 work
-basis，也不替代 A/B/C 判断。模板入口不能与 task 创建参数组合。
+12 字段，并在 `verification_plan` 中提供一个最小 gate 示例，其中包含 `name`、
+`command`（`string[]`）和 `kind`。示例命令必须替换为当前项目的真实检查命令。两个
+scaffold 都只保证对应 authoring input 的结构合法，不能直接获得 work basis，也不替代
+A/B/C 判断。模板入口不能与 task 创建参数组合。
 
 plan 校验分为四步：Light authoring validation 要求六组核心字段；CLI 将省略的
 `api_assumptions`、`permission_assumptions`、`data_assumptions`、`user_flow`、
@@ -214,6 +216,12 @@ latch approve <task-id> --expect-revision 12 --feedback "修正实现细节"
 latch approve <task-id> --expect-revision 13 \
   --non-implementation-feedback "修正文档表述，代码未变"
 ```
+
+`approve --help` 将调用方式分为三个互斥 mode：plan authorization 使用
+`--reason`、`--authorization-file` 或 `--retrospective-file` 三选一；implementation
+feedback 使用 `--feedback`，并保留可选 `--authorization-file` 以更新授权范围；
+non-implementation feedback 只使用 `--non-implementation-feedback`。不支持的跨 mode
+组合会在读取 task 或 basis 文件前返回 `invalid_arguments`。
 
 首次批准绑定当前 plan revision。review 中的明确实现修正保留 plan approval，增加 `work_revision` 并回到 dev。发现其他活动 task 时，批准仍会成功，并提示共享 worktree 风险。
 

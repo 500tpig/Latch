@@ -32,6 +32,14 @@ const lightPlanDefaultFields = [
   'open_questions',
 ] as const satisfies ReadonlyArray<keyof TaskPlan>
 
+const standardVerificationPlanScaffold: TaskPlan['verification_plan'] = [
+  {
+    name: 'check',
+    command: ['replace-with-real-command'],
+    kind: 'gate',
+  },
+]
+
 type LightPlanCoreField = (typeof lightPlanCoreFields)[number]
 type LightPlanDefaultField = (typeof lightPlanDefaultFields)[number]
 
@@ -308,7 +316,11 @@ export function planTemplate(
       return Object.fromEntries(
         planFieldEntries.map(([field, spec]) => [
           field,
-          structuredClone(spec.scaffold),
+          structuredClone(
+            field === 'verification_plan'
+              ? standardVerificationPlanScaffold
+              : spec.scaffold,
+          ),
         ]),
       ) as TaskPlan
   }

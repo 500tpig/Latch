@@ -41,7 +41,11 @@ test('checkpoint templates are side-effect-free shape scaffolds that require com
     data_assumptions: [],
     user_flow: [],
     out_of_scope: [],
-    verification_plan: [],
+    verification_plan: [{
+      name: 'check',
+      command: ['replace-with-real-command'],
+      kind: 'gate',
+    }],
     open_questions: [],
   }
 
