@@ -35,6 +35,7 @@ import {
   actorId,
   assertWritableActor,
 } from './core/actor.js'
+import { LatchDomainError } from './core/errors.js'
 import { injectHostActor } from './host-adapter.js'
 import {
   discoverWorkspaceRoot,
@@ -1522,7 +1523,9 @@ try {
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error)
   const code =
-    error instanceof CliV2Error || error instanceof NotInitializedError
+    error instanceof CliV2Error ||
+    error instanceof LatchDomainError ||
+    error instanceof NotInitializedError
       ? error.code
       : 'command_failed'
   if (process.argv.includes('--json'))

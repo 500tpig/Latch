@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
+import { LatchDomainError } from '../errors.js'
 import {
   assertTaskWritableV2,
   readTaskV2,
@@ -291,7 +292,10 @@ export function verifyTaskV2(
   )
   assertReadyForWork(current)
   if (current.phase !== 'dev' && current.phase !== 'check')
-    throw new Error(`Cannot verify task in phase ${current.phase}.`)
+    throw new LatchDomainError(
+      'phase_mismatch',
+      `Cannot verify task in phase ${current.phase}.`,
+    )
   const name = requireText(input.name, '--name is required.')
   const planned = current.plan.verification_plan.find((item) => item.name === name)
   let kind: 'gate' | 'diagnostic'
@@ -639,7 +643,10 @@ export function verifyAllTasksV2(
   )
   assertReadyForWork(current)
   if (current.phase !== 'dev' && current.phase !== 'check')
-    throw new Error(`Cannot verify task in phase ${current.phase}.`)
+    throw new LatchDomainError(
+      'phase_mismatch',
+      `Cannot verify task in phase ${current.phase}.`,
+    )
 
   let revision = input.expectRevision
   let task = current

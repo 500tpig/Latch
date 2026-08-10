@@ -42,6 +42,17 @@ template、不准备 plan、不调用 `checkpoint`，也不自动执行 `latch i
 
 先读取 task artifact。只有任务涉及产品契约、架构、安装、文档行为，或现有证据不足时，才从 `docs/INDEX.md` 选择直接相关文档；简单且证据充分的改动不固定读取项目文档。
 
+### JSON 错误码
+
+CLI JSON error envelope 为可恢复的高频领域拒绝提供稳定 `error.code`：phase
+不匹配使用 `phase_mismatch`，plan、work revision 或 gate proof 失效使用
+`proof_stale`，live workspace mismatch 或 unresolved scope violation 使用
+`workspace_violation`。可读 `error.message` 保留具体原因，但 Agent 应按 code 选择恢复动作，
+不得解析英文 message。
+
+`invalid_arguments`、`not_initialized` 和 `writer_version_mismatch` 的既有语义不变；
+未分类的真实异常继续返回 `command_failed`。
+
 ## 命令
 
 ### 初始化

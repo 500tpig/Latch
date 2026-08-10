@@ -2,6 +2,7 @@ import {
   assertTaskWritableV2,
   updateTaskV4,
 } from '../task-store.js'
+import { LatchDomainError } from '../errors.js'
 import type { TaskStoreV2, TaskWriteResultV2 } from '../task-store.js'
 import {
   currentWorkspaceLiveStatus,
@@ -34,7 +35,10 @@ export function reopenReviewTaskV3(
     throw new Error('Reopen review requires schema_version 5.')
   if (current.blocked) throw new Error(`Task is blocked: ${current.blocked.reason}`)
   if (current.phase !== 'review')
-    throw new Error('Reopen review requires a task in review.')
+    throw new LatchDomainError(
+      'phase_mismatch',
+      'Reopen review requires a task in review.',
+    )
   if (!current.submission)
     throw new Error('Reopen review requires an existing submission.')
   if (!hasValidImplementationAuthorization(current))

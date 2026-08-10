@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
+import { LatchDomainError } from '../errors.js'
 import { listTasksV2 } from '../task-store.js'
 import type { TaskStoreV2, TaskWriteResultV2 } from '../task-store.js'
 import type { TaskProfile, TaskV2, WorkspaceSnapshot } from '../types.js'
@@ -267,10 +268,17 @@ export function assertSubmissionProof(
   const status = submissionProofStatus(task, liveStatus)
   if (status === 'missing')
     throw new Error('Current task does not have a submission.')
-  if (status === 'stale')
-    throw new Error(
+  if (status === 'stale') {
+    const code =
+      liveStatus === 'mismatch' ||
+      (task.workspace_proof?.unresolved_violations.length ?? 0) > 0
+        ? 'workspace_violation'
+        : 'proof_stale'
+    throw new LatchDomainError(
+      code,
       'Current submission proof is stale; run reopen-review before starting a new work revision.',
     )
+  }
 }
 
 export function assertSubmissionGateProof(task: TaskV2) {
@@ -281,9 +289,15 @@ export function assertSubmissionGateProof(task: TaskV2) {
     if (profileOf(task) === 'light')
       throw new Error('Light submit denied: --no-verify is not allowed for profile=light.')
     if (gates.length > 0)
-      throw new Error('Current no-verify submission no longer has a gate-free plan.')
+      throw new LatchDomainError(
+        'proof_stale',
+        'Current no-verify submission no longer has a gate-free plan.',
+      )
     return
   }
   if (gates.length === 0 || missingCurrentGates(task).length > 0)
-    throw new Error('Current submission no longer has valid gate results.')
+    throw new LatchDomainError(
+      'proof_stale',
+      'Current submission no longer has valid gate results.',
+    )
 }

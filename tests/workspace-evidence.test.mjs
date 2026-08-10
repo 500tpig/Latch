@@ -452,7 +452,9 @@ test('out-of-scope mutation creates a violation and submit rejects it', () => {
     '--knowledge-impact-file', '.latch/impact.json', '--json',
   ])
   assert.notEqual(submitted.status, 0)
-  assert.match(submitted.stderr, /unresolved workspace violation/)
+  const envelope = JSON.parse(submitted.stderr)
+  assert.equal(envelope.error.code, 'workspace_violation')
+  assert.match(envelope.error.message, /unresolved workspace violation/)
 })
 
 test('verify suggests a directory prefix for descendants of an exact missing path', () => {

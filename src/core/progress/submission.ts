@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from 'node:util'
+import { LatchDomainError } from '../errors.js'
 import {
   artifactDeliveryWarnings,
   untrackedWorktreeWarnings,
@@ -91,18 +92,27 @@ export function submitTaskV2(
     if (profileOf(current) === 'light')
       throw new Error('Light submit denied: --no-verify is not allowed for profile=light.')
     if (current.phase !== 'dev')
-      throw new Error('No-verify submission requires phase dev.')
+      throw new LatchDomainError(
+        'phase_mismatch',
+        'No-verify submission requires phase dev.',
+      )
     if (gates.length > 0)
       throw new Error('No-verify submission requires a plan without gates.')
     noVerifyReason = requireText(input.reason, '--reason is required with --no-verify.')
   } else {
     if (input.reason) throw new Error('--reason requires --no-verify.')
     if (current.phase !== 'check')
-      throw new Error('Gate submission requires phase check.')
+      throw new LatchDomainError(
+        'phase_mismatch',
+        'Gate submission requires phase check.',
+      )
     if (gates.length === 0)
       throw new Error('Gate submission requires at least one planned gate.')
     if (!current.workspace_proof)
-      throw new Error('Current task does not have a workspace proof generation.')
+      throw new LatchDomainError(
+        'proof_stale',
+        'Current task does not have a workspace proof generation.',
+      )
     try {
       validateCurrentGateEvidence(store, current)
     } catch (error) {
@@ -147,17 +157,20 @@ export function submitTaskV2(
         'workspace_baseline_mismatch',
         'submit',
       )
-      throw new Error(
+      throw new LatchDomainError(
+        'workspace_violation',
         `Submit denied: workspace proof generation advanced to ${invalidated.task.workspace_proof!.generation} at revision ${invalidated.task.revision}; rerun all named gates.`,
       )
     }
     if (current.workspace_proof.unresolved_violations.length > 0)
-      throw new Error(
+      throw new LatchDomainError(
+        'workspace_violation',
         `Submit denied: ${current.workspace_proof.unresolved_violations.length} unresolved workspace violation(s).`,
       )
     const missing = missingCurrentGates(current)
     if (missing.length > 0)
-      throw new Error(
+      throw new LatchDomainError(
+        'proof_stale',
         `Current work revision has incomplete gates: ${missing.map((item) => item.name).join(', ')}.`,
       )
   }
@@ -274,7 +287,10 @@ export function patchSubmissionKnowledgeImpactV3(
     )
   if (current.blocked) throw new Error(`Task is blocked: ${current.blocked.reason}`)
   if (current.phase !== 'review')
-    throw new Error('Patch denied: task must be in review.')
+    throw new LatchDomainError(
+      'phase_mismatch',
+      'Patch denied: task must be in review.',
+    )
   const submission = current.submission
   if (!submission) throw new Error('Patch denied: submission is required.')
   const previousImpact = submission.knowledge_impact
@@ -288,9 +304,15 @@ export function patchSubmissionKnowledgeImpactV3(
     submission.plan_revision !== undefined &&
     submission.plan_revision !== current.plan_revision
   )
-    throw new Error('Patch denied: submission plan_revision mismatch.')
+    throw new LatchDomainError(
+      'proof_stale',
+      'Patch denied: submission plan_revision mismatch.',
+    )
   if (submission.work_revision !== current.work_revision)
-    throw new Error('Patch denied: submission work_revision mismatch.')
+    throw new LatchDomainError(
+      'proof_stale',
+      'Patch denied: submission work_revision mismatch.',
+    )
   assertValidWorkBasis(current)
   assertSubmissionGateProof(current)
   assertKnowledgeImpact(input.knowledgeImpact, current.artifacts, 'patch input')
@@ -464,7 +486,10 @@ export function doneTaskV2(
   const current = readTaskV2(store, id)
   if (current.blocked) throw new Error(`Task is blocked: ${current.blocked.reason}`)
   if (current.phase !== 'review')
-    throw new Error(`Cannot complete task in phase ${current.phase}.`)
+    throw new LatchDomainError(
+      'phase_mismatch',
+      `Cannot complete task in phase ${current.phase}.`,
+    )
   const submission = current.submission
   if (!submission) throw new Error('Current task does not have a submission.')
   if (usesLightProofPackage(current)) {

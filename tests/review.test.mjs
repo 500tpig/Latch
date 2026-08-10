@@ -472,7 +472,9 @@ test('stale review exposes reopen recovery and starts a new auditable work revis
     'done', id, '--expect-revision', revision(cwd, id), '--json',
   ])
   assert.notEqual(deniedDone.status, 0)
-  assert.match(deniedDone.stderr, /submission proof is stale/)
+  const deniedEnvelope = JSON.parse(deniedDone.stderr)
+  assert.equal(deniedEnvelope.error.code, 'workspace_violation')
+  assert.match(deniedEnvelope.error.message, /submission proof is stale/)
 
   const reopened = run(cwd, [
     'reopen-review', id, '--expect-revision', revision(cwd, id),
@@ -946,10 +948,12 @@ test('done rejects stale submission and abandon requires reason and archives out
   task.work_revision += 1
   writeFileSync(taskPath(cwd, doneId), `${JSON.stringify(task, null, 2)}\n`)
   const stale = run(cwd, [
-    'done', doneId, '--expect-revision', revision(cwd, doneId),
+    'done', doneId, '--expect-revision', revision(cwd, doneId), '--json',
   ])
   assert.notEqual(stale.status, 0)
-  assert.match(stale.stderr, /submission proof is stale/)
+  const staleEnvelope = JSON.parse(stale.stderr)
+  assert.equal(staleEnvelope.error.code, 'proof_stale')
+  assert.match(staleEnvelope.error.message, /submission proof is stale/)
 
   task.phase = 'plan'
   writeFileSync(taskPath(cwd, doneId), `${JSON.stringify(task, null, 2)}\n`)

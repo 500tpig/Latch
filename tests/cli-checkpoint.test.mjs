@@ -10,6 +10,7 @@ import {
 import { join } from 'node:path'
 import {
   cleanupTemporaryDirectories,
+  checkpoint,
   init,
   plan,
   readTask,
@@ -209,6 +210,26 @@ test('checkpoint is create-only, requires a full plan, and returns warnings', ()
   assert.deepEqual(firstTask.artifacts, [
     { kind: 'brief', path: 'docs/brief.md' },
   ])
+})
+
+test('lifecycle phase rejections expose the stable phase_mismatch code', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const { task_id: id } = checkpoint(cwd)
+  const approved = run(cwd, [
+    'approve', id, '--expect-revision', '1',
+    '--reason', '批准 fixture', '--json',
+  ])
+  assert.equal(approved.status, 0, approved.stderr)
+
+  const rejected = run(cwd, [
+    'approve', id, '--expect-revision', '2',
+    '--reason', '重复批准', '--json',
+  ])
+  assert.notEqual(rejected.status, 0)
+  const envelope = JSON.parse(rejected.stderr)
+  assert.equal(envelope.error.code, 'phase_mismatch')
+  assert.match(envelope.error.message, /Cannot approve task in phase dev/)
 })
 
 test('checkpoint rejects missing or invalid plan without creating task', () => {

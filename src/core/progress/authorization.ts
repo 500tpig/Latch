@@ -4,6 +4,7 @@ import {
   updateTaskV2,
   updateTaskV4,
 } from '../task-store.js'
+import { LatchDomainError } from '../errors.js'
 import type { TaskStoreV2, TaskWriteResultV2 } from '../task-store.js'
 import type {
   ImplementationAuthorizationInput,
@@ -45,7 +46,10 @@ export function approveTaskV2(
 
   if (current.phase === 'plan') {
     if (input.feedback || input.nonImplementationFeedback !== undefined)
-      throw new Error('Review feedback requires a task in review.')
+      throw new LatchDomainError(
+        'phase_mismatch',
+        'Review feedback requires a task in review.',
+      )
     if (current.schema_version === 4 || current.schema_version === 5)
       assertAuthorizableTaskPlan(
         current.plan,
@@ -307,7 +311,10 @@ export function approveTaskV2(
     }), warnings)
   }
 
-  throw new Error(`Cannot approve task in phase ${current.phase}.`)
+  throw new LatchDomainError(
+    'phase_mismatch',
+    `Cannot approve task in phase ${current.phase}.`,
+  )
 }
 
 
