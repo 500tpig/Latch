@@ -45,6 +45,18 @@ export type TaskWriteResultV2 = {
   warnings: string[]
 }
 
+export type SharedWorktreeProjection = {
+  active_task_count: number
+  overlap_task_count: number
+  sample_limit: number
+  sample: Array<{
+    task_id: string
+    current_path: string
+    other_path: string
+  }>
+  truncated: boolean
+}
+
 export type TaskEventInputV2 = {
   type: TaskEventTypeV2
   fields?: Record<string, unknown>

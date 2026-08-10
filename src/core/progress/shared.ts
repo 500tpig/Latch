@@ -2,7 +2,11 @@ import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 import { LatchDomainError } from '../errors.js'
 import { listTasksV2 } from '../task-store.js'
-import type { TaskStoreV2, TaskWriteResultV2 } from '../task-store.js'
+import type {
+  SharedWorktreeProjection,
+  TaskStoreV2,
+  TaskWriteResultV2,
+} from '../task-store.js'
 import type { TaskProfile, TaskV2, WorkspaceSnapshot } from '../types.js'
 import {
   captureWorkspaceSnapshot,
@@ -44,6 +48,46 @@ export function sharedWorktreeWarnings(store: TaskStoreV2, taskId: string): stri
   return [
     `Shared worktree: task ${review.id} is active in phase review and ${reason}; verify changes against the whole worktree or use a separate Git worktree.`,
   ]
+}
+
+function workspaceScopePathsOverlap(currentPath: string, otherPath: string) {
+  return (
+    currentPath === otherPath ||
+    (currentPath.endsWith('/') && otherPath.startsWith(currentPath)) ||
+    (otherPath.endsWith('/') && currentPath.startsWith(otherPath))
+  )
+}
+
+export function sharedWorktreeProjection(
+  store: TaskStoreV2,
+  task: TaskV2,
+): SharedWorktreeProjection {
+  const activeTasks = listTasksV2(store)
+    .filter((candidate) => candidate.id !== task.id)
+    .sort((left, right) => left.id.localeCompare(right.id))
+  const currentPaths = [...(task.plan.workspace_scope?.paths ?? [])].sort()
+  const overlaps = activeTasks.flatMap((candidate) => {
+    const otherPaths = [...(candidate.plan.workspace_scope?.paths ?? [])].sort()
+    for (const currentPath of currentPaths) {
+      for (const otherPath of otherPaths) {
+        if (workspaceScopePathsOverlap(currentPath, otherPath))
+          return [{
+            task_id: candidate.id,
+            current_path: currentPath,
+            other_path: otherPath,
+          }]
+      }
+    }
+    return []
+  })
+  const sampleLimit = 8
+  return {
+    active_task_count: activeTasks.length,
+    overlap_task_count: overlaps.length,
+    sample_limit: sampleLimit,
+    sample: overlaps.slice(0, sampleLimit),
+    truncated: overlaps.length > sampleLimit,
+  }
 }
 
 export function withWarnings(

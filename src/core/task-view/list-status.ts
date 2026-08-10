@@ -1,6 +1,7 @@
 import { isWritableActor } from '../actor.js'
 import {
   currentWorkspaceLiveAssessment,
+  sharedWorktreeProjection,
   submissionProofStatus,
   type WorkspaceLiveStatus,
 } from '../progress/shared.js'
@@ -314,6 +315,7 @@ export function statusTask(
     ...(task.blocked ? { blocked: task.blocked } : {}),
     authorization: authorizationState(task),
     writer,
+    shared_worktree: sharedWorktreeProjection(store, task),
     ...(workspaceProof ? { workspace_proof: workspaceProof } : {}),
     gates: gateSummary(
       task,

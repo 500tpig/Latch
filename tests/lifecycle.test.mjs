@@ -254,6 +254,82 @@ test('active tasks allow approve and return a shared worktree warning', () => {
   }
 })
 
+test('shared worktree projection reports bounded deterministic scope overlaps', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const overlapFixtures = [
+    {
+      created: checkpoint(cwd, 'exact overlap', {
+        workspace_scope: { paths: ['src/shared.ts'] },
+      }),
+      current_path: 'src/shared.ts',
+      other_path: 'src/shared.ts',
+    },
+    {
+      created: checkpoint(cwd, 'directory contains file', {
+        workspace_scope: { paths: ['docs/HANDBOOK.md'] },
+      }),
+      current_path: 'docs/',
+      other_path: 'docs/HANDBOOK.md',
+    },
+    {
+      created: checkpoint(cwd, 'directory prefixes overlap', {
+        workspace_scope: { paths: ['packages/'] },
+      }),
+      current_path: 'packages/core/',
+      other_path: 'packages/',
+    },
+    ...Array.from({ length: 6 }, (_, index) => ({
+      created: checkpoint(cwd, `additional overlap ${index}`, {
+        workspace_scope: { paths: ['src/shared.ts'] },
+      }),
+      current_path: 'src/shared.ts',
+      other_path: 'src/shared.ts',
+    })),
+  ]
+  const historical = checkpoint(cwd, 'historical scope missing')
+  writeTask(cwd, historical.task_id, (task) => {
+    task.schema_version = 2
+    delete task.min_writer_version
+    delete task.primary_writer
+    delete task.profile
+    delete task.provenance
+    delete task.plan.workspace_scope
+  })
+  const target = checkpoint(cwd, 'projection target', {
+    workspace_scope: {
+      paths: ['src/shared.ts', 'docs/', 'packages/core/'],
+    },
+  })
+
+  const approved = approve(cwd, target)
+  assert.equal(approved.status, 0, approved.stderr)
+  const projection = JSON.parse(approved.stdout).shared_worktree
+  const expectedSample = overlapFixtures
+    .map((fixture) => ({
+      task_id: fixture.created.task_id,
+      current_path: fixture.current_path,
+      other_path: fixture.other_path,
+    }))
+    .sort((left, right) => left.task_id.localeCompare(right.task_id))
+    .slice(0, 8)
+  assert.deepEqual(projection, {
+    active_task_count: 10,
+    overlap_task_count: 9,
+    sample_limit: 8,
+    sample: expectedSample,
+    truncated: true,
+  })
+  assert.deepEqual(JSON.parse(approved.stdout).warnings, [])
+
+  const status = run(cwd, [
+    'context', target.task_id, '--json', '--status',
+  ])
+  assert.equal(status.status, 0, status.stderr)
+  assert.deepEqual(JSON.parse(status.stdout).task.shared_worktree, projection)
+  assert.equal(readTask(cwd, target.task_id).provenance, 'clean')
+})
+
 test('clean Git worktree suppresses warning when every other active task is in review', () => {
   const cwd = temporaryDirectory()
   writeFileSync(join(cwd, '.gitignore'), '.latch/\nplan-*.json\n')

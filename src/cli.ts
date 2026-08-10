@@ -95,6 +95,7 @@ import {
   verifyAllTasksV2,
   verifyTaskV2,
 } from './core/progress.js'
+import { sharedWorktreeProjection } from './core/progress/shared.js'
 import { now, readJsonFile } from './core/utils.js'
 
 const commandUsage: Record<string, string> = {
@@ -338,6 +339,7 @@ function mutationJson(
       workspaceProof?.live_status,
       archived,
     ),
+    shared_worktree: sharedWorktreeProjection(store, task),
     warnings,
   }
 }

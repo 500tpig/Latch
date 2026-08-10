@@ -71,7 +71,16 @@ test('schema 5 CLI completes lifecycle with structured closeout projections', ()
       revision: 0,
       created_at: createdEvent.created_at,
     })}\n${initialEvents}`)
-    json(run(cwd, ['approve', id, '--expect-revision', '1', '--reason', 'approved', '--json']))
+    const approved = json(run(cwd, [
+      'approve', id, '--expect-revision', '1', '--reason', 'approved', '--json',
+    ]))
+    assert.deepEqual(approved.shared_worktree, {
+      active_task_count: 0,
+      overlap_task_count: 0,
+      sample_limit: 8,
+      sample: [],
+      truncated: false,
+    })
     json(run(cwd, ['verify', id, '--expect-revision', '2', '--name', 'gate', '--json']))
     assert.equal(JSON.parse(readFileSync(join(cwd, '.latch', 'tasks', id, 'task.json'), 'utf8')).schema_version, 5)
     json(run(cwd, ['submit', id, '--expect-revision', '3', '--changes', 'first', '--knowledge-impact-file', '.latch/impact.json', '--json']))
@@ -91,6 +100,7 @@ test('schema 5 CLI completes lifecycle with structured closeout projections', ()
     assert.equal(status.unverified_count, contract.review.unverified_count)
     assert.equal(status.resolution_pending_count, contract.review.resolution_pending_count)
     assert.equal(status.next_action, contract.review.next_action)
+    assert.deepEqual(status.shared_worktree, approved.shared_worktree)
 
     const full = json(run(cwd, ['context', id, '--json'])).task
     assert.deepEqual(

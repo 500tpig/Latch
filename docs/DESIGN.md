@@ -37,6 +37,7 @@ Latch 是个人 macOS 开发环境中的本地任务状态记录器。它帮助 
 - `context --json --review` 组合最小 lifecycle、named gate、live proof 与有界的 schema 5 submission/closeout 投影，默认不携带历史，也不复制 task 真源或 verification proof。
 - schema 5 review submission 的 proof stale 时，Context 使用 `reopen_review` 替代 closeout 动作；writer mismatch 仍先返回 `takeover`，并通过 bounded `after_takeover_next_action` 预告接管后的恢复动作。
 - 所有成功 task mutation 的 JSON 复用 `status` 投影的 `next_action` 派生规则，并按 mutation 后的 task、writer 与 live proof 状态返回下一步；归档 mutation 返回 `read_only`。
+- status 与成功 mutation JSON 复用 bounded `shared_worktree` 投影，统计其他 open task 及 plan scope overlap；sample 最多返回 8 条确定性排序的 task ID 与相交 path。缺少 historical `workspace_scope` 的 task 只计入 active task，不推断 overlap。
 - CLI error envelope 将明确的生命周期拒绝投影为稳定领域 code：`phase_mismatch`、`proof_stale` 和 `workspace_violation`；Core 通过领域错误类型携带 code，未知异常仍为 `command_failed`。
 - open task 的 `workspace_proof.live_changes` 以 bounded additive view 展示 task scope content、ambient、index content 与 delivery state 计数和最多 8 个样本；该投影不改变 `live_status` 或 lifecycle 门禁。
 - `docs/INDEX.md` 指向唯一 current 产品契约；既有七个分章与 Record 分章按主题覆盖历史 v2 基线。
@@ -51,7 +52,7 @@ Latch 是个人 macOS 开发环境中的本地任务状态记录器。它帮助 
 - stale review 使用显式 `reopen-review` 返回 `dev`、推进 work revision 并移除旧 submission，之后重新运行 `verify-all` 并提交；proof 或 Git 状态恢复不伪装成 implementation feedback，也不允许在 review 中刷新 gate 后复用旧 submission。
 - scope 内 mutation 拒绝当前 gate pass；scope 外 mutation 还创建 unresolved violation，并在恢复或重新批准前阻止 submit。
 - `context` 只读计算 live workspace status，不推进 generation，也不写 task、event 或 evidence。
-- 不同 task 可以在同一 workspace 独立推进；共享 worktree 风险通过 warning 提示；
+- 不同 task 可以在同一 workspace 独立推进；结构化 scope overlap 与 human warning 均不声明文件归属、不自动修改 provenance，也不阻止 lifecycle mutation；
 - 原子写和短锁保护当前事实，不引入通用事务框架；
 - provenance 只保存在 task 根，不复制到 submission 或 closure；
 - archive 使用目录 rename 作为提交点。

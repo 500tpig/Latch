@@ -139,15 +139,23 @@ backup 或 archive。
 `context --json --brief` 不返回完整 `plan`，但 `task.verification_plan` 会列出每项计划验证的 `name`、`command`、`kind` 和 `status`。`status` 为 `pending`、`stale`、`pass` 或 `fail`；`task.verification` 继续保留执行结果的完整记录。
 
 `context --json --status` 是最小状态入口，返回 phase、revision、授权、writer、
-blocked、gate 计数、workspace proof 摘要和 `next_action`。存在 proof baseline 时，
+blocked、gate 计数、workspace proof 摘要、`shared_worktree` 和 `next_action`。存在 proof baseline 时，
 `workspace_proof.live_status` 为 `match`、`mismatch` 或 `unknown`；该值只读计算，
 不会推进 generation 或写 evidence。`context --json --since-revision <revision>`
 返回该 revision 之后的 event，以及当前最小状态；调用方必须已有对应 baseline，
 delta 不能替代完整 context。
 
+`shared_worktree` 统计当前 task 之外的 open task，并返回 `active_task_count`、
+`overlap_task_count`、`sample_limit`、`sample` 和 `truncated`。每条 sample 包含
+`task_id`、`current_path` 和 `other_path`；结果按 task ID 与 scope path 确定性排序，
+最多返回 8 条。精确文件相同、目录前缀包含文件或目录前缀互相包含均视为 overlap。
+历史 task 缺少 `workspace_scope` 时仍计入 `active_task_count`，但不推断 overlap。
+该投影只描述 plan scope 相交，不声明文件归属，也不修改 provenance 或 lifecycle gate。
+
 所有成功 task mutation 的 JSON 顶层也返回 `next_action`。该字段与
 `context --json --status` 共用派生规则，以 mutation 完成后的 phase、writer、gate 和
-live workspace proof 为准；`done` 与 `abandon` 返回 `read_only`。human 输出保持不变。
+live workspace proof 为准；`shared_worktree` 与 status 使用同一投影规则。`done` 与
+`abandon` 返回 `read_only`。human 输出保持不变。
 
 `context --json --review` 是 review 与 closeout 的紧凑入口。它保留 `goal`、
 `scope`、`acceptance`、writer、lifecycle、named gate 状态、live workspace proof、
@@ -443,7 +451,8 @@ historical 数据时，必须先建立独立产品契约和实施 task；current
 `task -> state`。Record mutation 使用独立 store 短锁，不与 task 或 state 组合。
 Latch 使用批准 plan 的 `workspace_scope.paths` 分类 gate mutation，但不自动认领文件
 归属或隔离不同 task。验证命令针对整个 worktree；需要代码隔离时由用户使用外部 Git
-worktree，Latch 不负责创建或合并它。
+worktree，Latch 不负责创建或合并它。scope overlap 投影与现有 shared worktree warning
+相互独立；review dirty worktree 提示继续描述 Git 状态，不解释为 plan scope overlap。
 
 同一连续写入流程中，成功 mutation 的 JSON 返回值包含新的 `revision` 和 mutation
 后的 `next_action`。下一条命令直接使用该 revision 作为 `--expect-revision`，不得只为 revision 重读 context；
