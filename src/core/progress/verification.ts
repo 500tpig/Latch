@@ -216,25 +216,6 @@ export function invalidateWorkspaceProof(
   const deltaRef = writeWorkspaceEvidence(directory, source, 'delta', delta)
   const nextGeneration = task.workspace_proof.generation + 1
   const reconciled = reconcileViolations(task, snapshot)
-  const resolvedIds = new Set([
-    ...reconciled.restored.map((id) =>
-      task.workspace_proof!.unresolved_violations.find(
-        (violation) => violation.id === id,
-      )?.path,
-    ),
-    ...reconciled.reclassified.map((id) =>
-      task.workspace_proof!.unresolved_violations.find(
-        (violation) => violation.id === id,
-      )?.path,
-    ),
-  ].filter((path): path is string => Boolean(path)))
-  const violations = appendViolations(
-    reconciled.remaining,
-    delta,
-    source,
-    nextGeneration,
-    resolvedIds,
-  )
   return updateTaskV4(store, task.id, {
     expectRevision: input.expectRevision,
     actor: input.actor,
@@ -258,7 +239,7 @@ export function invalidateWorkspaceProof(
         generation: nextGeneration,
         baseline_ref: liveRef,
         baseline_counts: structuredClone(snapshot.counts),
-        unresolved_violations: violations,
+        unresolved_violations: reconciled.remaining,
       }
       delete next.submission
     },
@@ -625,7 +606,12 @@ export function verifyTaskV2(
       before.counts.untracked +
       before.counts.explicit_ignored >
     0
-      ? `Gate ${name} ran against a dirty baseline with ${before.entries.length} covered path(s).`
+      ? `Gate ${name} ran against a dirty baseline: ${before.counts.in_scope} in scope, ${before.counts.out_of_scope} ambient covered path(s); samples: ${before.entries
+          .slice(0, 8)
+          .map((entry) =>
+            `${entry.path} (${entry.scope === 'in_scope' ? 'in scope' : 'ambient'})`,
+          )
+          .join(', ')}.`
       : undefined
   return {
     ...written,

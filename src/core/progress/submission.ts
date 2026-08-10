@@ -22,7 +22,7 @@ import type {
 import { now } from '../utils.js'
 import {
   captureWorkspaceSnapshot,
-  compareWorkspaceSnapshots,
+  compareWorkspaceScopeContent,
 } from '../workspace-evidence.js'
 import {
   assertSubmissionProof,
@@ -127,7 +127,11 @@ export function submitTaskV2(
         `Submit workspace evidence error: ${error instanceof Error ? error.message : String(error)}.`,
       )
     }
-    const liveDelta = compareWorkspaceSnapshots(baseline, live, workspaceScope)
+    const liveDelta = compareWorkspaceScopeContent(
+      baseline,
+      live,
+      workspaceScope,
+    )
     const reconciled = reconcileViolations(current, live)
     if (
       liveDelta.status !== 'unchanged' ||
@@ -244,6 +248,7 @@ export function submitTaskV2(
     ...artifactDeliveryWarnings(store.paths.workspaceRoot, current.artifacts),
     ...untrackedWorktreeWarnings(
       store.paths.workspaceRoot,
+      workspaceScope,
       input.verboseWarnings,
     ),
   ])

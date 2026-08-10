@@ -66,6 +66,30 @@ function gitStatus(workspaceRoot: string, gitCommand?: string) {
   )
 }
 
+function gitScopePaths(
+  workspaceRoot: string,
+  scope: WorkspaceScope,
+  gitCommand?: string,
+) {
+  if (scope.paths.length === 0) return []
+  return runGit(
+    workspaceRoot,
+    [
+      'ls-files',
+      '-z',
+      '--cached',
+      '--others',
+      '--exclude-standard',
+      '--',
+      ...scope.paths,
+    ],
+    gitCommand,
+  )
+    .toString('utf8')
+    .split('\0')
+    .filter(Boolean)
+}
+
 function parsePath(record: string, fieldsBeforePath: number) {
   const fields = record.split(' ')
   if (fields.length <= fieldsBeforePath)
@@ -272,6 +296,41 @@ function fileEvidence(
   }
 }
 
+function captureScopeEntries(
+  workspaceRoot: string,
+  scope: WorkspaceScope,
+  parsed: GitStatusEntry[],
+  capturedEntries: Map<string, WorkspaceEntry>,
+  gitCommand?: string,
+) {
+  const statusEntries = new Map(parsed.map((entry) => [entry.path, entry]))
+  const paths = new Set(gitScopePaths(workspaceRoot, scope, gitCommand))
+  for (const candidate of scope.paths)
+    if (!candidate.endsWith('/')) paths.add(candidate)
+  for (const entry of capturedEntries.values())
+    if (entry.scope === 'in_scope') paths.add(entry.path)
+
+  return [...paths]
+    .filter((path) => pathInWorkspaceScope(path, scope))
+    .sort()
+    .map((path) => {
+      const captured = capturedEntries.get(path)
+      if (captured) return captured
+      return fileEvidence(
+        workspaceRoot,
+        statusEntries.get(path) ?? {
+          path,
+          source: 'git_status',
+          indexState: '.',
+          worktreeState: '.',
+          untracked: false,
+        },
+        scope,
+        'workspace_scope',
+      )
+    })
+}
+
 function incompleteSnapshot(error: unknown): WorkspaceSnapshot {
   return {
     provider: 'git-v1',
@@ -327,6 +386,14 @@ export function captureWorkspaceSnapshot(
       explicitIgnored += 1
     }
 
+    const scopeEntries = captureScopeEntries(
+      workspaceRoot,
+      scope,
+      parsed,
+      entries,
+      options.gitCommand,
+    )
+
     const statusAfter = gitStatus(workspaceRoot, options.gitCommand)
     if (!statusBefore.equals(statusAfter))
       throw new Error('Git status changed during evidence capture.')
@@ -355,21 +422,31 @@ export function captureWorkspaceSnapshot(
         ).length,
       },
       entries: sortedEntries,
+      scope_entries: scopeEntries,
     }
   } catch (error) {
     return incompleteSnapshot(error)
   }
 }
 
-function sameState(left: WorkspaceEntry, right: WorkspaceEntry) {
+function sameWorktreeContent(left: WorkspaceEntry, right: WorkspaceEntry) {
+  const leftSubmoduleState =
+    left.submodule_state === 'N...' ? undefined : left.submodule_state
+  const rightSubmoduleState =
+    right.submodule_state === 'N...' ? undefined : right.submodule_state
   return (
-    left.index_state === right.index_state &&
-    left.worktree_state === right.worktree_state &&
     left.file_type === right.file_type &&
     left.exists === right.exists &&
     left.mode === right.mode &&
-    left.index_fingerprint === right.index_fingerprint &&
-    left.submodule_state === right.submodule_state &&
+    left.content_sha256 === right.content_sha256 &&
+    leftSubmoduleState === rightSubmoduleState
+  )
+}
+
+function sameDeliveryState(left: WorkspaceEntry, right: WorkspaceEntry) {
+  return (
+    left.index_state === right.index_state &&
+    left.worktree_state === right.worktree_state &&
     left.original_path === right.original_path
   )
 }
@@ -390,46 +467,55 @@ function changeScope(
     : 'out_of_scope'
 }
 
-export function compareWorkspaceSnapshots(
-  before: WorkspaceSnapshot,
-  after: WorkspaceSnapshot,
+function compareWorkspaceEntries(
+  beforeEntries: WorkspaceEntry[],
+  afterEntries: WorkspaceEntry[],
   scope: WorkspaceScope,
+  scopeContentOnly: boolean,
 ): WorkspaceDelta {
-  if (!before.complete || !after.complete) {
-    return {
-      status: 'evidence_error',
-      changed_count: 0,
-      in_scope_count: 0,
-      out_of_scope_count: 0,
-      samples: [],
-      changes: [],
-      error: before.error ?? after.error ?? 'Workspace evidence is incomplete.',
-    }
-  }
-  const beforeMap = new Map(before.entries.map((entry) => [entry.path, entry]))
-  const afterMap = new Map(after.entries.map((entry) => [entry.path, entry]))
+  const beforeMap = new Map(beforeEntries.map((entry) => [entry.path, entry]))
+  const afterMap = new Map(afterEntries.map((entry) => [entry.path, entry]))
   const paths = [...new Set([...beforeMap.keys(), ...afterMap.keys()])].sort()
   const changes: WorkspacePathChange[] = []
   for (const path of paths) {
     const oldEntry = beforeMap.get(path)
     const newEntry = afterMap.get(path)
     let change: WorkspacePathChange['change'] | undefined
-    if (!oldEntry && newEntry) change = 'created'
-    else if (oldEntry && !newEntry)
+    let category: NonNullable<WorkspacePathChange['category']> | undefined
+    if (!oldEntry && newEntry) {
+      change = 'created'
+      category = 'content'
+    } else if (oldEntry && !newEntry) {
       change =
+        !scopeContentOnly &&
         oldEntry.source === 'git_status' &&
         oldEntry.index_state !== '?' &&
         oldEntry.worktree_state !== '?'
           ? 'restored_clean'
           : 'removed'
-    else if (oldEntry && newEntry) {
-      if (!oldEntry.exists && newEntry.exists) change = 'created'
-      else if (oldEntry.exists && !newEntry.exists) change = 'removed'
-      else if (!sameState(oldEntry, newEntry)) change = 'state_changed'
-      else if (oldEntry.content_sha256 !== newEntry.content_sha256)
-        change = 'content_changed'
+      category = change === 'restored_clean' ? 'delivery_state' : 'content'
+    } else if (oldEntry && newEntry) {
+      if (!oldEntry.exists && newEntry.exists) {
+        change = 'created'
+        category = 'content'
+      } else if (oldEntry.exists && !newEntry.exists) {
+        change = 'removed'
+        category = 'content'
+      } else if (!sameWorktreeContent(oldEntry, newEntry)) {
+        change =
+          oldEntry.content_sha256 !== newEntry.content_sha256
+            ? 'content_changed'
+            : 'state_changed'
+        category = 'content'
+      } else if (!scopeContentOnly && oldEntry.index_fingerprint !== newEntry.index_fingerprint) {
+        change = 'state_changed'
+        category = 'index_content'
+      } else if (!scopeContentOnly && !sameDeliveryState(oldEntry, newEntry)) {
+        change = 'state_changed'
+        category = 'delivery_state'
+      }
     }
-    if (!change) continue
+    if (!change || !category) continue
     const scopeClass = changeScope(oldEntry, newEntry, scope)
     changes.push({
       path,
@@ -437,6 +523,7 @@ export function compareWorkspaceSnapshots(
         ? { old_path: newEntry?.original_path ?? oldEntry?.original_path }
         : {}),
       scope: scopeClass,
+      category,
       change,
       ...(oldEntry ? { before: oldEntry } : {}),
       ...(newEntry ? { after: newEntry } : {}),
@@ -444,6 +531,15 @@ export function compareWorkspaceSnapshots(
   }
   const inScopeCount = changes.filter((item) => item.scope === 'in_scope').length
   const outOfScopeCount = changes.length - inScopeCount
+  const contentChangedCount = changes.filter(
+    (item) => item.category === 'content',
+  ).length
+  const indexContentChangedCount = changes.filter(
+    (item) => item.category === 'index_content',
+  ).length
+  const deliveryStateChangedCount = changes.filter(
+    (item) => item.category === 'delivery_state',
+  ).length
   const status =
     changes.length === 0
       ? 'unchanged'
@@ -457,9 +553,52 @@ export function compareWorkspaceSnapshots(
     changed_count: changes.length,
     in_scope_count: inScopeCount,
     out_of_scope_count: outOfScopeCount,
+    content_changed_count: contentChangedCount,
+    index_content_changed_count: indexContentChangedCount,
+    delivery_state_changed_count: deliveryStateChangedCount,
     samples: changes.slice(0, 8),
     changes,
   }
+}
+
+function incompleteDelta(before: WorkspaceSnapshot, after: WorkspaceSnapshot) {
+  return {
+    status: 'evidence_error',
+    changed_count: 0,
+    in_scope_count: 0,
+    out_of_scope_count: 0,
+    content_changed_count: 0,
+    index_content_changed_count: 0,
+    delivery_state_changed_count: 0,
+    samples: [],
+    changes: [],
+    error: before.error ?? after.error ?? 'Workspace evidence is incomplete.',
+  } satisfies WorkspaceDelta
+}
+
+export function compareWorkspaceSnapshots(
+  before: WorkspaceSnapshot,
+  after: WorkspaceSnapshot,
+  scope: WorkspaceScope,
+): WorkspaceDelta {
+  if (!before.complete || !after.complete) return incompleteDelta(before, after)
+  return compareWorkspaceEntries(before.entries, after.entries, scope, false)
+}
+
+export function compareWorkspaceScopeContent(
+  before: WorkspaceSnapshot,
+  after: WorkspaceSnapshot,
+  scope: WorkspaceScope,
+): WorkspaceDelta {
+  if (!before.complete || !after.complete) return incompleteDelta(before, after)
+  if (!before.scope_entries || !after.scope_entries)
+    return compareWorkspaceSnapshots(before, after, scope)
+  return compareWorkspaceEntries(
+    before.scope_entries,
+    after.scope_entries,
+    scope,
+    true,
+  )
 }
 
 function evidenceCount(value: unknown) {

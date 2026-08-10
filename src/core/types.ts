@@ -68,6 +68,7 @@ export type WorkspaceSnapshot = {
   coverage: WorkspaceEvidenceCoverage
   counts: WorkspaceSnapshotCounts
   entries: WorkspaceEntry[]
+  scope_entries?: WorkspaceEntry[]
   error?: string
 }
 
@@ -81,6 +82,7 @@ export type WorkspacePathChange = {
   path: string
   old_path?: string
   scope: 'in_scope' | 'out_of_scope'
+  category?: 'content' | 'index_content' | 'delivery_state'
   change:
     | 'created'
     | 'removed'
@@ -101,6 +103,9 @@ export type WorkspaceDelta = {
   changed_count: number
   in_scope_count: number
   out_of_scope_count: number
+  content_changed_count?: number
+  index_content_changed_count?: number
+  delivery_state_changed_count?: number
   samples: WorkspacePathChange[]
   changes_ref?: WorkspaceEvidenceRef
   changes: WorkspacePathChange[]

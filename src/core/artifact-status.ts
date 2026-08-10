@@ -1,7 +1,8 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
-import type { TaskArtifact } from './types.js'
+import type { TaskArtifact, WorkspaceScope } from './types.js'
+import { pathInWorkspaceScope } from './workspace-evidence.js'
 
 export type ArtifactGitStatus =
   | 'tracked'
@@ -62,6 +63,7 @@ export function artifactWarnings(delivery: ArtifactDelivery[]): string[] {
 
 export function untrackedWorktreeWarnings(
   workspaceRoot: string,
+  scope: WorkspaceScope,
   verbose = false,
 ): string[] {
   const result = spawnSync(
@@ -74,15 +76,24 @@ export function untrackedWorktreeWarnings(
     .split('\0')
     .filter(Boolean)
     .sort()
+  const classified = paths.map((path) => ({
+    path,
+    scope: pathInWorkspaceScope(path, scope) ? 'in scope' : 'ambient',
+  }))
+  const inScope = classified.filter((entry) => entry.scope === 'in scope').length
+  const ambient = classified.length - inScope
   if (!verbose) {
-    const samples = paths.slice(0, 8).join(', ')
+    const samples = classified
+      .slice(0, 8)
+      .map((entry) => `${entry.path} (${entry.scope})`)
+      .join(', ')
     return [
-      `Worktree delivery: ${paths.length} untracked file${paths.length === 1 ? '' : 's'}; samples: ${samples}; they may not be delivered by Git.`,
+      `Worktree delivery: ${paths.length} untracked file${paths.length === 1 ? '' : 's'}; ${inScope} in scope, ${ambient} ambient; samples: ${samples}; they may not be delivered by Git.`,
     ]
   }
-  return paths
+  return classified
     .map(
-      (path) =>
-        `Worktree delivery: ${path} is untracked; it may not be delivered by Git.`,
+      (entry) =>
+        `Worktree delivery: ${entry.path} is untracked (${entry.scope}); it may not be delivered by Git.`,
     )
 }

@@ -5,6 +5,7 @@ import type { TaskStoreV2, TaskWriteResultV2 } from '../task-store.js'
 import type { TaskProfile, TaskV2, WorkspaceSnapshot } from '../types.js'
 import {
   captureWorkspaceSnapshot,
+  compareWorkspaceScopeContent,
   compareWorkspaceSnapshots,
   readWorkspaceEvidence,
 } from '../workspace-evidence.js'
@@ -106,18 +107,51 @@ export function missingCurrentGates(task: TaskV2) {
 
 export type WorkspaceLiveStatus = 'match' | 'mismatch' | 'unknown'
 
-export function currentWorkspaceLiveStatus(
+export type WorkspaceLiveAssessment = {
+  status: WorkspaceLiveStatus
+  changes: {
+    task_scope_content: number
+    ambient: number
+    index_content: number
+    delivery_state: number
+    sample_limit: number
+    sample: Array<{
+      path: string
+      scope: 'in_scope' | 'out_of_scope'
+      category?: 'content' | 'index_content' | 'delivery_state'
+      change: string
+    }>
+    truncated: boolean
+  }
+}
+
+function unknownWorkspaceLiveAssessment(): WorkspaceLiveAssessment {
+  return {
+    status: 'unknown',
+    changes: {
+      task_scope_content: 0,
+      ambient: 0,
+      index_content: 0,
+      delivery_state: 0,
+      sample_limit: 8,
+      sample: [],
+      truncated: false,
+    },
+  }
+}
+
+export function currentWorkspaceLiveAssessment(
   store: TaskStoreV2,
   task: TaskV2,
-): WorkspaceLiveStatus | undefined {
+): WorkspaceLiveAssessment | undefined {
   if (!task.workspace_proof) return undefined
-  if (!task.plan.workspace_scope) return 'unknown'
+  if (!task.plan.workspace_scope) return unknownWorkspaceLiveAssessment()
   const live = captureWorkspaceSnapshot(
     store.paths.workspaceRoot,
     task.plan.workspace_scope,
     task.artifacts,
   )
-  if (!live.complete) return 'unknown'
+  if (!live.complete) return unknownWorkspaceLiveAssessment()
   try {
     const directory = join(store.paths.tasksDir, task.id)
     const baseline = readWorkspaceEvidence<WorkspaceSnapshot>(
@@ -138,16 +172,64 @@ export function currentWorkspaceLiveStatus(
       readWorkspaceEvidence(directory, result.proof.after_ref)
       readWorkspaceEvidence(directory, result.proof.delta_ref)
     }
-    return compareWorkspaceSnapshots(
+    const scopeDelta = compareWorkspaceScopeContent(
       baseline,
       live,
       task.plan.workspace_scope,
-    ).status === 'unchanged'
-      ? 'match'
-      : 'mismatch'
+    )
+    const workspaceDelta = compareWorkspaceSnapshots(
+      baseline,
+      live,
+      task.plan.workspace_scope,
+    )
+    const scopeContentPaths = new Set(
+      scopeDelta.changes.map((change) => change.path),
+    )
+    const projectedChanges = workspaceDelta.changes.map((change) => ({
+      ...change,
+      category:
+        change.scope === 'out_of_scope' || scopeContentPaths.has(change.path)
+          ? change.category
+          : change.category === 'index_content'
+            ? 'index_content' as const
+            : 'delivery_state' as const,
+    }))
+    const sampleLimit = 8
+    return {
+      status: scopeDelta.status === 'unchanged' ? 'match' : 'mismatch',
+      changes: {
+        task_scope_content: scopeDelta.changed_count,
+        ambient: projectedChanges.filter(
+          (change) => change.scope === 'out_of_scope',
+        ).length,
+        index_content: projectedChanges.filter(
+          (change) =>
+            change.scope === 'in_scope' && change.category === 'index_content',
+        ).length,
+        delivery_state: projectedChanges.filter(
+          (change) =>
+            change.scope === 'in_scope' && change.category === 'delivery_state',
+        ).length,
+        sample_limit: sampleLimit,
+        sample: projectedChanges.slice(0, sampleLimit).map((change) => ({
+          path: change.path,
+          scope: change.scope,
+          category: change.category,
+          change: change.change,
+        })),
+        truncated: projectedChanges.length > sampleLimit,
+      },
+    }
   } catch {
-    return 'unknown'
+    return unknownWorkspaceLiveAssessment()
   }
+}
+
+export function currentWorkspaceLiveStatus(
+  store: TaskStoreV2,
+  task: TaskV2,
+): WorkspaceLiveStatus | undefined {
+  return currentWorkspaceLiveAssessment(store, task)?.status
 }
 
 export type SubmissionProofStatus = 'missing' | 'current' | 'stale'

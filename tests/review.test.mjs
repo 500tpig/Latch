@@ -370,6 +370,34 @@ test('stale review exposes reopen recovery and starts a new auditable work revis
   ).task
   assert.equal(currentStatus.next_action, 'prepare_closeout')
 
+  writeFileSync(join(cwd, 'outside.txt'), 'ambient after submit\n')
+  const ambientStatus = JSON.parse(
+    run(cwd, ['context', id, '--json', '--status']).stdout,
+  ).task
+  assert.equal(ambientStatus.workspace_proof.live_status, 'match')
+  assert.equal(ambientStatus.workspace_proof.live_changes.ambient, 1)
+  assert.equal(ambientStatus.workspace_proof.live_changes.task_scope_content, 0)
+  assert.equal(ambientStatus.next_action, 'prepare_closeout')
+
+  spawnSync('git', ['add', 'src/cli.ts'], { cwd, encoding: 'utf8' })
+  const delivered = spawnSync(
+    'git',
+    [
+      '-c', 'user.name=Latch Test',
+      '-c', 'user.email=latch@example.com',
+      'commit', '-m', 'deliver scoped content',
+    ],
+    { cwd, encoding: 'utf8' },
+  )
+  assert.equal(delivered.status, 0, delivered.stderr)
+  const deliveryStatus = JSON.parse(
+    run(cwd, ['context', id, '--json', '--status']).stdout,
+  ).task
+  assert.equal(deliveryStatus.workspace_proof.live_status, 'match')
+  assert.equal(deliveryStatus.workspace_proof.live_changes.ambient, 1)
+  assert.equal(deliveryStatus.workspace_proof.live_changes.delivery_state, 1)
+  assert.equal(deliveryStatus.next_action, 'prepare_closeout')
+
   writeFileSync(join(cwd, 'src', 'cli.ts'), 'changed after submit\n')
   const staleStatus = JSON.parse(
     run(cwd, ['context', id, '--json', '--status']).stdout,
@@ -592,14 +620,17 @@ test('submit verbose warnings report every untracked worktree file separately fr
   const id = checkpoint(cwd, plan({ verification_plan: [] }))
   writeFileSync(join(cwd, 'implementation.ts'), 'export const value = 1\n')
   writeFileSync(join(cwd, 'review-note.md'), 'review\n')
+  mkdirSync(join(cwd, 'src'), { recursive: true })
+  writeFileSync(join(cwd, 'src', 'cli.ts'), 'export const scoped = true\n')
   approve(cwd, id)
   const result = submit(cwd, id, [
     '--no-verify', '--reason', 'fixture', '--verbose-warnings',
   ])
   assert.equal(result.status, 0, result.stderr)
   const warnings = JSON.parse(result.stdout).warnings.join('\n')
-  assert.match(warnings, /Worktree delivery: implementation\.ts is untracked/)
-  assert.match(warnings, /Worktree delivery: review-note\.md is untracked/)
+  assert.match(warnings, /Worktree delivery: implementation\.ts is untracked \(ambient\)/)
+  assert.match(warnings, /Worktree delivery: review-note\.md is untracked \(ambient\)/)
+  assert.match(warnings, /Worktree delivery: src\/cli\.ts is untracked \(in scope\)/)
   assert.doesNotMatch(warnings, /Artifact delivery: implementation\.ts/)
 })
 
@@ -621,7 +652,8 @@ test('submit aggregates untracked worktree warnings with eight sorted samples by
   )
   assert.equal(warnings.length, 1)
   assert.match(warnings[0], /10 untracked files/)
-  assert.match(warnings[0], /samples: file-00\.txt, file-01\.txt, file-02\.txt, file-03\.txt, file-04\.txt, file-05\.txt, file-06\.txt, file-07\.txt/)
+  assert.match(warnings[0], /0 in scope, 10 ambient/)
+  assert.match(warnings[0], /samples: file-00\.txt \(ambient\), file-01\.txt \(ambient\), file-02\.txt \(ambient\), file-03\.txt \(ambient\), file-04\.txt \(ambient\), file-05\.txt \(ambient\), file-06\.txt \(ambient\), file-07\.txt \(ambient\)/)
   assert.doesNotMatch(warnings[0], /file-08\.txt/)
 })
 

@@ -16,6 +16,7 @@ import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import {
   captureWorkspaceSnapshot,
+  compareWorkspaceScopeContent,
   compareWorkspaceSnapshots,
   parseGitStatusPorcelainV2,
   pathInWorkspaceScope,
@@ -141,6 +142,10 @@ test('snapshot captures clean, dirty, staged, untracked, delete, mode, symlink, 
   assert.equal(clean.entries.length, 1)
   assert.equal(clean.entries[0].path, 'ignored.txt')
   assert.equal(clean.entries[0].exists, false)
+  assert.equal(
+    clean.scope_entries.find((entry) => entry.path === 'tracked.txt').exists,
+    true,
+  )
 
   for (const name of ['staged.txt', 'deleted.txt', 'rename-source.txt', 'mode.txt'])
     writeFileSync(join(cwd, name), `${name}\n`)
@@ -201,7 +206,8 @@ test('snapshot detects dirty content and staged index changes with stable status
   const stagedAfter = captureWorkspaceSnapshot(cwd, scope)
   const stagedDelta = compareWorkspaceSnapshots(stagedBefore, stagedAfter, scope)
   assert.equal(stagedDelta.status, 'in_scope_mutation')
-  assert.equal(stagedDelta.changes[0].change, 'state_changed')
+  assert.equal(stagedDelta.changes[0].change, 'content_changed')
+  assert.equal(stagedDelta.changes[0].category, 'content')
 
   writeFileSync(join(cwd, 'untracked.txt'), 'one\n')
   const untrackedBefore = captureWorkspaceSnapshot(cwd, scope)
@@ -217,6 +223,49 @@ test('snapshot detects dirty content and staged index changes with stable status
     untrackedDelta.changes.find((change) => change.path === 'untracked.txt').change,
     'content_changed',
   )
+})
+
+test('scope content comparison ignores ambient and Git delivery changes but detects content changes', () => {
+  const cwd = temporaryRepo()
+  const scope = { paths: ['tracked.txt'] }
+  writeFileSync(join(cwd, 'tracked.txt'), 'implementation\n')
+  const baseline = captureWorkspaceSnapshot(cwd, scope)
+
+  writeFileSync(join(cwd, 'outside.txt'), 'ambient\n')
+  const ambient = captureWorkspaceSnapshot(cwd, scope)
+  assert.equal(
+    compareWorkspaceScopeContent(baseline, ambient, scope).status,
+    'unchanged',
+  )
+  assert.equal(
+    compareWorkspaceSnapshots(baseline, ambient, scope).status,
+    'out_of_scope_mutation',
+  )
+
+  git(cwd, ['add', 'tracked.txt'])
+  const staged = captureWorkspaceSnapshot(cwd, scope)
+  const stagedDelta = compareWorkspaceSnapshots(ambient, staged, scope)
+  assert.equal(stagedDelta.changes[0].category, 'index_content')
+  assert.equal(
+    compareWorkspaceScopeContent(ambient, staged, scope).status,
+    'unchanged',
+  )
+
+  git(cwd, ['commit', '-m', 'deliver implementation'])
+  const committed = captureWorkspaceSnapshot(cwd, scope)
+  assert.equal(
+    compareWorkspaceScopeContent(staged, committed, scope).status,
+    'unchanged',
+  )
+
+  writeFileSync(join(cwd, 'tracked.txt'), 'changed implementation\n')
+  const changed = compareWorkspaceScopeContent(
+    committed,
+    captureWorkspaceSnapshot(cwd, scope),
+    scope,
+  )
+  assert.equal(changed.status, 'in_scope_mutation')
+  assert.equal(changed.changes[0].category, 'content')
 })
 
 test('porcelain parser preserves rename origins and submodule state', () => {
@@ -304,6 +353,29 @@ test('workspace scope keeps exact files separate from directory prefixes', () =>
   )
 })
 
+test('scope content capture expands tracked and untracked directory descendants', () => {
+  const cwd = temporaryRepo()
+  mkdirSync(join(cwd, 'src'), { recursive: true })
+  writeFileSync(join(cwd, 'src', 'tracked.ts'), 'export const tracked = true\n')
+  git(cwd, ['add', 'src/tracked.ts'])
+  git(cwd, ['commit', '-m', 'add scoped directory'])
+  const scope = { paths: ['src/'] }
+  const baseline = captureWorkspaceSnapshot(cwd, scope)
+  assert.deepEqual(
+    baseline.scope_entries.map((entry) => entry.path),
+    ['src/tracked.ts'],
+  )
+
+  writeFileSync(join(cwd, 'src', 'untracked.ts'), 'export const added = true\n')
+  const delta = compareWorkspaceScopeContent(
+    baseline,
+    captureWorkspaceSnapshot(cwd, scope),
+    scope,
+  )
+  assert.equal(delta.status, 'in_scope_mutation')
+  assert.equal(delta.changes[0].path, 'src/untracked.ts')
+})
+
 test('clean workspace passes and in-scope mutation denies pass', () => {
   const cleanRoot = temporaryRepo()
   const cleanId = createTask(cleanRoot, plan([
@@ -333,6 +405,21 @@ test('clean workspace passes and in-scope mutation denies pass', () => {
   assert.equal(body.verification.command_outcome.status, 'pass')
   assert.equal(body.verification.workspace_effect.status, 'in_scope_mutation')
   assert.equal(readTask(mutateRoot, mutateId).workspace_proof.generation, 2)
+})
+
+test('dirty baseline warning separates in-scope and ambient paths', () => {
+  const cwd = temporaryRepo()
+  const id = createTask(cwd, plan([
+    { name: 'clean', command: [process.execPath, '-e', 'process.exit(0)'] },
+  ]))
+  writeFileSync(join(cwd, 'tracked.txt'), 'dirty\n')
+  writeFileSync(join(cwd, 'outside.txt'), 'ambient\n')
+  const result = verify(cwd, id, 'clean')
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(
+    JSON.parse(result.stdout).warnings.join('\n'),
+    /dirty baseline: 1 in scope, 1 ambient covered path\(s\)/,
+  )
 })
 
 test('out-of-scope mutation creates a violation and submit rejects it', () => {

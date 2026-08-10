@@ -31,9 +31,11 @@ Latch 是个人 macOS 开发环境中的本地任务状态记录器。它帮助 
 - 新 plan 使用 `workspace_scope.paths` 保存机器范围；自然语言 `plan.scope`、授权摘要和 artifact 不替代该字段，获得 work basis 前 paths 必须非空。
 - named gate 保存 command outcome、before/after workspace evidence、workspace effect 和 proof generation；只有当前 generation 上的完整无 mutation proof 才能参与 submit。
 - workspace evidence 覆盖 Git-visible 脏路径、非 ignored untracked 路径，以及 scope 或 artifact 精确引用的 ignored 文件；不递归扫描 ignored 目录。
+- 新 evidence 在既有 dirty `entries` 外保存可选的 `scope_entries` 内容视图；gate 前后仍比较完整 dirty worktree，review live freshness 与 done 只比较 task scope 的 worktree 内容。历史 sidecar 缺少该字段时继续使用旧的 fail-closed 比较，不迁移或重写。
 - schema 5 submission 使用结构化 `unverified_items`，closeout 为每项保存 `resolved`、`accepted_risk` 或 `followup` resolution；不保留自由文本 closeout 双路径。
 - schema 5 Context 在最小 lifecycle 投影之外提供 bounded item、resolution 摘要和 reviewer next action；`tests/fixtures/context-v5-board-reader.json` 是 Board/adopter 的冻结读取契约。
 - schema 5 review submission 的 proof stale 时，Context 使用 `reopen_review` 替代 closeout 动作；writer mismatch 仍先返回 `takeover`，并通过 bounded `after_takeover_next_action` 预告接管后的恢复动作。
+- open task 的 `workspace_proof.live_changes` 以 bounded additive view 展示 task scope content、ambient、index content 与 delivery state 计数和最多 8 个样本；该投影不改变 `live_status` 或 lifecycle 门禁。
 - `docs/INDEX.md` 指向唯一 current 产品契约；既有七个分章与 Record 分章按主题覆盖历史 v2 基线。
 
 ## 关键取舍
@@ -41,7 +43,8 @@ Latch 是个人 macOS 开发环境中的本地任务状态记录器。它帮助 
 - 创建 task 不等于批准实施；
 - 每张 implementation task 单独获得 direct approval；
 - plan 和 work revision 使旧结果明确失效；
-- proof generation 表示稳定的 covered workspace baseline；工作区 mismatch 或 gate mutation 使旧 generation 的 named gate proof stale。
+- proof generation 表示稳定的 covered workspace baseline；gate mutation 或 task scope 内容 mismatch 使旧 generation 的 named gate proof stale。scope 外 ambient 变化保持可见，但不会单独使 review submission stale。
+- workspace delta 以 additive `category` 区分 `content`、`index_content` 和 `delivery_state`；Git add、取消暂存或 commit 在 worktree 字节未变化时属于 delivery evidence，不替代 Git 交付，也不单独使 review proof stale。
 - stale review 使用显式 `reopen-review` 返回 `dev`、推进 work revision 并移除旧 submission，之后重新运行 `verify-all` 并提交；proof 或 Git 状态恢复不伪装成 implementation feedback，也不允许在 review 中刷新 gate 后复用旧 submission。
 - scope 内 mutation 拒绝当前 gate pass；scope 外 mutation 还创建 unresolved violation，并在恢复或重新批准前阻止 submit。
 - `context` 只读计算 live workspace status，不推进 generation，也不写 task、event 或 evidence。

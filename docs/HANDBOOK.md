@@ -245,6 +245,18 @@ evidence 覆盖 Git-visible staged、unstaged、untracked、delete、rename、mo
 递归扫描。完整 before、after 和 delta 保存在 task 的 `evidence/` sidecar；human
 输出和 brief JSON 最多显示稳定排序后的 8 个样本，但正确性判断使用完整集合。
 
+新生成的 snapshot 还保存可选的 `scope_entries` 内容视图。gate 启动前后继续比较完整
+dirty worktree，因此命令造成的 scope 外 mutation 仍会创建 violation 并阻止 pass；
+review live freshness、submit 收尾 preflight 与 done 则只比较 task scope 的 worktree
+内容。scope 外 ambient 变化、Git add、取消暂存或 commit 在 scope 字节未变化时不会
+单独使 submission stale。delta 的 additive `category` 区分 `content`、
+`index_content` 与 `delivery_state`；历史 evidence 缺少 `scope_entries` 时继续按旧规则
+fail closed，不执行迁移。
+
+open task 的 status/brief 在 `workspace_proof.live_changes` 返回 task scope content、
+ambient、index content 和 delivery state 计数，以及最多 8 个稳定样本。该 additive
+投影用于解释 `live_status`，不增加新的 next action 或 mutation。
+
 scope 内 mutation 拒绝当前 gate pass，并推进 generation，使旧 generation 的全部
 named gate proof stale。scope 外 mutation 还会创建 unresolved violation，在路径恢复
 或 plan 扩 scope 并重新批准前阻止 submit。Latch 保留工作区现状，不自动 rollback、
@@ -293,9 +305,10 @@ schema 5 submission 将每个 `--unverified-item` 确定性编号为
 `none` 时 reason 需说明为何不更新模块知识。submission 绑定当前 work revision，
 verified 摘要由结构化 gate 结果生成。
 
-submit 还会检查 live snapshot、evidence sidecar 完整性、work revision、proof
-generation 和 unresolved violation。live baseline mismatch 会先写入新的 generation
-并使旧 proof stale，再拒绝 submit；该过程不会自动执行 gate。
+submit 还会检查 live scope 内容、evidence sidecar 完整性、work revision、proof
+generation 和 unresolved violation。scope 内容 baseline mismatch 会先写入新的
+generation 并使旧 proof stale，再拒绝 submit；ambient-only 或 delivery-only 变化保留
+为 warning，不会单独推进 generation。该过程不会自动执行 gate。
 
 ### 恢复 stale review
 
@@ -321,7 +334,7 @@ writer mismatch 与 stale proof 同时存在时，`next_action` 仍为 `takeover
 通过 `after_takeover_next_action: "reopen_review"` 提供接管后的下一步。blocked 状态仍先
 执行 `unblock`。
 
-context 会在 `artifact_delivery` 中标记 task 已声明 artifact 的 Git 状态：`tracked`、`untracked`、`ignored`、`missing` 或 `unknown`。submit 对非 `tracked` artifact 继续逐项返回非阻断 warning。worktree 中的 untracked 文件默认合并为一条 warning，包含总数和稳定排序后的最多 8 个样本；`submit --verbose-warnings` 返回完整逐文件清单。两种形式都不自动推断文件归属或迁移原因。Git 状态不把 ignored 文件自动解释为「本地知识」，也不增加 submit 或 done 门禁。
+context 会在 `artifact_delivery` 中标记 task 已声明 artifact 的 Git 状态：`tracked`、`untracked`、`ignored`、`missing` 或 `unknown`。submit 对非 `tracked` artifact 继续逐项返回非阻断 warning。worktree 中的 untracked 文件默认合并为一条 warning，包含 in-scope/ambient 计数、稳定排序后的最多 8 个样本及其分类；`submit --verbose-warnings` 返回完整逐文件分类。gate 的 dirty baseline warning 同样直接显示 in-scope 与 ambient 计数。两种形式都不自动推断文件归属或迁移原因。Git 状态不把 ignored 文件自动解释为「本地知识」，也不增加 submit 或 done 门禁。
 
 ### 修正 review submission 的知识影响
 

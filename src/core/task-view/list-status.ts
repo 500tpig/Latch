@@ -1,6 +1,6 @@
 import { isWritableActor } from '../actor.js'
 import {
-  currentWorkspaceLiveStatus,
+  currentWorkspaceLiveAssessment,
   submissionProofStatus,
   type WorkspaceLiveStatus,
 } from '../progress/shared.js'
@@ -167,9 +167,10 @@ export function workspaceProofView(
   archived: boolean,
 ) {
   if (!task.workspace_proof) return undefined
-  const liveStatus = archived
-    ? 'unknown'
-    : (currentWorkspaceLiveStatus(store, task) ?? 'unknown')
+  const liveAssessment = archived
+    ? undefined
+    : currentWorkspaceLiveAssessment(store, task)
+  const liveStatus = archived ? 'unknown' : (liveAssessment?.status ?? 'unknown')
   return {
     generation: task.workspace_proof.generation,
     baseline_dirty:
@@ -178,6 +179,7 @@ export function workspaceProofView(
       task.workspace_proof.baseline_counts.explicit_ignored,
     baseline_out_of_scope: task.workspace_proof.baseline_counts.out_of_scope,
     live_status: liveStatus,
+    ...(liveAssessment ? { live_changes: liveAssessment.changes } : {}),
     unresolved_violations:
       task.workspace_proof.unresolved_violations.length,
   }
