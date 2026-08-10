@@ -27,7 +27,7 @@ import {
 } from '../core/task-store.js'
 
 export const contextUsage =
-  'Usage: latch context [task-id] [--json] [--brief | --status | --since-revision <revision>] [--history <timeline|events|both>]'
+  'Usage: latch context [task-id] [--json] [--brief | --review | --status | --since-revision <revision>] [--history <timeline|events|both>]'
 export const contextPackUsage =
   'Usage: latch context pack --input-file <path> [--json]'
 
@@ -55,6 +55,7 @@ export function runContext(args: string[], cwd: string, actor: string) {
   const parsed = parseCommand(args, {
     ...commonOptions(),
     brief: { type: 'boolean' },
+    review: { type: 'boolean' },
     status: { type: 'boolean' },
     'since-revision': { type: 'string' },
     history: { type: 'string' },
@@ -64,24 +65,29 @@ export function runContext(args: string[], cwd: string, actor: string) {
     fail('invalid_arguments', contextUsage)
   validateBrief(parsed.values.json, parsed.values.brief)
   if (
-    (parsed.values.status ||
+    (parsed.values.review ||
+      parsed.values.status ||
       parsed.values['since-revision'] !== undefined ||
       parsed.values.history !== undefined) &&
     !parsed.values.json
   )
-    fail('invalid_arguments', '--status, --since-revision, and --history require --json.')
+    fail(
+      'invalid_arguments',
+      '--review, --status, --since-revision, and --history require --json.',
+    )
   const history = contextHistoryView(parsed.values.history)
   if (parsed.values.status && history !== undefined)
     fail('invalid_arguments', '--history cannot be combined with --status.')
   const selectedViews = [
     Boolean(parsed.values.brief),
+    Boolean(parsed.values.review),
     Boolean(parsed.values.status),
     parsed.values['since-revision'] !== undefined,
   ].filter(Boolean).length
   if (selectedViews > 1)
     fail(
       'invalid_arguments',
-      '--brief, --status, and --since-revision are mutually exclusive.',
+      '--brief, --review, --status, and --since-revision are mutually exclusive.',
     )
   if (!parsed.positionals[0] && !isWritableActor(actor))
     fail(
@@ -103,6 +109,7 @@ export function runContext(args: string[], cwd: string, actor: string) {
   if (parsed.values.json)
     return json(contextJsonV2(store, context, actor, {
       brief: Boolean(parsed.values.brief),
+      review: Boolean(parsed.values.review),
       status: Boolean(parsed.values.status),
       sinceRevision,
       history,

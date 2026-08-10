@@ -10,6 +10,7 @@ import {
   workspaceProofView,
 } from './list-status.js'
 import type { ContextJsonOptions } from './list-status.js'
+import { reviewTask } from './review.js'
 import { jsonEnvelopeV2 } from './shared.js'
 import { timelineEvents } from './timeline.js'
 
@@ -26,8 +27,12 @@ export function contextJsonV2(
   const delivery = artifactDelivery(store.paths.workspaceRoot, task.artifacts)
   const deliveryWarnings = artifactWarnings(delivery)
   const current = currentTaskIdV2(store, actor) === task.id
-  const includeRawEvents = options.history !== 'timeline'
-  const includeTimeline = options.history !== 'events'
+  const includeRawEvents = options.review
+    ? options.history === 'events' || options.history === 'both'
+    : options.history !== 'timeline'
+  const includeTimeline = options.review
+    ? options.history === 'timeline' || options.history === 'both'
+    : options.history !== 'events'
   const includeTimelineDetails = options.history !== 'timeline'
   const historyView = options.history
   if (options.sinceRevision !== undefined) {
@@ -56,24 +61,35 @@ export function contextJsonV2(
   return {
     ...jsonEnvelopeV2(),
     ...archivedContextMetadata(context),
-    view: options.status ? 'status' : options.brief ? 'brief' : 'full',
+    view: options.status
+      ? 'status'
+      : options.review
+        ? 'review'
+        : options.brief
+          ? 'brief'
+          : 'full',
     current,
     task: options.status
       ? statusTask(store, task, actor, context.archived)
-      : options.brief
-        ? briefTask(store, task, context.archived)
-        : fullTask(
-            task,
-            workspaceProofView(store, task, context.archived)?.live_status,
-          ),
+      : options.review
+        ? reviewTask(store, task, actor, context.archived)
+        : options.brief
+          ? briefTask(store, task, context.archived)
+          : fullTask(
+              task,
+              workspaceProofView(store, task, context.archived)?.live_status,
+            ),
     ...(!options.status && includeRawEvents
-      ? { recent_events: options.brief ? events.slice(-5) : events }
+      ? {
+          recent_events:
+            options.brief || options.review ? events.slice(-5) : events,
+        }
       : {}),
     ...(!options.status && includeTimeline
       ? {
           timeline: timelineEvents(
             task,
-            options.brief ? events.slice(-5) : events,
+            options.brief || options.review ? events.slice(-5) : events,
             includeTimelineDetails,
           ),
         }
@@ -84,6 +100,6 @@ export function contextJsonV2(
     ...([...eventLog.warnings, ...deliveryWarnings].length > 0
       ? { warnings: [...eventLog.warnings, ...deliveryWarnings] }
       : {}),
-    ...(!options.status && group ? { group } : {}),
+    ...(!options.status && !options.review && group ? { group } : {}),
   }
 }

@@ -1,5 +1,5 @@
 {
-  "fixture_schema_version": 1,
+  "fixture_schema_version": 2,
   "purpose": "Schema 5 reader contract for richer Context views consumed by Board or external readers.",
   "contract_status": "current",
   "external_adopter_status": "pending",
@@ -7,6 +7,26 @@
   "min_writer_version": "0.5.0",
   "events_schema_version": 3,
   "sample_limit": 8,
+  "review_view": {
+    "view": "review",
+    "default_omitted_history": [
+      "recent_events",
+      "timeline"
+    ],
+    "omitted_task_fields": [
+      "plan",
+      "verification",
+      "implementation_approval",
+      "work_basis",
+      "artifacts"
+    ],
+    "named_gate_fields": [
+      "command",
+      "kind",
+      "name",
+      "status"
+    ]
+  },
   "views": {
     "open": {
       "phase": "dev",
@@ -18,6 +38,9 @@
           "truncated": false
         },
         "reviewer_next_action": "verify_or_submit"
+      },
+      "review": {
+        "next_action": "submit"
       }
     },
     "review_truncated": {
@@ -40,6 +63,28 @@
         },
         "reviewer_next_action": "prepare_closeout"
       },
+      "review": {
+        "next_action": "prepare_closeout",
+        "submission": {
+          "changes": "reader review fixture",
+          "unverified_count": 10,
+          "unverified_items_summary": {
+            "total": 10,
+            "sample_limit": 8,
+            "sample": [
+              { "item_id": "U1", "summary": "Reader item 1" },
+              { "item_id": "U2", "summary": "Reader item 2" },
+              { "item_id": "U3", "summary": "Reader item 3" },
+              { "item_id": "U4", "summary": "Reader item 4" },
+              { "item_id": "U5", "summary": "Reader item 5" },
+              { "item_id": "U6", "summary": "Reader item 6" },
+              { "item_id": "U7", "summary": "Reader item 7" },
+              { "item_id": "U8", "summary": "Reader item 8" }
+            ],
+            "truncated": true
+          }
+        }
+      },
       "timeline": {
         "submitted_title": "提交验收：10 项待处理",
         "unverified_item_ids_total": 10,
@@ -57,9 +102,22 @@
       "schema5_view": {
         "reviewer_next_action": "reopen_review"
       },
+      "review": {
+        "next_action": "reopen_review",
+        "live_status": "mismatch",
+        "gate_status": "stale",
+        "gate_stale_reason": "workspace_baseline_mismatch",
+        "writer_mismatch_next_action": "takeover",
+        "after_takeover_next_action": "reopen_review"
+      },
       "timeline": {
         "decision_event_type": "decision_recorded",
         "work_event_type": "work_started"
+      }
+    },
+    "review_ready": {
+      "review": {
+        "next_action": "review_or_archive"
       }
     },
     "archived_mixed": {
@@ -108,6 +166,9 @@
           },
           "followup_next_action": "track_followup_items"
         }
+      },
+      "review": {
+        "next_action": "read_only"
       },
       "timeline": {
         "done_title": "完成归档：3 项 closeout",

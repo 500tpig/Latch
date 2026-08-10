@@ -6,9 +6,9 @@ import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
 const cli = join(process.cwd(), 'dist/cli.js')
-function run(cwd, args) {
+function run(cwd, args, actor = 'codex:session:integration') {
   return spawnSync(process.execPath, [cli, ...args], {
-    cwd, encoding: 'utf8', env: { ...process.env, LATCH_ACTOR: 'codex:session:integration' },
+    cwd, encoding: 'utf8', env: { ...process.env, LATCH_ACTOR: actor },
   })
 }
 function json(result) {
@@ -238,6 +238,28 @@ test('schema 5 Board reader fixture matches richer bounded Context projections',
       openBrief.schema5_view.reviewer_next_action,
       contract.views.open.schema5_view.reviewer_next_action,
     )
+    const openReview = json(run(cwd, [
+      'context', open.task_id, '--json', '--review',
+    ]))
+    assert.equal(openReview.view, contract.review_view.view)
+    assert.equal(openReview.task.next_action, contract.views.open.review.next_action)
+    assert.deepEqual(
+      openReview.task.schema5_view,
+      contract.views.open.schema5_view,
+    )
+    for (const field of contract.review_view.default_omitted_history)
+      assert.equal(field in openReview, false)
+    for (const field of contract.review_view.omitted_task_fields)
+      assert.equal(field in openReview.task, false)
+    assert.deepEqual(openReview.task.scope, ['fixture'])
+    assert.deepEqual(openReview.task.acceptance, ['reader context'])
+
+    const takeoverReview = json(run(
+      cwd,
+      ['context', open.task_id, '--json', '--review'],
+      'codex:session:review-reader',
+    ))
+    assert.equal(takeoverReview.task.next_action, 'takeover')
 
     const unverifiedArgs = Array.from(
       { length: contract.views.review_truncated.schema5_view.unverified_items.total },
@@ -262,6 +284,34 @@ test('schema 5 Board reader fixture matches richer bounded Context projections',
       review.task.schema5_view.reviewer_next_action,
       contract.views.review_truncated.schema5_view.reviewer_next_action,
     )
+    const compactReview = json(run(cwd, [
+      'context', open.task_id, '--json', '--review',
+    ]))
+    assert.equal(
+      compactReview.task.next_action,
+      contract.views.review_truncated.review.next_action,
+    )
+    assert.deepEqual(
+      {
+        changes: compactReview.task.submission.changes,
+        unverified_count: compactReview.task.submission.unverified_count,
+        unverified_items_summary:
+          compactReview.task.submission.unverified_items_summary,
+      },
+      contract.views.review_truncated.review.submission,
+    )
+    assert.equal('verification' in compactReview.task, false)
+    assert.equal('plan' in compactReview.task, false)
+    assert.equal('timeline' in compactReview, false)
+    assert.equal('recent_events' in compactReview, false)
+
+    const reviewTimeline = json(run(cwd, [
+      'context', open.task_id, '--json', '--review',
+      '--history', 'timeline',
+    ]))
+    assert.equal(reviewTimeline.history_view, 'timeline')
+    assert.equal(reviewTimeline.timeline.length <= 5, true)
+    assert.equal('recent_events' in reviewTimeline, false)
     const submittedTimeline = review.timeline.findLast((event) => event.event_type === 'submitted')
     assert.equal(
       submittedTimeline.title,
@@ -278,6 +328,96 @@ test('schema 5 Board reader fixture matches richer bounded Context projections',
     assert.equal(
       submittedTimeline.details.unverified_item_ids_truncated,
       contract.views.review_truncated.timeline.unverified_item_ids_truncated,
+    )
+
+    writeJson(cwd, '.latch/stale-plan.json', {
+      ...noGatePlan('stale review fixture'),
+      verification_plan: [{
+        name: 'gate',
+        command: [process.execPath, '-e', 'process.exit(0)'],
+        kind: 'gate',
+      }],
+    })
+    const stale = json(run(cwd, [
+      'checkpoint', 'stale review fixture',
+      '--plan-file', '.latch/stale-plan.json', '--json',
+    ]))
+    json(run(cwd, [
+      'approve', stale.task_id, '--expect-revision', '1',
+      '--reason', 'approved', '--json',
+    ]))
+    json(run(cwd, [
+      'verify', stale.task_id, '--expect-revision', '2',
+      '--name', 'gate', '--json',
+    ]))
+    json(run(cwd, [
+      'submit', stale.task_id, '--expect-revision', '3',
+      '--changes', 'stale review fixture',
+      '--knowledge-impact-file', '.latch/impact.json', '--json',
+    ]))
+    const currentProofReview = json(run(cwd, [
+      'context', stale.task_id, '--json', '--review',
+    ]))
+    assert.deepEqual(
+      Object.keys(currentProofReview.task.verification_plan[0]).sort(),
+      contract.review_view.named_gate_fields,
+    )
+    writeFileSync(join(cwd, 'fixture'), 'changed after submission\n')
+    const staleReview = json(run(cwd, [
+      'context', stale.task_id, '--json', '--review',
+    ]))
+    assert.equal(
+      staleReview.task.next_action,
+      contract.views.review_stale.review.next_action,
+    )
+    assert.equal(
+      staleReview.task.workspace_proof.live_status,
+      contract.views.review_stale.review.live_status,
+    )
+    assert.equal(
+      staleReview.task.verification_plan[0].status,
+      contract.views.review_stale.review.gate_status,
+    )
+    assert.equal(
+      staleReview.task.verification_plan[0].stale_reason,
+      contract.views.review_stale.review.gate_stale_reason,
+    )
+    const staleTakeover = json(run(
+      cwd,
+      ['context', stale.task_id, '--json', '--review'],
+      'codex:session:review-reader',
+    ))
+    assert.equal(
+      staleTakeover.task.next_action,
+      contract.views.review_stale.review.writer_mismatch_next_action,
+    )
+    assert.equal(
+      staleTakeover.task.after_takeover_next_action,
+      contract.views.review_stale.review.after_takeover_next_action,
+    )
+    rmSync(join(cwd, 'fixture'), { force: true })
+
+    writeJson(cwd, '.latch/review-ready-plan.json', noGatePlan('review ready fixture'))
+    const reviewReady = json(run(cwd, [
+      'checkpoint', 'review ready fixture',
+      '--plan-file', '.latch/review-ready-plan.json', '--json',
+    ]))
+    json(run(cwd, [
+      'approve', reviewReady.task_id, '--expect-revision', '1',
+      '--reason', 'approved', '--json',
+    ]))
+    json(run(cwd, [
+      'submit', reviewReady.task_id, '--expect-revision', '2',
+      '--changes', 'review ready fixture',
+      '--knowledge-impact-file', '.latch/impact.json',
+      '--no-verify', '--reason', 'no gates', '--json',
+    ]))
+    const readyReview = json(run(cwd, [
+      'context', reviewReady.task_id, '--json', '--review',
+    ]))
+    assert.equal(
+      readyReview.task.next_action,
+      contract.views.review_ready.review.next_action,
     )
 
     writeJson(cwd, '.latch/mixed-plan.json', noGatePlan('mixed archive fixture'))
@@ -336,6 +476,20 @@ test('schema 5 Board reader fixture matches richer bounded Context projections',
       mixedDone.next_action,
       contract.views.archived_mixed.timeline.done_next_action,
     )
+    const mixedArchiveReview = json(run(cwd, [
+      'context', mixed.task_id, '--json', '--review',
+    ]))
+    assert.equal(mixedArchiveReview.archived, true)
+    assert.equal(
+      mixedArchiveReview.task.next_action,
+      contract.views.archived_mixed.review.next_action,
+    )
+    assert.deepEqual(
+      mixedArchiveReview.task.schema5_view,
+      contract.views.archived_mixed.schema5_view,
+    )
+    assert.equal('timeline' in mixedArchiveReview, false)
+    assert.equal('recent_events' in mixedArchiveReview, false)
 
     writeJson(cwd, '.latch/no-followup-plan.json', noGatePlan('no followup fixture'))
     const noFollowup = json(run(cwd, [

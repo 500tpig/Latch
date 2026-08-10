@@ -82,6 +82,7 @@ latch checkpoint "从 Record 创建任务" --plan-file plan.json \
 latch use <task-id>
 latch list --json --brief
 latch context [task-id] --json --brief --history timeline
+latch context [task-id] --json --review
 latch context [task-id] --json --status
 latch context [task-id] --json --since-revision <revision>
 ```
@@ -142,7 +143,15 @@ blocked、gate 计数、workspace proof 摘要和 `next_action`。存在 proof b
 `workspace_proof.live_status` 为 `match`、`mismatch` 或 `unknown`；该值只读计算，
 不会推进 generation 或写 evidence。`context --json --since-revision <revision>`
 返回该 revision 之后的 event，以及当前最小状态；调用方必须已有对应 baseline，
-delta 不能替代完整 context。`--brief`、`--status` 和 `--since-revision` 互斥。
+delta 不能替代完整 context。
+
+`context --json --review` 是 review 与 closeout 的紧凑入口。它保留 `goal`、
+`scope`、`acceptance`、writer、lifecycle、named gate 状态、live workspace proof、
+有界的 submission、unverified item 与 closeout 摘要，可独立判断 `takeover`、
+`reopen_review`、`review_or_archive` 和 `prepare_closeout`。该视图不返回完整 plan、
+完整 verification 结果或 group，默认也不返回 timeline 和 raw event。显式增加
+`--history` 时，仍按所选 history view 返回最多 5 个最近 event。`--brief`、`--review`、
+`--status` 和 `--since-revision` 互斥。
 
 显式提供 Task ID 时，`context` 依次检查同 ID 的 open task、同 ID 的 archive；
 两者都不存在时才尝试既有的 open unique-prefix 解析。archive 不接受前缀、模糊
@@ -157,9 +166,9 @@ delta 不能替代完整 context。`--brief`、`--status` 和 `--since-revision`
 
 context 的 `current` 只表示当前 actor 的 state 指针是否指向该 task。`task.writer.primary_writer` 是 task 主写方，`task.writer.task_status` 区分 current `assigned` 与 historical read-only 状态，`task.writer.caller_capability` 表示调用方是否可写；兼容字段 `task.writer.status` 继续给出调用方相对 task 的汇总状态。`task.authorization` 统一投影历史 `implementation_approval` 与 schema 5 的 `work_basis`，但不改写 task 真源。
 
-省略 `--history` 时，`context --json`、`context --json --brief` 和 `context --json --since-revision` 保持既有响应：同时返回用户可读 `timeline` 与原始 `recent_events` 或 `events`，timeline item 也保留 `details`。既有 reader 无需改动。
+省略 `--history` 时，`context --json`、`context --json --brief` 和 `context --json --since-revision` 保持既有响应：同时返回用户可读 `timeline` 与原始 `recent_events` 或 `events`，timeline item 也保留 `details`。`context --json --review` 默认省略两者。既有 reader 无需改动。
 
-`--history` 只适用于 JSON Context，可取 `timeline`、`events` 或 `both`，并可与 `--brief` 和 `--since-revision` 组合。显式选择会返回 `history_view`：
+`--history` 只适用于 JSON Context，可取 `timeline`、`events` 或 `both`，并可与 `--brief`、`--review` 和 `--since-revision` 组合。显式选择会返回 `history_view`：
 
 - `timeline`：只返回 timeline，省略 raw event 与 `timeline.details`，适合作为普通恢复视图；
 - `events`：只返回 raw event，适合调试、审计和兼容性核对；

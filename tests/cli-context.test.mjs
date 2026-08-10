@@ -140,8 +140,24 @@ test('context command validates view selectors without initializing storage', ()
   assert.match(status.stderr, /require --json/)
   assert.equal(existsSync(join(cwd, '.latch')), false)
 
+  const review = run(cwd, ['context', 'missing', '--review'])
+  assert.notEqual(review.status, 0)
+  assert.match(review.stderr, /require --json/)
+  assert.equal(existsSync(join(cwd, '.latch')), false)
+
+  for (const selector of ['--brief', '--status', '--since-revision']) {
+    const combined = run(cwd, [
+      'context', 'missing', '--json', '--review', selector,
+      ...(selector === '--since-revision' ? ['0'] : []),
+    ])
+    assert.notEqual(combined.status, 0)
+    assert.match(combined.stderr, /mutually exclusive/)
+    assert.equal(existsSync(join(cwd, '.latch')), false)
+  }
+
   const help = run(cwd, ['context', '--help'])
   assert.equal(help.status, 0, help.stderr)
+  assert.match(help.stdout, /--review/)
   assert.match(help.stdout, /--history <timeline\|events\|both>/)
   assert.equal(existsSync(join(cwd, '.latch')), false)
 })

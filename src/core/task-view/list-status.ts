@@ -119,7 +119,7 @@ export function listJsonV2(
   }
 }
 
-function briefVerificationPlan(
+export function briefVerificationPlan(
   task: TaskV2,
   liveStatus?: WorkspaceLiveStatus,
 ) {
@@ -436,6 +436,7 @@ export function groupContext(store: TaskStoreV2, task: TaskV2) {
 
 export type ContextJsonOptions = {
   brief?: boolean
+  review?: boolean
   status?: boolean
   sinceRevision?: number
   history?: ContextHistoryView
