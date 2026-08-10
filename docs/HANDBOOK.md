@@ -102,8 +102,10 @@ plan 校验分为四步：Light authoring validation 要求六组核心字段；
 task 可读；writable validation 要求 schema 5 plan 提供 `workspace_scope`。
 authorizable validation 只在创建或更新 work basis 前执行。授权要求
 `workspace_scope.paths`、`scope`、`acceptance` 和 `approach` 包含有效内容，且
-`open_questions` 为空；Light 还必须至少包含一个 gate。Standard 无 gate 时继续
-使用显式 `--no-verify` 提交流程。draft 可在 plan phase 保存，不触发授权完整性门禁。
+`open_questions` 为空，并且任一 verification command argv 都不得保留
+`replace-with-real-command` sentinel；Light 还必须至少包含一个 gate。Standard 无 gate
+时继续使用显式 `--no-verify` 提交流程。draft 可在 plan phase 保存，不触发授权完整性门禁，
+因此包含 sentinel 的 scaffold 仍可打印并保存为未授权 draft。
 
 创建 task 时，Standard `checkpoint` 必须读取完整 plan 文件；Light `checkpoint`
 接受六字段 authoring input，并在写入前规范化为现有完整 `TaskPlan`。plan 校验失败时，

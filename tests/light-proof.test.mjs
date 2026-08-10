@@ -292,6 +292,17 @@ test('checkpoint rejects invalid basis options before task or state writes', () 
     ['empty approach', writeJson(cwd, plan({ approach: [] }), 'empty-approach')],
     ['light without gate', writeJson(cwd, plan({ verification_plan: [] }), 'light-without-gate')],
   ]
+  const sentinelPlanFile = writeJson(
+    cwd,
+    plan({
+      verification_plan: [{
+        name: 'gate',
+        command: [process.execPath, 'replace-with-real-command'],
+        kind: 'gate',
+      }],
+    }),
+    'sentinel-plan',
+  )
   const retrospectiveIncompletePlan = writeJson(
     cwd,
     plan({ acceptance: [] }),
@@ -306,6 +317,7 @@ test('checkpoint rejects invalid basis options before task or state writes', () 
     ['checkpoint', 'invalid profile', '--plan-file', planFile, '--profile', 'tiny'],
     ['checkpoint', 'null basis', '--plan-file', planFile, '--authorization-file', nullFile],
     ['checkpoint', 'retrospective incomplete', '--plan-file', retrospectiveIncompletePlan, '--profile', 'standard', '--retrospective-file', retrospectiveFile],
+    ['checkpoint', 'retrospective sentinel', '--plan-file', sentinelPlanFile, '--profile', 'standard', '--retrospective-file', retrospectiveFile],
     ...incompletePlanFiles.map(([title, incompletePlanFile]) => [
       'checkpoint', title, '--plan-file', incompletePlanFile,
       '--profile', 'light', '--authorization-file', authorizationFile,
@@ -830,6 +842,13 @@ test('schema 5 approve rejects incomplete drafts before task or event writes', (
     ['blank acceptance', 'light', { acceptance: [''] }, authorization()],
     ['empty approach', 'standard', { approach: [] }, authorization('user_approve')],
     ['open questions', 'standard', { open_questions: ['需要确认'] }, authorization('user_approve')],
+    ['standard sentinel', 'standard', {
+      verification_plan: [{
+        name: 'gate',
+        command: [process.execPath, 'replace-with-real-command'],
+        kind: 'gate',
+      }],
+    }, authorization('user_approve')],
     ['light without gate', 'light', { verification_plan: [] }, retrospective()],
   ]
 

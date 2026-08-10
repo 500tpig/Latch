@@ -40,6 +40,8 @@ const standardVerificationPlanScaffold: TaskPlan['verification_plan'] = [
   },
 ]
 
+const verificationCommandSentinel = 'replace-with-real-command'
+
 type LightPlanCoreField = (typeof lightPlanCoreFields)[number]
 type LightPlanDefaultField = (typeof lightPlanDefaultFields)[number]
 
@@ -273,8 +275,15 @@ const planFieldSpecs = {
       'plan.verification_plan: Array<{ name: non-empty string; command: non-empty string[]; kind: "gate" | "diagnostic" }>',
     validateShape: validateVerificationPlan,
     authorizable(value, profile) {
+      const verificationPlan = value as TaskPlan['verification_plan']
+      if (
+        verificationPlan.some((verification) =>
+          verification.command.includes(verificationCommandSentinel),
+        )
+      )
+        return `must replace every ${verificationCommandSentinel} sentinel with a real command`
       return profile === 'light' &&
-          !(value as TaskPlan['verification_plan']).some(
+          !verificationPlan.some(
             (verification) => verification.kind === 'gate',
           )
         ? 'must contain at least one gate'

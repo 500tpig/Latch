@@ -90,6 +90,29 @@ test('checkpoint templates are side-effect-free shape scaffolds that require com
   assert.match(mixed.stderr, /cannot be combined/)
   assert.equal(existsSync(join(mixedRoot, '.latch')), false)
 
+  const standardDraftRoot = temporaryDirectory()
+  init(standardDraftRoot)
+  const standardTemplateFile = writePlan(
+    standardDraftRoot,
+    standardExpected,
+    'standard-template.json',
+  )
+  const standardDraft = run(standardDraftRoot, [
+    'checkpoint',
+    'Standard template draft',
+    '--plan-file',
+    standardTemplateFile,
+    '--json',
+  ])
+  assert.equal(standardDraft.status, 0, standardDraft.stderr)
+  assert.equal(
+    readTask(
+      standardDraftRoot,
+      JSON.parse(standardDraft.stdout).task_id,
+    ).phase,
+    'plan',
+  )
+
   const cwd = temporaryDirectory()
   init(cwd)
   const templateFile = writePlan(cwd, lightExpected, 'template.json')
@@ -135,6 +158,37 @@ test('checkpoint templates are side-effect-free shape scaffolds that require com
     completedLightPlan,
     'completed-template.json',
   )
+  const sentinelFile = writePlan(
+    cwd,
+    {
+      ...completedLightPlan,
+      verification_plan: [{
+        name: 'tests',
+        command: [
+          process.execPath,
+          '-e',
+          'process.exit(0)',
+          'replace-with-real-command',
+        ],
+        kind: 'gate',
+      }],
+    },
+    'sentinel-template.json',
+  )
+  const taskCountBeforeSentinel = taskIds(cwd).length
+  const sentinelDenied = run(cwd, [
+    'checkpoint',
+    'Sentinel authorization denied',
+    '--plan-file',
+    sentinelFile,
+    '--authorize-request',
+    '用户请求执行明确的低风险变更',
+    '--json',
+  ])
+  assert.notEqual(sentinelDenied.status, 0)
+  assert.match(sentinelDenied.stderr, /replace-with-real-command/)
+  assert.equal(taskIds(cwd).length, taskCountBeforeSentinel)
+
   const created = run(cwd, [
     'checkpoint',
     'Completed template task',
