@@ -91,31 +91,6 @@ import {
 } from './core/progress.js'
 import { now, readJsonFile } from './core/utils.js'
 
-const usage = `Usage: latch <command> [options]
-
-Commands:
-  init
-  checkpoint <title> --plan-file <path> [--profile <light|standard>] [--authorize-request <reason> | --authorization-file <path> | --retrospective-file <path>] [--source-record <id> --source-record-revision <revision>]
-  checkpoint --print-plan-template <light|standard>
-  use <task-id>
-  list [--group <id> [--include-archive]] [--json] [--brief]
-  context [task-id] [--json] [--brief | --status | --since-revision <revision>] [--history <timeline|events|both>]
-  context pack --input-file <path>
-  record <create|list|show|edit|archive|restore|delete> [options]
-  knowledge <fingerprint|check> [options]
-  benchmark context [options]
-  takeover <task-id> --expect-revision <revision> --reason <text>
-  save <task-id> --expect-revision <revision> [changes]
-  approve <task-id> --expect-revision <revision> [--reason <text> | --authorization-file <path> | --retrospective-file <path>] [--feedback <text> | --non-implementation-feedback <text>]
-  verify <task-id> --expect-revision <revision> --name <name> [--diagnostic] [-- command...]
-  verify-all <task-id> --expect-revision <revision>
-  reopen-review <task-id> --expect-revision <revision> --reason <text>
-  artifact <add|remove> <task-id> --expect-revision <revision> <kind:path>...
-  submit <task-id> --expect-revision <revision> --changes <text> [--unverified-item <summary>...] [--knowledge-impact-none <reason> | --knowledge-impact-file <path>] [--no-verify --reason <text>] [--verbose-warnings]
-  patch-submission-knowledge-impact <task-id> --expect-revision <revision> --knowledge-impact-file <path> [--reason <text>]
-  done <task-id> --expect-revision <revision> [--closeout-file <path>]
-  abandon <task-id> --expect-revision <revision> --reason <text>`
-
 const commandUsage: Record<string, string> = {
   init: 'Usage: latch init [--json]',
   checkpoint:
@@ -160,6 +135,47 @@ const commandUsage: Record<string, string> = {
   abandon:
     'Usage: latch abandon <task-id> --expect-revision <revision> --reason <text> [--json]',
 }
+
+const topLevelCommands = [
+  'init',
+  'checkpoint',
+  'use',
+  'list',
+  'context',
+  'context-pack',
+  'record',
+  'knowledge',
+  'benchmark',
+  'takeover',
+  'save',
+  'approve',
+  'verify',
+  'verify-all',
+  'reopen-review',
+  'artifact',
+  'submit',
+  'patch-submission-knowledge-impact',
+  'done',
+  'abandon',
+] as const
+
+function topLevelCommandUsage(command: string) {
+  return commandUsage[command]
+    .split('\n')
+    .map((line) =>
+      `  ${line
+        .replace(/^Usage: latch /, '')
+        .replace(/^\s*latch /, '')}`,
+    )
+    .join('\n')
+}
+
+const usage = `Usage: latch <command> [options]
+
+Commands:
+${topLevelCommands
+  .map((command) => topLevelCommandUsage(command))
+  .join('\n')}`
 
 const actorRequiredCommands = new Set([
   'checkpoint',

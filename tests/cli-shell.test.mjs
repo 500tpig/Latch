@@ -84,6 +84,22 @@ test('top-level and command help have no side effects', () => {
     /--reason <text>/,
   )
   const topHelp = run(temporaryDirectory(), ['--help']).stdout
+  assert.match(
+    topHelp,
+    /approve <task-id> --expect-revision <revision> \(--reason <text> \| --authorization-file <path> \| --retrospective-file <path>\)/,
+  )
+  assert.match(
+    topHelp,
+    /approve <task-id> --expect-revision <revision> --feedback <text> \[--authorization-file <path>\]/,
+  )
+  assert.match(
+    topHelp,
+    /approve <task-id> --expect-revision <revision> --non-implementation-feedback <text>/,
+  )
+  assert.doesNotMatch(
+    topHelp,
+    /\[--reason <text> \| --authorization-file <path> \| --retrospective-file <path>\] \[--feedback <text>/,
+  )
   assert.doesNotMatch(topHelp, /upgrade-v4|downgrade-v2|claim <task-id>/)
 })
 

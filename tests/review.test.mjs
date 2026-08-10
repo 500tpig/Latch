@@ -237,6 +237,50 @@ test('verify-all skips current passes, stops on failure, and preserves per-gate 
   assert.equal(readFileSync(taskPath(cwd, id), 'utf8'), before)
 })
 
+test('verify JSON keeps gate stdout and stderr out of the JSON protocol stream', () => {
+  const noisyCommand = [
+    process.execPath,
+    '-e',
+    "process.stdout.write('gate stdout\\n'); process.stderr.write('gate stderr\\n')",
+  ]
+
+  const verifyRoot = temporaryDirectory()
+  init(verifyRoot)
+  const verifyId = checkpoint(verifyRoot, plan({
+    verification_plan: [
+      { name: 'noisy', command: noisyCommand, kind: 'gate' },
+    ],
+  }))
+  approve(verifyRoot, verifyId)
+  const verified = verify(verifyRoot, verifyId, 'noisy')
+  assert.equal(verified.status, 0, verified.stderr)
+  assert.equal(JSON.parse(verified.stdout).verification.status, 'pass')
+  assert.equal(verified.stdout.trimStart().startsWith('{'), true)
+  assert.equal(verified.stdout.trimEnd().endsWith('}'), true)
+  assert.match(verified.stderr, /gate stdout/)
+  assert.match(verified.stderr, /gate stderr/)
+
+  const verifyAllRoot = temporaryDirectory()
+  init(verifyAllRoot)
+  const verifyAllId = checkpoint(verifyAllRoot, plan({
+    verification_plan: [
+      { name: 'noisy', command: noisyCommand, kind: 'gate' },
+    ],
+  }))
+  approve(verifyAllRoot, verifyAllId)
+  const verifiedAll = run(verifyAllRoot, [
+    'verify-all', verifyAllId, '--expect-revision', revision(verifyAllRoot, verifyAllId), '--json',
+  ])
+  assert.equal(verifiedAll.status, 0, verifiedAll.stderr)
+  assert.deepEqual(JSON.parse(verifiedAll.stdout).executed, [
+    { name: 'noisy', status: 'pass', revision: 3 },
+  ])
+  assert.equal(verifiedAll.stdout.trimStart().startsWith('{'), true)
+  assert.equal(verifiedAll.stdout.trimEnd().endsWith('}'), true)
+  assert.match(verifiedAll.stderr, /gate stdout/)
+  assert.match(verifiedAll.stderr, /gate stderr/)
+})
+
 test('same gate rerun replaces its current result and a failure blocks submit', () => {
   const cwd = temporaryDirectory()
   init(cwd)

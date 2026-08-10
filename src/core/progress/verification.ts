@@ -316,7 +316,7 @@ export function verifyTaskV2(
   if (kind === 'diagnostic') {
     const executed = spawnSync(command[0], command.slice(1), {
       cwd: store.paths.workspaceRoot,
-      stdio: 'inherit',
+      stdio: ['inherit', 2, 2],
     })
     const exitCode = executed.status ?? 127
     const result: VerifyResult = {
@@ -458,7 +458,7 @@ export function verifyTaskV2(
 
   const executed = spawnSync(command[0], command.slice(1), {
     cwd: store.paths.workspaceRoot,
-    stdio: 'inherit',
+    stdio: ['inherit', 2, 2],
   })
   const exitCode = executed.status ?? 127
   const after = captureWorkspaceSnapshot(
