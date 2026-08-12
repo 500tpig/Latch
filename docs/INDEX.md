@@ -57,6 +57,17 @@ v2 / Schema 5 观察期的 archive 定量样本分离。
 - 边界：不修改 current 产品契约，不直接授权 CLI、Core、Skill 或外部 repo 变更；
   不替代 schema 5 观察期评估（schema 5 满 10 张后另建评估 task）。
 
+## 待实现设计
+
+### [轻量 lifecycle delta CLI 契约](briefs/2026-08-12-latch-lifecycle-delta-contract.md)
+
+- 状态：`proposed contract`；
+- Source-Task：`20260812100351819-设计轻量-lifecycle-delta-最小稳定-cli-契约-ee1a38`；
+- 用途：冻结 `append-scope`、`update-verification-command`、
+  `resolve-open-questions` 三项独立 plan delta CLI，并引用已交付的 `reconcile` 契约；
+- 边界：当前 Core/CLI 尚未实现前三项命令；本文不改变 `reconcile`、结构化 JSON stdin、
+  workspace evidence 或 formatter 的 current 已交付行为。
+
 ## 已实现设计基线
 
 ### [Gate 工作区 mutation 证明与失效语义](briefs/2026-07-30-latch-gate-workspace-mutation-proof.md)
