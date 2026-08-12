@@ -156,6 +156,30 @@ export function briefVerificationPlan(
   })
 }
 
+function briefVerification(task: TaskV2) {
+  const project = (results: TaskV2['verification']['gate']) =>
+    Object.fromEntries(
+      Object.entries(results).map(([name, result]) => [
+        name,
+        {
+          name: result.name,
+          kind: result.kind,
+          status: result.status,
+          work_revision: result.work_revision,
+          exit_code: result.exit_code,
+          ...(result.failure_reason
+            ? { failure_reason: result.failure_reason }
+            : {}),
+        },
+      ]),
+    )
+
+  return {
+    gate: project(task.verification.gate),
+    diagnostic: project(task.verification.diagnostic),
+  }
+}
+
 type VerifyStaleReason =
   | 'work_revision_changed'
   | 'proof_generation_changed'
@@ -398,7 +422,7 @@ export function briefTask(store: TaskStoreV2, task: TaskV2, archived = false) {
       task,
       archived ? undefined : workspaceProof?.live_status,
     ),
-    verification: task.verification,
+    verification: briefVerification(task),
     ...(workspaceProof ? { workspace_proof: workspaceProof } : {}),
     ...(task.submission ? { submission: briefSubmission(task) } : {}),
     ...(task.closure ? { closure: briefClosure(task) } : {}),

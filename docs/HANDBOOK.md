@@ -158,7 +158,11 @@ CLI `0.5.0` 的 `checkpoint` 创建 schema 5 task，写入
 claim、upgrade、downgrade、takeover 和其它 mutation，不写 task、event、evidence、
 backup 或 archive。
 
-`context --json --brief` 不返回完整 `plan`，但 `task.verification_plan` 会列出每项计划验证的 `name`、`command`、`kind` 和 `status`。`status` 为 `pending`、`stale`、`pass` 或 `fail`；`task.verification` 继续保留执行结果的完整记录。
+`context --json --brief` 不返回完整 `plan`，但 `task.verification_plan` 会列出每项计划验证的
+`name`、`command`、`kind` 和 `status`。`status` 为 `pending`、`stale`、`pass` 或
+`fail`。`task.verification` 保留 `gate` 与 `diagnostic` 容器，每条已有结果只返回
+`name`、`kind`、`status`、`work_revision`、`exit_code` 和可选的
+`failure_reason`；完整命令、时间戳、workspace effect 与 proof 只在 full Context 中返回。
 
 `context --json --status` 是最小状态入口，返回 phase、revision、授权、writer、
 blocked、gate 计数、workspace proof 摘要、`shared_worktree` 和 `next_action`。存在 proof baseline 时，

@@ -735,6 +735,19 @@ test('brief context summarizes planned verification states', () => {
     exit_code: 1,
     work_revision: 2,
     created_at: createdAt,
+    failure_reason: 'command_failed',
+    command_outcome: {
+      status: 'fail',
+      exit_code: 1,
+      error: 'typecheck failed',
+    },
+    workspace_effect: {
+      status: 'unchanged',
+      changed_count: 0,
+      in_scope_count: 0,
+      out_of_scope_count: 0,
+      samples: [],
+    },
   }
   task.verification.gate.stale = {
     name: 'stale',
@@ -745,11 +758,48 @@ test('brief context summarizes planned verification states', () => {
     work_revision: 1,
     created_at: createdAt,
   }
+  task.verification.diagnostic.exploratory = {
+    name: 'exploratory',
+    kind: 'diagnostic',
+    command: ['node', '-e', 'process.exit(3)'],
+    status: 'fail',
+    exit_code: 3,
+    work_revision: 2,
+    created_at: createdAt,
+    failure_reason: 'evidence_error',
+    command_outcome: {
+      status: 'fail',
+      exit_code: 3,
+      error: 'diagnostic failed',
+    },
+    proof: {
+      work_revision: 2,
+      started_generation: 1,
+      ended_generation: 1,
+      before_ref: {
+        path: 'evidence/before.json',
+        sha256: 'a'.repeat(64),
+        entry_count: 1,
+      },
+      after_ref: {
+        path: 'evidence/after.json',
+        sha256: 'b'.repeat(64),
+        entry_count: 1,
+      },
+      delta_ref: {
+        path: 'evidence/delta.json',
+        sha256: 'c'.repeat(64),
+        entry_count: 1,
+      },
+    },
+  }
   writeFileSync(taskPath(cwd, created.task_id), `${JSON.stringify(task, null, 2)}\n`)
 
   const briefContext = JSON.parse(
     run(cwd, ['context', created.task_id, '--json', '--brief']).stdout,
   )
+  assert.equal(briefContext.schema_version, 2)
+  assert.equal(briefContext.view, 'brief')
   assert.deepEqual(briefContext.task.verification_plan, [
     {
       name: 'passed',
@@ -777,5 +827,54 @@ test('brief context summarizes planned verification states', () => {
       status: 'pending',
     },
   ])
-  assert.deepEqual(briefContext.task.verification, task.verification)
+  assert.deepEqual(briefContext.task.verification, {
+    gate: {
+      passed: {
+        name: 'passed',
+        kind: 'gate',
+        status: 'pass',
+        work_revision: 2,
+        exit_code: 0,
+      },
+      failed: {
+        name: 'failed',
+        kind: 'gate',
+        status: 'fail',
+        work_revision: 2,
+        exit_code: 1,
+        failure_reason: 'command_failed',
+      },
+      stale: {
+        name: 'stale',
+        kind: 'gate',
+        status: 'pass',
+        work_revision: 1,
+        exit_code: 0,
+      },
+    },
+    diagnostic: {
+      exploratory: {
+        name: 'exploratory',
+        kind: 'diagnostic',
+        status: 'fail',
+        work_revision: 2,
+        exit_code: 3,
+        failure_reason: 'evidence_error',
+      },
+    },
+  })
+  assert.doesNotMatch(
+    JSON.stringify(briefContext.task.verification),
+    /"(?:command|created_at|workspace_effect|proof|before_ref|after_ref|delta_ref)":/,
+  )
+
+  const fullContext = JSON.parse(
+    run(cwd, ['context', created.task_id, '--json']).stdout,
+  )
+  assert.deepEqual(fullContext.task.verification, task.verification)
+
+  const reviewContext = JSON.parse(
+    run(cwd, ['context', created.task_id, '--json', '--review']).stdout,
+  )
+  assert.equal('verification' in reviewContext.task, false)
 })
