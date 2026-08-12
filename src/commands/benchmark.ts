@@ -1,4 +1,5 @@
 import {
+  assertSingleStdinInput,
   commonOptions,
   fail,
   json,
@@ -13,7 +14,7 @@ import {
 import { jsonEnvelopeV2 } from '../core/task-view.js'
 
 export const benchmarkUsage =
-  'Usage: latch benchmark context --case-file <path> --run-file <path> [--baseline-run-file <path>] [--json]'
+  'Usage: latch benchmark context --case-file <path|-> --run-file <path|-> [--baseline-run-file <path|->] [--json]'
 
 export function runBenchmark(args: string[], cwd: string) {
   const subject = args[0]
@@ -31,6 +32,11 @@ export function runBenchmark(args: string[], cwd: string) {
     return process.stdout.write(`${benchmarkUsage}\n`)
   if (parsed.positionals.length > 0)
     fail('invalid_arguments', benchmarkUsage)
+  assertSingleStdinInput([
+    ['--case-file', parsed.values['case-file']],
+    ['--run-file', parsed.values['run-file']],
+    ['--baseline-run-file', parsed.values['baseline-run-file']],
+  ])
   const benchmarkCase = parseContextBenchCase(
     readInputFile<unknown>(cwd, parsed.values['case-file'], '--case-file'),
   )

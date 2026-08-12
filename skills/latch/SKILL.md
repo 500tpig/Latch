@@ -151,6 +151,12 @@ and explicit `done` authorization.
 
 ## Invariants
 
+- Structured JSON file options accept the literal `-` for stdin. A command may
+  have at most one such stdin consumer; multiple `-` values fail before stdin is
+  read. Stdin contains exactly one complete JSON value with optional trailing
+  whitespace. It has no workspace path and never becomes workspace evidence;
+  real input files keep their existing evidence semantics. Record body files and
+  other non-JSON inputs do not use this contract.
 - Missing canonical actor or writer mismatch is fail closed. Grok and Codex are
   equal hosts; never invent or export `LATCH_ACTOR`.
 - Pass `--expect-revision` to every task mutation. In one uninterrupted mutation

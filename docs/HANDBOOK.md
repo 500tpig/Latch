@@ -53,6 +53,21 @@ CLI JSON error envelope 为可恢复的高频领域拒绝提供稳定 `error.cod
 `invalid_arguments`、`not_initialized` 和 `writer_version_mismatch` 的既有语义不变；
 未分类的真实异常继续返回 `command_failed`。
 
+### 结构化 JSON stdin
+
+所有结构化 JSON file option 都接受字面值 `-`，表示从 stdin 读取，包括
+`--plan-file`、`--authorization-file`、`--retrospective-file`、
+`--knowledge-impact-file`、`--closeout-file`、`context pack --input-file`，以及
+`benchmark context` 的三个 JSON file option。同一命令最多一个 option 使用 `-`；
+多个 stdin 消费者会在读取前返回 `invalid_arguments`。
+
+stdin 只读取一次，内容必须是一个完整 JSON value，允许尾部 whitespace。empty、
+malformed、类型或业务校验失败都发生在 task mutation 前。使用 `--json` 时，成功协议只写
+stdout，stdin 解析错误 envelope 只写 stderr。stdin 没有 workspace path，不进入
+workspace evidence，也不创建临时输入文件；真实文件的读取、命令前后变化与 evidence
+语义保持不变，不增加 ignore 或 allowlist。`record --body-file` 等非 JSON 输入不适用；
+CLI 不接受 raw JSON 参数、JSON Lines 或 shell 字符串解析。
+
 ## 命令
 
 ### 查询版本

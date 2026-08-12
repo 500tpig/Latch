@@ -1,4 +1,5 @@
 import {
+  assertSingleStdinInput,
   commonOptions,
   fail,
   json,
@@ -29,7 +30,7 @@ import {
 export const contextUsage =
   'Usage: latch context [task-id] [--json] [--brief | --review | --status | --since-revision <revision>] [--history <timeline|events|both>]'
 export const contextPackUsage =
-  'Usage: latch context pack --input-file <path> [--json]'
+  'Usage: latch context pack --input-file <path|-> [--json]'
 
 function nonNegativeInteger(raw: string | undefined, name: string) {
   if (raw === undefined || !/^\d+$/.test(raw))
@@ -126,6 +127,9 @@ export function runContextPack(args: string[], cwd: string, actor: string) {
     return process.stdout.write(`${contextPackUsage}\n`)
   if (parsed.positionals.length > 0)
     fail('invalid_arguments', contextPackUsage)
+  assertSingleStdinInput([
+    ['--input-file', parsed.values['input-file']],
+  ])
   const request = parseContextPackRequest(
     readInputFile<unknown>(cwd, parsed.values['input-file'], '--input-file'),
   )

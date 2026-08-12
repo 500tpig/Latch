@@ -115,6 +115,10 @@ latch checkpoint "任务标题" \
 `--authorization-file`；retrospective 创建使用 `--retrospective-file`。提交未验证项
 使用重复的 `--unverified-item`，结构化归档使用 `--closeout-file`。
 
+所有结构化 JSON file option 可将路径写为 `-`，从 stdin 读取一个完整 JSON value；
+同一命令最多一个 option 使用 `-`。stdin 不对应 workspace path，也不会进入 workspace
+evidence。真实文件继续使用既有 evidence 语义；`record --body-file` 等文本输入不适用。
+
 业务项目的 `AGENTS.md` 应写入触发章 A/B/C：A 停在 grill；B 创建或续接 Light task
 并以请求授权；C 创建或续接 Standard task，返回决策重点与 task ID 后等待明确
 approve。纯问答、只读探索、无写入意图或明确要求「不用 Latch」时不建 task。

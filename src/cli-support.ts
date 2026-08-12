@@ -1,4 +1,5 @@
 import { parseArgs, type ParseArgsConfig } from 'node:util'
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { readJsonFile } from './core/utils.js'
 
@@ -47,12 +48,49 @@ export function commonOptions() {
   } as const
 }
 
+export function assertSingleStdinInput(
+  inputs: Array<[option: string, path: string | undefined]>,
+) {
+  const consumers = inputs
+    .filter(([, path]) => path === '-')
+    .map(([option]) => option)
+  if (consumers.length > 1)
+    fail(
+      'invalid_arguments',
+      `Only one structured JSON file option may use stdin (-) per command: ${consumers.join(', ')}.`,
+    )
+}
+
+let stdinConsumed = false
+
+function readStdinJson<T>(option: string) {
+  if (stdinConsumed)
+    fail('invalid_arguments', 'Structured JSON stdin may only be read once per command.')
+  stdinConsumed = true
+  let content: string
+  try {
+    content = readFileSync(0, 'utf8')
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    fail('invalid_arguments', `Cannot read ${option} from stdin: ${message}`)
+  }
+  if (!content.trim())
+    fail('invalid_arguments', `Cannot read ${option} from stdin: input is empty.`)
+  try {
+    return JSON.parse(content) as T
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    fail('invalid_arguments', `Cannot parse ${option} from stdin as JSON: ${message}`)
+  }
+}
+
 export function readInputFile<T>(
   cwd: string,
   path: string | undefined,
   option: string,
 ) {
   if (!path) fail('invalid_arguments', `${option} is required.`)
+  if (path === '-') return readStdinJson<T>(option)
   return readJsonFile<T>(resolve(cwd, path))
 }
 

@@ -1,4 +1,5 @@
 import {
+  assertSingleStdinInput,
   commonOptions,
   fail,
   json,
@@ -70,6 +71,10 @@ export function runApprove(args: string[], cwd: string, actor: string) {
     parsed.values['expect-revision'],
     '--expect-revision',
   )
+  assertSingleStdinInput([
+    ['--authorization-file', parsed.values['authorization-file']],
+    ['--retrospective-file', parsed.values['retrospective-file']],
+  ])
   const store = openTaskStoreV2(cwd)
   currentWritableTask(store, parsed.positionals[0])
   const authorization = parsed.values['authorization-file']

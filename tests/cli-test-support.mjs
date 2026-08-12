@@ -22,6 +22,7 @@ export function run(cwd, args, options = {}) {
   return spawnSync(process.execPath, [cli, ...args], {
     cwd,
     encoding: 'utf8',
+    input: options.input,
     env: {
       ...process.env,
       LATCH_ACTOR: options.actor ?? 'codex:session:test-session',

@@ -10,9 +10,9 @@
         "AGENTS.md",
         "skills/latch/SKILL.md"
       ],
-      "reviewed_baseline": 3513,
+      "reviewed_baseline": 3624,
       "hard_cap": 4000,
-      "review_reason": "Re-reviewed against the current complete always-loaded surface at 3513 stable engineering estimate units; accepted as a reviewed baseline, not a model token count."
+      "review_reason": "Re-reviewed against the current complete always-loaded surface at 3624 stable engineering estimate units after adding the structured JSON stdin safety contract; accepted as a reviewed baseline, not a model token count."
     },
     {
       "name": "planning-path",
@@ -21,9 +21,9 @@
         "skills/latch/SKILL.md",
         "skills/latch/references/task-lifecycle.md"
       ],
-      "reviewed_baseline": 5300,
+      "reviewed_baseline": 5411,
       "hard_cap": 6000,
-      "review_reason": "Re-reviewed against the current complete planning-path surface at 5300 stable engineering estimate units; accepted as a reviewed baseline, not a model token count."
+      "review_reason": "Re-reviewed against the current complete planning-path surface at 5411 stable engineering estimate units after adding the structured JSON stdin safety contract; accepted as a reviewed baseline, not a model token count."
     }
   ]
 }

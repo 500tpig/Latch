@@ -1,4 +1,5 @@
 import {
+  assertSingleStdinInput,
   commonOptions,
   fail,
   json,
@@ -60,6 +61,9 @@ export function runSubmit(args: string[], cwd: string, actor: string) {
     !parsed.values['knowledge-impact-none'].trim()
   )
     fail('invalid_arguments', '--knowledge-impact-none must be non-empty.')
+  assertSingleStdinInput([
+    ['--knowledge-impact-file', parsed.values['knowledge-impact-file']],
+  ])
   const knowledgeImpact = parsed.values['knowledge-impact-file']
     ? readInputFile<KnowledgeImpact>(
         cwd,
@@ -116,6 +120,9 @@ export function runPatchSubmissionKnowledgeImpact(
     parsed.values['expect-revision'],
     '--expect-revision',
   )
+  assertSingleStdinInput([
+    ['--knowledge-impact-file', parsed.values['knowledge-impact-file']],
+  ])
   const knowledgeImpact = readInputFile<KnowledgeImpact>(
     cwd,
     parsed.values['knowledge-impact-file'],
@@ -153,6 +160,9 @@ export function runDone(args: string[], cwd: string, actor: string) {
     parsed.values['expect-revision'],
     '--expect-revision',
   )
+  assertSingleStdinInput([
+    ['--closeout-file', parsed.values['closeout-file']],
+  ])
   const store = openTaskStoreV2(cwd)
   currentWritableTask(store, parsed.positionals[0])
   const closeout = parsed.values['closeout-file']

@@ -1,4 +1,5 @@
 import {
+  assertSingleStdinInput,
   commonOptions,
   fail,
   json,
@@ -145,6 +146,11 @@ export function runCheckpoint(args: string[], cwd: string, actor: string) {
   const profile = hasInlineAuthorization || hasAuthorizationFile
     ? 'light'
     : (parsed.values.profile ?? 'standard') as TaskProfile
+  assertSingleStdinInput([
+    ['--plan-file', parsed.values['plan-file']],
+    ['--authorization-file', parsed.values['authorization-file']],
+    ['--retrospective-file', parsed.values['retrospective-file']],
+  ])
   const plan = readPlan(cwd, parsed.values['plan-file'], profile)
   const artifacts = (parsed.values.artifact ?? []).map(artifact)
   const authorization = hasAuthorizationFile

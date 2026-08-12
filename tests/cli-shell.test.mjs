@@ -64,11 +64,11 @@ test('top-level and command help have no side effects', () => {
   const approveHelp = run(temporaryDirectory(), ['approve', '--help']).stdout
   assert.match(
     approveHelp,
-    /\(--reason <text> \| --authorization-file <path> \| --retrospective-file <path>\)/,
+    /\(--reason <text> \| --authorization-file <path\|-> \| --retrospective-file <path\|->\)/,
   )
   assert.match(
     approveHelp,
-    /--feedback <text> \[--authorization-file <path>\]/,
+    /--feedback <text> \[--authorization-file <path\|->\]/,
   )
   assert.match(approveHelp, /--non-implementation-feedback <text>/)
   const contextHelp = run(temporaryDirectory(), ['context', '--help'])
@@ -78,6 +78,7 @@ test('top-level and command help have no side effects', () => {
   const submitHelp = run(temporaryDirectory(), ['submit', '--help']).stdout
   assert.match(submitHelp, /--verbose-warnings/)
   assert.match(submitHelp, /--unverified-item/)
+  assert.match(submitHelp, /--knowledge-impact-file <path\|->/)
   assert.doesNotMatch(submitHelp, /--unverified <summary>/)
   assert.match(run(temporaryDirectory(), ['done', '--help']).stdout, /--closeout-file/)
   assert.match(
@@ -91,11 +92,11 @@ test('top-level and command help have no side effects', () => {
   const topHelp = run(temporaryDirectory(), ['--help']).stdout
   assert.match(
     topHelp,
-    /approve <task-id> --expect-revision <revision> \(--reason <text> \| --authorization-file <path> \| --retrospective-file <path>\)/,
+    /approve <task-id> --expect-revision <revision> \(--reason <text> \| --authorization-file <path\|-> \| --retrospective-file <path\|->\)/,
   )
   assert.match(
     topHelp,
-    /approve <task-id> --expect-revision <revision> --feedback <text> \[--authorization-file <path>\]/,
+    /approve <task-id> --expect-revision <revision> --feedback <text> \[--authorization-file <path\|->\]/,
   )
   assert.match(
     topHelp,

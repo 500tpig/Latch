@@ -1,6 +1,6 @@
 import { lstatSync } from 'node:fs'
 import { isAbsolute, normalize, resolve, sep } from 'node:path'
-import { fail } from '../cli-support.js'
+import { fail, readInputFile } from '../cli-support.js'
 import { discoverWorkspaceRoot } from '../core/paths.js'
 import { normalizeTaskPlanInput } from '../core/plan-schema.js'
 import { jsonEnvelopeV2 } from '../core/task-view.js'
@@ -20,7 +20,6 @@ import type {
   TaskV2,
 } from '../core/types.js'
 import { sharedWorktreeProjection } from '../core/progress/shared.js'
-import { readJsonFile } from '../core/utils.js'
 import { commandUsage } from './usage.js'
 
 export function requirePositionals(
@@ -117,7 +116,7 @@ export function readPlan(
   profile: TaskProfile = 'standard',
 ) {
   if (!planFile) fail('invalid_arguments', '--plan-file is required.')
-  const plan = readJsonFile<unknown>(resolve(cwd, planFile))
+  const plan = readInputFile<unknown>(cwd, planFile, '--plan-file')
   const normalized = normalizeTaskPlanInput(plan, profile, planFile)
   const workspaceRoot = discoverWorkspaceRoot(cwd)
   for (const candidate of normalized.workspace_scope.paths) {
