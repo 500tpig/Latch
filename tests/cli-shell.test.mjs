@@ -101,6 +101,93 @@ test('top-level and command help have no side effects', () => {
     /\[--reason <text> \| --authorization-file <path> \| --retrospective-file <path>\] \[--feedback <text>/,
   )
   assert.doesNotMatch(topHelp, /upgrade-v4|downgrade-v2|claim <task-id>/)
+  assert.match(topHelp, /latch --version \[--json\]/)
+})
+
+test('version reports package metadata in human and JSON modes without side effects', () => {
+  const packageVersion = JSON.parse(
+    readFileSync(join(process.cwd(), 'package.json'), 'utf8'),
+  ).version
+  const cliSource = readFileSync(join(process.cwd(), 'src', 'cli.ts'), 'utf8')
+  const versionSource = readFileSync(
+    join(process.cwd(), 'src', 'commands', 'version.ts'),
+    'utf8',
+  )
+  const agentsSource = readFileSync(join(process.cwd(), 'AGENTS.md'), 'utf8')
+  assert.match(cliSource, /import \{ runVersion \} from '.\/commands\/version\.js'/)
+  assert.doesNotMatch(cliSource, /function (?:cliVersion|runVersion)/)
+  assert.doesNotMatch(cliSource, /readFileSync/)
+  assert.match(versionSource, /\.\.\/\.\.\/package\.json/)
+  assert.match(agentsSource, /禁止在 `src\/cli\.ts` 实现 command/)
+  assert.match(agentsSource, /独立参数、I\/O 与成功输出放 `src\/commands\/`/)
+  const invocations = [
+    {
+      args: ['--version'],
+      assertOutput(result) {
+        assert.equal(result.stdout, `${packageVersion}\n`)
+      },
+    },
+    {
+      args: ['--version', '--json'],
+      assertOutput(result) {
+        const data = JSON.parse(result.stdout)
+        assert.equal(data.schema_version, 2)
+        assert.equal(typeof data.generated_at, 'string')
+        assert.equal(data.cli_version, packageVersion)
+        assert.equal(data.current_task_schema_version, 5)
+        assert.deepEqual(data.historical_readable_task_schema_versions, [2, 3, 4])
+        assert.equal('envelope_schema_version' in data, false)
+      },
+    },
+    {
+      args: ['--json', '--version'],
+      assertOutput(result) {
+        const data = JSON.parse(result.stdout)
+        assert.equal(data.cli_version, packageVersion)
+        assert.equal(data.current_task_schema_version, 5)
+        assert.deepEqual(data.historical_readable_task_schema_versions, [2, 3, 4])
+      },
+    },
+  ]
+
+  for (const { args, assertOutput } of invocations) {
+    const cwd = temporaryDirectory()
+    const before = readdirSync(cwd).sort()
+    const result = run(cwd, args, { actor: '' })
+
+    assert.equal(result.status, 0, result.stderr)
+    assert.equal(result.stderr, '')
+    assertOutput(result)
+    assert.deepEqual(readdirSync(cwd).sort(), before)
+    assert.equal(existsSync(join(cwd, '.latch')), false)
+  }
+})
+
+test('version rejects every argument except one optional --json without side effects', () => {
+  const invalidInvocations = [
+    ['--version', 'list', '--json'],
+    ['list', '--version', '--json'],
+    ['--version', '--wat', '--json'],
+    ['--version', 'extra', '--json'],
+    ['--version', '--version', '--json'],
+    ['--version', '--json', '--json'],
+    ['--version', '--help', '--json'],
+  ]
+
+  for (const args of invalidInvocations) {
+    const cwd = temporaryDirectory()
+    const before = readdirSync(cwd).sort()
+    const result = run(cwd, args, { actor: '' })
+
+    assert.notEqual(result.status, 0)
+    assert.equal(result.stdout, '')
+    const data = JSON.parse(result.stderr)
+    assert.equal(data.schema_version, 2)
+    assert.equal(data.error.code, 'invalid_arguments')
+    assert.match(data.error.message, /Usage: latch --version \[--json\]/)
+    assert.deepEqual(readdirSync(cwd).sort(), before)
+    assert.equal(existsSync(join(cwd, '.latch')), false)
+  }
 })
 
 test('approve rejects conflicting modes before reading or mutating a task', () => {

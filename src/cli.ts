@@ -24,6 +24,7 @@ import {
 } from './commands/task-mutation.js'
 import { runDowngradeV2, runUpgradeV4 } from './commands/migration.js'
 import { actorRequiredCommands, usage } from './commands/usage.js'
+import { runVersion } from './commands/version.js'
 import {
   runCheckpoint,
   runInit,
@@ -38,6 +39,7 @@ import { DowngradeTaskV2Error } from './core/task-store.js'
 import { injectHostActor } from './host-adapter.js'
 
 function run(argv: string[], cwd: string) {
+  if (argv.includes('--version')) return runVersion(argv)
   const command = argv[0]
   if (!command || command === '--help' || command === '-h') {
     process.stdout.write(`${usage}\n`)
@@ -124,7 +126,9 @@ try {
   if (process.argv.includes('--json'))
     process.stderr.write(
       `${JSON.stringify({
-        ...(process.argv[2] === 'record' ? recordJsonEnvelope() : jsonEnvelopeV2()),
+        ...(process.argv.includes('--version') || process.argv[2] !== 'record'
+          ? jsonEnvelopeV2()
+          : recordJsonEnvelope()),
         ...(error instanceof DowngradeTaskV2Error
           ? {
               backup_path: error.backupPath,

@@ -55,6 +55,24 @@ CLI JSON error envelope 为可恢复的高频领域拒绝提供稳定 `error.cod
 
 ## 命令
 
+### 查询版本
+
+```bash
+latch --version
+latch --version --json
+latch --json --version
+```
+
+Human 输出只包含当前 CLI 包的版本号和换行。JSON 输出保留
+`schema_version: 2` envelope，并包含 `cli_version`、
+`current_task_schema_version: 5` 和
+`historical_readable_task_schema_versions: [2, 3, 4]`。
+
+`--version` 只能与一个可选的 `--json` 组合。与 command、未知参数或多余
+positional 组合时，CLI 返回 `invalid_arguments`。版本查询从当前 CLI 包自身的
+`package.json` 读取版本，不探测 PATH shim、全局安装或外部 package 路径；该查询不要求
+canonical actor、Git repo 或 `.latch` 初始化，也不写入文件。
+
 ### 初始化
 
 ```bash

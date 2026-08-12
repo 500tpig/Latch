@@ -17,7 +17,7 @@ lint、typecheck、build 或文档索引等机械检查不单独触发 C。Light
 3. 已知 task ID 时使用同一 current runner 读取 `context <task-id> --json --status`；否则仅为 list 返回的 `current_task_id` 读取 status，两者都没有时不得调用无 task ID 的 status；
 4. 先读 task artifact；status 不足时只展开一张 task 的 `--brief --history timeline`，仅在产品契约、架构、安装、文档行为或证据不足时从 `docs/INDEX.md` 选择直接相关的 1–3 份文档。
 
-CLI `0.5.0` 是 current runner。新 task 使用 schema 5；schema 2–4 仅供 historical read-only，不得通过 current runner 执行 claim、upgrade、downgrade、takeover 或其它 mutation。task schema 或 runner 无法确定时立即停止。
+CLI `0.5.0` 是 current runner；新 task 用 schema 5，schema 2–4 只读且禁止 current runner mutation。无法确定 task schema 或 runner 时停止。
 
 连续 mutation 直接复用成功 JSON 返回的 `revision` 作为下一条 `--expect-revision`。仅在 revision conflict、用户输入边界、warning 需要判断或任务语义变化时刷新 status；不得自动重试冲突，也不得只为 revision 重读 context。
 
@@ -31,10 +31,11 @@ CLI `0.5.0` 是 current runner。新 task 使用 schema 5；schema 2–4 仅供 
 
 ## 开发边界
 
-- 写代码前读取现有实现、相关测试和 import；明确标识符使用 `rg`，结构影响在存在 `.codegraph/` 时使用 CodeGraph。
-- 做最小可维护改动，不清理、回滚或覆盖用户改动，不新增无真实来源的 guard、fallback 或抽象。
-- JavaScript 和 TypeScript 使用 `pnpm`；完成前运行 `pnpm check` 和 `git diff --check`，或说明为何采用更小验证。
-- phase 只有 `plan`、`dev`、`check`、`review`；blocked 是附加状态。`task.json` 是当前事实，events 是历史，state 是 actor 的 current 索引。current 新 task 使用 schema 5 和 minimum writer `0.5.0`；`events_schema_version` 保持 `3`。
+- 写代码前读现有实现、相关测试和 import；标识符用 `rg`，有 `.codegraph/` 时用 CodeGraph 查结构影响。
+- 仅做任务所需的最小可维护改动；保留用户改动，不新增无来源的 guard、fallback 或抽象。
+- 禁止在 `src/cli.ts` 实现 command；入口仅做启动、分流、分派和报错，独立参数、I/O 与成功输出放 `src/commands/`。
+- JavaScript/TypeScript 用 `pnpm`；完成前运行 `pnpm check` 和 `git diff --check`，缩减验证须说明原因。
+- phase 仅为 `plan`、`dev`、`check`、`review`，blocked 是附加状态。`task.json` 是当前事实，events 是历史，state 是 actor current 索引；新 task 用 schema 5、minimum writer `0.5.0`，`events_schema_version` 为 `3`。
 - 不实现自动分类、聊天保存、全局 knowledge store、自动 Git 或自动 worktree。
 
 ## Record 与文档

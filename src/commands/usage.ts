@@ -82,6 +82,7 @@ function topLevelCommandUsage(command: string) {
 }
 
 export const usage = `Usage: latch <command> [options]
+       latch --version [--json]
 
 Commands:
 ${topLevelCommands
