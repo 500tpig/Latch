@@ -38,7 +38,7 @@ import { jsonEnvelopeV2 } from './core/task-view.js'
 import { DowngradeTaskV2Error } from './core/task-store.js'
 import { injectHostActor } from './host-adapter.js'
 
-function run(argv: string[], cwd: string) {
+async function run(argv: string[], cwd: string) {
   if (argv.includes('--version')) return runVersion(argv)
   const command = argv[0]
   if (!command || command === '--help' || command === '-h') {
@@ -113,31 +113,35 @@ function run(argv: string[], cwd: string) {
   }
 }
 
-try {
-  run(process.argv.slice(2), process.cwd())
-} catch (error) {
-  const message = error instanceof Error ? error.message : String(error)
-  const code =
-    error instanceof CliV2Error ||
-    error instanceof LatchDomainError ||
-    error instanceof NotInitializedError
-      ? error.code
-      : 'command_failed'
-  if (process.argv.includes('--json'))
-    process.stderr.write(
-      `${JSON.stringify({
-        ...(process.argv.includes('--version') || process.argv[2] !== 'record'
-          ? jsonEnvelopeV2()
-          : recordJsonEnvelope()),
-        ...(error instanceof DowngradeTaskV2Error
-          ? {
-              backup_path: error.backupPath,
-              warnings: error.warnings,
-            }
-          : {}),
-        error: { code, message },
-      }, null, 2)}\n`,
-    )
-  else process.stderr.write(`${message}\n`)
-  process.exitCode = 1
+async function main() {
+  try {
+    await run(process.argv.slice(2), process.cwd())
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    const code =
+      error instanceof CliV2Error ||
+      error instanceof LatchDomainError ||
+      error instanceof NotInitializedError
+        ? error.code
+        : 'command_failed'
+    if (process.argv.includes('--json'))
+      process.stderr.write(
+        `${JSON.stringify({
+          ...(process.argv.includes('--version') || process.argv[2] !== 'record'
+            ? jsonEnvelopeV2()
+            : recordJsonEnvelope()),
+          ...(error instanceof DowngradeTaskV2Error
+            ? {
+                backup_path: error.backupPath,
+                warnings: error.warnings,
+              }
+            : {}),
+          error: { code, message },
+        }, null, 2)}\n`,
+      )
+    else process.stderr.write(`${message}\n`)
+    process.exitCode = 1
+  }
 }
+
+void main()

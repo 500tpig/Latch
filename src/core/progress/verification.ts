@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
@@ -35,6 +34,12 @@ import {
   requireText,
   usesLightProofPackage,
 } from './shared.js'
+import {
+  emptyVerificationFailureLog,
+  runVerificationCommand,
+  type VerificationFailureLog,
+  type VerificationOutputMode,
+} from './command-output.js'
 
 export type VerifyTaskV2Input = {
   expectRevision: number
@@ -42,16 +47,22 @@ export type VerifyTaskV2Input = {
   name: string
   diagnostic: boolean
   command?: string[]
+  outputMode: VerificationOutputMode
 }
 
 export type VerifyTaskV2Result = TaskWriteResultV2 & {
   verification: VerifyResult
+  failureLog?: VerificationFailureLog
 }
 
 export type VerifyAllTasksV2Result = TaskWriteResultV2 & {
   verifications: VerifyResult[]
-  executions: Array<{ verification: VerifyResult; revision: number }>
+  executions: Array<{
+    verification: VerifyResult
+    revision: number
+  }>
   failed?: VerifyResult
+  failureLog?: VerificationFailureLog
   stoppedReason?: string
   stoppedGate?: string
   remaining: string[]
@@ -279,11 +290,11 @@ function evidenceFailureResult(
   } satisfies VerifyResult
 }
 
-export function verifyTaskV2(
+export async function verifyTaskV2(
   store: TaskStoreV2,
   id: string,
   input: VerifyTaskV2Input,
-): VerifyTaskV2Result {
+): Promise<VerifyTaskV2Result> {
   const current = assertTaskWritableV2(
     store,
     id,
@@ -318,10 +329,11 @@ export function verifyTaskV2(
   }
 
   if (kind === 'diagnostic') {
-    const executed = spawnSync(command[0], command.slice(1), {
-      cwd: store.paths.workspaceRoot,
-      stdio: ['inherit', 2, 2],
-    })
+    const executed = await runVerificationCommand(
+      command,
+      store.paths.workspaceRoot,
+      input.outputMode,
+    )
     const exitCode = executed.status ?? 127
     const result: VerifyResult = {
       name,
@@ -350,7 +362,13 @@ export function verifyTaskV2(
         task.verification.diagnostic[name] = result
       },
     })
-    return { ...written, verification: result }
+    return {
+      ...written,
+      verification: result,
+      ...(result.status === 'fail' && executed.failureLog
+        ? { failureLog: executed.failureLog }
+        : {}),
+    }
   }
 
   const scope = requireWorkspaceScope(current)
@@ -393,6 +411,9 @@ export function verifyTaskV2(
         `Workspace evidence capture failed before gate ${name}; command was not started.`,
       ],
       verification: result,
+      ...(input.outputMode === 'capture'
+        ? { failureLog: emptyVerificationFailureLog() }
+        : {}),
     }
   }
 
@@ -433,7 +454,13 @@ export function verifyTaskV2(
           if (task.phase === 'dev') task.phase = 'check'
         },
       })
-      return { ...written, verification: result }
+      return {
+        ...written,
+        verification: result,
+        ...(input.outputMode === 'capture'
+          ? { failureLog: emptyVerificationFailureLog() }
+          : {}),
+      }
     }
     const liveDelta = compareWorkspaceSnapshots(baseline, before, scope)
     const reconciled = reconcileViolations(workingTask, before)
@@ -460,10 +487,11 @@ export function verifyTaskV2(
     }
   }
 
-  const executed = spawnSync(command[0], command.slice(1), {
-    cwd: store.paths.workspaceRoot,
-    stdio: ['inherit', 2, 2],
-  })
+  const executed = await runVerificationCommand(
+    command,
+    store.paths.workspaceRoot,
+    input.outputMode,
+  )
   const exitCode = executed.status ?? 127
   const after = captureWorkspaceSnapshot(
     store.paths.workspaceRoot,
@@ -627,14 +655,17 @@ export function verifyTaskV2(
       ...(baselineWarning ? [baselineWarning] : []),
     ],
     verification: result,
+    ...(result.status === 'fail' && executed.failureLog
+      ? { failureLog: executed.failureLog }
+      : {}),
   }
 }
 
-export function verifyAllTasksV2(
+export async function verifyAllTasksV2(
   store: TaskStoreV2,
   id: string,
-  input: Pick<VerifyTaskV2Input, 'expectRevision' | 'actor'>,
-): VerifyAllTasksV2Result {
+  input: Pick<VerifyTaskV2Input, 'expectRevision' | 'actor' | 'outputMode'>,
+): Promise<VerifyAllTasksV2Result> {
   const current = assertTaskWritableV2(
     store,
     id,
@@ -652,8 +683,12 @@ export function verifyAllTasksV2(
   let task = current
   const warnings: string[] = []
   const verifications: VerifyResult[] = []
-  const executions: Array<{ verification: VerifyResult; revision: number }> = []
+  const executions: Array<{
+    verification: VerifyResult
+    revision: number
+  }> = []
   let failed: VerifyResult | undefined
+  let failureLog: VerificationFailureLog | undefined
   let stoppedReason: string | undefined
   let stoppedGate: string | undefined
 
@@ -751,11 +786,12 @@ export function verifyAllTasksV2(
         }
       }
     }
-    const result = verifyTaskV2(store, id, {
+    const result = await verifyTaskV2(store, id, {
       expectRevision: revision,
       actor: input.actor,
       name: item.name,
       diagnostic: false,
+      outputMode: input.outputMode,
     })
     task = result.task
     revision = result.task.revision
@@ -767,6 +803,7 @@ export function verifyAllTasksV2(
     })
     if (result.verification.status === 'fail') {
       failed = result.verification
+      failureLog = result.failureLog
       stoppedReason = result.verification.failure_reason ?? 'command_failed'
       stoppedGate = result.verification.name
       break
@@ -780,6 +817,7 @@ export function verifyAllTasksV2(
     executions,
     remaining,
     ...(failed ? { failed } : {}),
+    ...(failureLog ? { failureLog } : {}),
     ...(stoppedReason ? { stoppedReason } : {}),
     ...(stoppedGate ? { stoppedGate } : {}),
   }

@@ -295,6 +295,12 @@ latch verify-all <task-id> --expect-revision 10
 
 普通 gate 执行 plan 保存的 argv，不接受调用方替换命令。diagnostic 可以使用 plan 命令或 `--` 后的临时 argv，不参与 submit 门禁。验证进程不经过 shell。
 
+非 JSON 模式实时转发 gate 的 stdout 和 stderr。JSON 模式不转发成功 gate 的命令
+日志，stdout 只写入最终 JSON envelope。gate 失败时，envelope 顶层增加
+`failure_log`：stdout 和 stderr 分开保存，各保留最后 8192 字节，并通过
+`truncated` 标明是否截断。`retained` 固定为 `tail`；命令无法启动时，
+`spawn_error` 保存启动错误。完整日志不写入 task、evidence 或临时文件。
+
 `echo`、`printf`、`true` 和只输出操作说明的命令不得配置为 gate。这类命令返回 0 只能证明命令成功退出，不能证明手工步骤已经执行。需要在 plan 中保留手工步骤时，将其标为 diagnostic；diagnostic 的执行结果不构成手工验收事实。手工验收尚未完成时，通过重复的 `--unverified-item` 写入 `submission.unverified_items`。
 
 named gate 启动前和子进程退出后都会采集 covered workspace evidence。command

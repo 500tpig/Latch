@@ -109,7 +109,7 @@ export function runApprove(args: string[], cwd: string, actor: string) {
   printWarnings(result.warnings)
 }
 
-export function runVerify(args: string[], cwd: string, actor: string) {
+export async function runVerify(args: string[], cwd: string, actor: string) {
   const parsed = parseCommand(args, {
     ...commonOptions(),
     'expect-revision': { type: 'string' },
@@ -129,17 +129,19 @@ export function runVerify(args: string[], cwd: string, actor: string) {
     fail('invalid_arguments', 'Gate verification command comes from the approved plan.')
   const store = openTaskStoreV2(cwd)
   currentWritableTask(store, parsed.positionals[0])
-  const result = verifyTaskV2(store, parsed.positionals[0], {
+  const result = await verifyTaskV2(store, parsed.positionals[0], {
     expectRevision,
     actor,
     name: parsed.values.name,
     diagnostic,
     command: command.length > 0 ? command : undefined,
+    outputMode: parsed.values.json ? 'capture' : 'inherit',
   })
   if (parsed.values.json)
     json({
       ...mutationJson(store, result.task, actor, result.warnings, expectRevision),
       verification: result.verification,
+      ...(result.failureLog ? { failure_log: result.failureLog } : {}),
     })
   else {
     process.stdout.write(
@@ -150,7 +152,7 @@ export function runVerify(args: string[], cwd: string, actor: string) {
   if (result.verification.status === 'fail') process.exitCode = 1
 }
 
-export function runVerifyAll(args: string[], cwd: string, actor: string) {
+export async function runVerifyAll(args: string[], cwd: string, actor: string) {
   const parsed = parseCommand(args, {
     ...commonOptions(),
     'expect-revision': { type: 'string' },
@@ -164,9 +166,10 @@ export function runVerifyAll(args: string[], cwd: string, actor: string) {
   )
   const store = openTaskStoreV2(cwd)
   currentWritableTask(store, parsed.positionals[0])
-  const result = verifyAllTasksV2(store, parsed.positionals[0], {
+  const result = await verifyAllTasksV2(store, parsed.positionals[0], {
     expectRevision,
     actor,
+    outputMode: parsed.values.json ? 'capture' : 'inherit',
   })
   const executed = result.executions.map(({ verification, revision }) => ({
     name: verification.name,
@@ -187,6 +190,7 @@ export function runVerifyAll(args: string[], cwd: string, actor: string) {
       proof_generation: result.task.workspace_proof?.generation ?? null,
       unresolved_violations:
         result.task.workspace_proof?.unresolved_violations.length ?? 0,
+      ...(result.failureLog ? { failure_log: result.failureLog } : {}),
     })
   else {
     process.stdout.write(
