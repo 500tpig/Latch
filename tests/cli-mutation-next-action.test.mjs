@@ -35,10 +35,12 @@ function mutation(cwd, args, actor = owner) {
     { actor },
   )
   assert.equal(status.status, 0, status.stderr)
+  const statusTask = JSON.parse(status.stdout).task
   assert.equal(
     output.next_action,
-    JSON.parse(status.stdout).task.next_action,
+    statusTask.next_action,
   )
+  assert.deepEqual(output.workspace_proof, statusTask.workspace_proof)
   return output
 }
 
@@ -70,6 +72,7 @@ test('task mutation JSON derives next_action from the post-mutation lifecycle st
   ])
   const taskId = output.task_id
   assert.equal(output.next_action, 'approve')
+  assert.equal('workspace_proof' in output, false)
 
   output = mutation(cwd, [
     'takeover', taskId, '--expect-revision', String(output.revision),
@@ -95,12 +98,14 @@ test('task mutation JSON derives next_action from the post-mutation lifecycle st
     '--reason', 'approve fixture plan',
   ], nextWriter)
   assert.equal(output.next_action, 'verify')
+  assert.equal('workspace_proof' in output, false)
 
   output = mutation(cwd, [
     'verify', taskId, '--expect-revision', String(output.revision),
     '--name', 'first',
   ], nextWriter)
   assert.equal(output.next_action, 'verify')
+  assert.equal(output.workspace_proof.generation, 1)
 
   output = mutation(cwd, [
     'verify-all', taskId, '--expect-revision', String(output.revision),

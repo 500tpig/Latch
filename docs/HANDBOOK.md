@@ -166,6 +166,8 @@ backup 或 archive。
 
 `context --json --status` 是最小状态入口，返回 phase、revision、授权、writer、
 blocked、gate 计数、workspace proof 摘要、`shared_worktree` 和 `next_action`。存在 proof baseline 时，
+摘要包含 `generation`、`baseline_dirty`、`baseline_in_scope`、`baseline_out_of_scope`、
+`unresolved_violations` 和 `live_status`；
 `workspace_proof.live_status` 为 `match`、`mismatch` 或 `unknown`；该值只读计算，
 不会推进 generation 或写 evidence。`context --json --since-revision <revision>`
 返回该 revision 之后的 event，以及当前最小状态；调用方必须已有对应 baseline，
@@ -180,7 +182,9 @@ delta 不能替代完整 context。
 
 所有成功 task mutation 的 JSON 顶层也返回 `next_action`。该字段与
 `context --json --status` 共用派生规则，以 mutation 完成后的 phase、writer、gate 和
-live workspace proof 为准；`shared_worktree` 与 status 使用同一投影规则。`done` 与
+live workspace proof 为准；`shared_worktree` 与 status 使用同一投影规则。已有 proof 时，
+mutation JSON 还返回同一 bounded `workspace_proof` 投影；没有 proof 时省略该字段。
+`done` 与
 `abandon` 返回 `read_only`。human 输出保持不变。
 
 `context --json --review` 是 review 与 closeout 的紧凑入口。它保留 `goal`、

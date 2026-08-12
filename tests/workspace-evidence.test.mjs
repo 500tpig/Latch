@@ -422,6 +422,46 @@ test('dirty baseline warning separates in-scope and ambient paths', () => {
   )
 })
 
+test('successful mutation returns dirty baseline and unresolved violation status projection', () => {
+  const cwd = temporaryRepo()
+  const id = createTask(cwd, plan([
+    {
+      name: 'outside',
+      command: [
+        process.execPath,
+        '-e',
+        "require('fs').writeFileSync('outside.txt', 'mutated by gate\\n')",
+      ],
+    },
+  ]))
+  writeFileSync(join(cwd, 'tracked.txt'), 'dirty in scope\n')
+  writeFileSync(join(cwd, 'outside.txt'), 'dirty ambient\n')
+
+  const verification = verify(cwd, id, 'outside')
+  assert.notEqual(verification.status, 0)
+
+  const artifact = run(cwd, [
+    'artifact', 'add', id,
+    '--expect-revision', revision(cwd, id),
+    'doc:docs/workspace-proof-fixture.md', '--json',
+  ])
+  assert.equal(artifact.status, 0, artifact.stderr)
+  const mutation = JSON.parse(artifact.stdout)
+  assert.equal(mutation.workspace_proof.generation, 2)
+  assert.equal(mutation.workspace_proof.baseline_dirty, 2)
+  assert.equal(mutation.workspace_proof.baseline_in_scope, 1)
+  assert.equal(mutation.workspace_proof.baseline_out_of_scope, 1)
+  assert.equal(mutation.workspace_proof.unresolved_violations, 1)
+  assert.equal(typeof mutation.workspace_proof.live_status, 'string')
+
+  const status = run(cwd, ['context', id, '--json', '--status'])
+  assert.equal(status.status, 0, status.stderr)
+  assert.deepEqual(
+    mutation.workspace_proof,
+    JSON.parse(status.stdout).task.workspace_proof,
+  )
+})
+
 test('out-of-scope mutation creates a violation and submit rejects it', () => {
   const cwd = temporaryRepo()
   const id = createTask(cwd, plan([

@@ -202,6 +202,7 @@ export function workspaceProofView(
       task.workspace_proof.baseline_counts.tracked_dirty +
       task.workspace_proof.baseline_counts.untracked +
       task.workspace_proof.baseline_counts.explicit_ignored,
+    baseline_in_scope: task.workspace_proof.baseline_counts.in_scope,
     baseline_out_of_scope: task.workspace_proof.baseline_counts.out_of_scope,
     live_status: liveStatus,
     ...(liveAssessment ? { live_changes: liveAssessment.changes } : {}),

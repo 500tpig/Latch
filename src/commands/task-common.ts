@@ -160,6 +160,7 @@ export function mutationJson(
       archived,
     ),
     shared_worktree: sharedWorktreeProjection(store, task),
+    ...(workspaceProof ? { workspace_proof: workspaceProof } : {}),
     warnings,
   }
 }
