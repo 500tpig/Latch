@@ -1,187 +1,187 @@
-# Latch Agent 使用反馈协议
+# Latch Agent 使用反馈分流
 
-本页定义 AI Agent 使用 Latch 后的定性反馈协议。反馈只在用户明确要求时写入，
-并且必须包含可核对证据。默认流程不读取、不生成、不保存此类反馈。
+本页定义跨项目收集、核验和处理 Latch 使用反馈的正式流程。反馈先形成可核对的交接材料，再回到 Latch repo 判断落点；不得默认追加到固定 Project Record。
 
-## 目的与非目标
+这套流程用于减少重复反馈、历史问题误报和综合反馈池持续膨胀。它不自动修改 Latch，也不把其他 repo 的主观感受直接变成产品 backlog。
 
-本协议用于记录 AI Agent 在真实任务中使用 Latch 时遇到的具体摩擦、有效机制和改进
-建议。每条反馈需要把可核对事实与产品主张分开，供后续人工汇总和产品决策使用。
+## 基本原则
 
-本协议不用于：
+- 其他 repo 负责保留现场事实，不替 Latch repo 决定修复方案。
+- Latch repo 负责按当前 CLI、Skill、文档、实现和测试核验问题。
+- Record 只保存证据不足、需要继续观察或暂不实施的内容。
+- 当前版本可复现且正确行为明确的问题进入 task，不长期停留在 Record。
+- 已确认的长期规则进入 Skill、项目规则、正式文档或回归测试。
+- 原项目自身的问题留在原项目，不转移到 Latch。
+- 已解决或重复的问题不创建新的 Record 或 task。
 
-- 评价单张 task 的交付质量；
-- 代替 Schema 5 或 v2 观察期的定量样本；
-- 保存聊天记录、情绪表达或无证据印象；
-- 自动生成产品 backlog；
-- 直接授权修改 CLI、Core、Board、Skill 或其它 repo。
+可以简化为：事实不足时使用 Record；事实充分时进入 task；完成修复后由测试、Skill 或文档保存长期结论。
 
-## 与 Schema 5 / v2 观察期的边界
+## 与观察期的边界
 
-两类材料使用不同来源和落点，不得混表：
+Agent 使用反馈与 Schema 5 / v2 观察样本使用不同证据和落点，不得混合统计：
 
 | 材料 | 证据来源 | 落点 | 用途 |
 |---|---|---|---|
 | Schema 5 / v2 观察样本 | 授权 repo 的 archive `task.json` 与 `events.jsonl` | [OBSERVATION.md](OBSERVATION.md) 定义的只读评估流程 | 固定样本的定量观察 |
-| Agent 使用反馈 | 用户点名后读取的当前任务事实、命令结果或文件现象 | Project Record「Agent 使用反馈」 | 记录真实体感与改进建议 |
+| Agent 使用反馈 | 当前任务事实、命令结果、错误信息和文件现象 | 本页定义的交接与分流流程 | 判断是否需要观察、修复或更新长期规则 |
 
-Agent 使用反馈不得写入 `docs/OBSERVATION.md`，也不得被描述为观察期的定量结论。
-观察期检查不得反向读取反馈 Record 作为样本证据。
+Agent 使用反馈不得写入 `docs/OBSERVATION.md`，也不得被描述为观察期的定量结论。观察期检查不得反向读取反馈 Record 作为样本证据。
 
-## 触发条件（opt-in only）
+## 触发边界
 
-默认不执行反馈流程。以下时机均不得自动读取或写入反馈：
+默认不执行反馈流程。`submit`、`done`、会话结束、任务总结或普通复盘均不得自动生成、保存或转交 Latch 反馈。
 
-- `submit`、`done` 或会话结束；
-- 一次 Latch 使用完成后；
-- AI 总结工作、复盘任务或提出下一步时。
+只有用户明确要求整理、转交、核验或保存 Latch 使用反馈时才执行。例如：
 
-只有用户明确表达记录意图时才执行，例如：
+- 「整理这次 Latch 使用问题，带回 Latch 项目核验」；
+- 「生成一份 Latch 反馈交接单」；
+- 「核验这份外部反馈是否需要修改 Latch」；
+- 「把这个未确认问题保存为当前项目的 Record」。
 
-- 「记一条 Latch Agent 反馈」；
-- 「写使用感受」或「写使用问题」；
-- 「按 Agent 反馈协议追加」；
-- 「把这次摩擦记进反馈 Record」。
+「使用起来不太顺」等普通表达不构成写入授权。是否保存不明确时，只询问一次；未获得明确授权时，不创建 Record 或 task。
 
-「Latch 还行吧」等模糊闲聊不构成写入授权。需要落盘时，先询问是否写入。用户未
-点名时，应当视为不存在这项能力，不把「总结使用感受」加入默认收尾。
+## 两阶段流程
 
-## 落点
+### 第一阶段：在来源 repo 整理交接材料
 
-所有 AI Agent 共用同一份协议和同一条 Project Record，不创建私有副本。
+来源 repo 的 Agent 只记录现场事实，不修改 Latch，不创建 Latch task，也不默认创建当前项目的 Record。交接材料至少包含：
 
-- Record 标题：`Agent 使用反馈`
-- Record ID：`rec_cdc0b9ff-c87b-437a-a76e-563f119950d0`
-- 标签：`agent-feedback`
+- repo 与任务场景；
+- Latch CLI 版本与 Skill 来源；
+- 实际执行的命令；
+- 实际结果与完整错误信息；
+- 期望结果；
+- 最小复现步骤；
+- 稳定复现、偶发现象或主观易用性反馈；
+- 对问题归属的初步判断：Latch、项目配置、Agent 使用错误或未知；
+- 影响类型：正确性、安全性或操作体验。
 
-读取前先按标题查重，再使用固定 ID 读取正文：
+不能获取的字段明确标记为「未知」，不得补写不存在的命令、版本、错误或复现结果。交接材料只作为后续核验输入，不构成 Record、task plan 或实施授权。
 
-```bash
-node dist/cli.js record list --query "Agent 使用反馈" --status active --json
-node dist/cli.js record show rec_cdc0b9ff-c87b-437a-a76e-563f119950d0 --json
-```
+### 第二阶段：在 Latch repo 核验并分流
 
-追加前，将去重并合并后的**完整正文**保存到当前项目内的临时文件，再使用 `show`
-返回的当前 `revision` 整段替换：
+进入 Latch repo 后，先做只读核验：
 
-```bash
-node dist/cli.js record edit rec_cdc0b9ff-c87b-437a-a76e-563f119950d0 \
-  --expect-revision <revision> \
-  --body-file .latch/record-body.md \
-  --json
-```
+1. 确认当前 CLI 版本和 canonical Skill；
+2. 检查当前实现、直接相关测试和 current 文档；
+3. 在当前版本复现或验证反馈描述；
+4. 判断问题是否已经修复、仍然成立、部分成立或无法确认；
+5. 明确问题归属和最小影响范围；
+6. 给出推荐落点，等待对应写入授权。
 
-不得根据过期 revision 自动重试。出现 revision conflict 时，重新读取正文、再次去重，
-再等待当前写入请求内的明确判断。固定 ID 未找到、Record 已归档或出现多个同名候选时，
-停止写入并报告状态，不静默新建另一条流水。
+核验阶段不得直接修改代码、创建 Record、创建 task、归档历史数据或扩大到其他 repo。用户明确授权某项写入后，再按对应规则执行。
 
-## 证据门槛与 confidence
+## 分流规则
 
-每条反馈必须包含以下字段：
+| 核验结果 | 推荐落点 | 理由 |
+|---|---|---|
+| 当前版本稳定复现，正确行为和验收标准明确 | Latch task | 已具备实施条件，需要正常计划、授权和验证 |
+| 影响公共契约、产品选择或多个独立验收面 | Standard task | 需要先确认方案和取舍 |
+| 范围固定、低风险且无待确认问题 | Light task | 可以按最小范围直接实施 |
+| 证据不足、偶发或需要更多真实样本 | Project Record | 先保存可核对事实，暂不进入实施流程 |
+| Agent 反复误解稳定规则 | Skill、`AGENTS.md`、正式文档或测试对应的 task | Record 不会自动进入其他 Agent 上下文 |
+| 仅属于来源 repo 的配置或业务实现 | 来源 repo | 不应把项目问题转成 Latch 产品问题 |
+| 当前版本已经修复 | 不创建新内容；按需归档旧 Record | 避免重复处理历史问题 |
+| 与已有反馈或 task 重复 | 复用既有来源；按需补充新证据 | 不新建平行反馈池 |
+| 纯便利性建议，暂不准备实施 | Project Record 或仅回复当前请求 | 保留选择空间，不制造 backlog |
 
-- `scenario`：发生问题或形成判断的任务场景；
-- `evidence`：至少包含一种可核对证据；
-  - `task_id`；或
-  - `command` 与结果要点；或
-  - `path` 与文件现象；
-- `observation`：证据直接支持的事实，不混入建议；
-- `claim`：建议增加、删除、简化或保持的机制；
-- `action`：`add`、`remove`、`simplify`、`keep` 或 `unknown`；
+Record、task、Skill、文档和测试各自承担不同职责：
+
+- Record 保存原始观察和暂不实施的事项；
+- task 保存实施计划、授权、验证和 review 状态；
+- Skill 与项目规则约束 Agent 行为；
+- 正式文档保存稳定产品契约；
+- 回归测试证明已修复行为不会再次退化。
+
+## Record 的使用条件
+
+只有同时满足以下条件时，才建议把反馈保存为 Record：
+
+- 用户明确要求保存；
+- 当前项目就是预期存放位置；
+- 内容仍需观察，或当前没有实施计划；
+- 正文包含可核对证据，不只是情绪或宽泛建议；
+- 查询标题和标签后，没有明确重复候选。
+
+Record 是 project-local 数据。active 或 archived 状态都不会让其他 repo 的 Agent 自动读取正文。归档只表示退出默认 active 列表，不表示问题已修复，也不表示结论已经进入 Skill、文档或测试。
+
+需要转成 task 时，必须由用户明确指定准确 Record，并继续执行普通 A/B/C 判断。task 创建后不自动归档或删除来源 Record。
+
+## 证据与判断要求
+
+交接和核验结论必须把事实与建议分开：
+
+- `scenario`：问题发生时正在完成什么任务；
+- `evidence`：task ID、命令及结果、错误信息或路径现象；
+- `observation`：证据直接支持的事实；
+- `expected`：预期行为及其来源；
+- `assessment`：当前版本的核验结论；
+- `recommendation`：建议不处理、继续观察、创建 task 或更新长期规则；
 - `confidence`：`lived`、`user_stated` 或 `inferred`；
-- `severity`：`P0`、`P1` 或 `P2`；
-- `agent`、`repo` 和 `date`。
+- `severity`：`P0`、`P1` 或 `P2`。
 
-`confidence` 的含义：
+`P0` 表示阻断正常使用、造成数据或授权风险；`P1` 表示反复造成明显返工或误用；`P2` 表示局部摩擦、可理解性或便利性问题。证据不足时，不得用高优先级代替缺失证据。
 
-- `lived`：当前 AI Agent 在本会话中亲历，且能给出本会话证据；
-- `user_stated`：忠实记录用户明确陈述，不把用户原话改写成 Agent 亲历；
-- `inferred`：从现有证据推断，必须明确标为推断，不得补写不存在的事实。
+## 可复制提示词
 
-`severity` 用于汇总排序：`P0` 表示阻断正常使用、造成数据或授权风险；`P1` 表示会
-反复造成明显返工或误用；`P2` 表示局部摩擦、可理解性或便利性问题。证据不足时拒绝
-写入，并说明缺少 `task_id`、命令结果或路径现象中的哪一项，不得用 `unknown` 代替证据。
-
-## 条目 Markdown 模板
-
-未使用的 `evidence` 子项应删除。`command` 需要同时写明结果要点，`path` 需要同时写明
-可核对现象。
-
-```markdown
-### YYYY-MM-DD · <短标题>
-
-- agent: grok | codex | …
-- repo: <path or name>
-- scenario: <一句话>
-- confidence: lived | user_stated | inferred
-- evidence:
-  - task_id: …
-  - command: <命令；结果要点>
-  - path: <路径；可核对现象>
-- observation: <可核对事实>
-- claim: <应增加、删除、简化或保持什么>
-- action: add | remove | simplify | keep | unknown
-- severity: P0 | P1 | P2
-- related_observation_sample: none
-```
-
-`related_observation_sample` 固定为 `none`。该字段用于显式声明反馈没有进入观察期样本，
-不得改成 archive task 关联或统计编号。
-
-## 去重规则
-
-每次写入前必须读取 Record 的当前完整正文，并按以下顺序检查：
-
-1. 比较机制、`claim` 与 `action`，确认是否属于同一问题；
-2. 同一主张已有条目时，在原条目中补充新证据或收紧表述，不新增重复标题；
-3. 新证据不支持原主张时，不提高 `severity` 或 `confidence`；
-4. `inferred` 只有取得新的直接证据后才能改为 `lived` 或 `user_stated`；
-5. 同一场景但主张不同，或同一主张涉及不同机制时，可以分别记录。
-
-合并时保留可核对的原证据，不用概括性判断覆盖历史事实。无法判断是否重复时，先向
-用户说明候选条目，不直接追加。
-
-## 给 AI 的固定提示词
-
-### A. 用户点名「记反馈」时
+### 来源 repo：生成交接材料
 
 ```text
-用户已明确要求记录 Agent 使用反馈。
-1. 读取 docs/AGENT_FEEDBACK.md 与 Record「Agent 使用反馈」。
-2. 去重：已有同类 claim 则合并/更新，不重复堆。
-3. 按模板追加一条；evidence 至少含 task_id 或 command 或 path；否则拒绝写入并说明缺什么。
-4. confidence 仅 lived / user_stated / inferred（推断必须标明）。
-5. 禁止写入 OBSERVATION.md；禁止改 CLI/Core/Board；禁止 Git commit（除非用户另授）。
-6. 写完用三句话向用户复述：问题、证据、提案。
-若用户未明确要求反馈：禁止执行本流程。
+请不要修改 Latch，也不要创建 Record 或 task。
+
+请把这次遇到的 Latch 使用问题整理成一份交接单，包含：
+
+1. 当前 repo 和任务场景
+2. Latch CLI 版本和 Skill 来源
+3. 执行的命令
+4. 实际结果
+5. 期望结果
+6. 最小复现步骤
+7. 完整错误信息或关键状态输出
+8. 这是稳定复现、偶发现象，还是主观易用性反馈
+9. 可能是 Latch 问题、项目配置问题、Agent 使用错误，还是未知
+10. 是否影响正确性、安全性，还是仅影响操作体验
+
+不要猜测 Latch 的具体修改方案，只提供事实和必要判断。不能确认的内容标记为「未知」。
 ```
 
-## 周期性汇总提示词
-
-汇总不是定时任务，也不是默认维护步骤。只有用户明确点名「汇总改进」或表达同等意图
-时，才运行以下提示词：
-
-### B. 用户点名「汇总改进」时
+### Latch repo：核验并推荐落点
 
 ```text
-用户已明确要求汇总 Agent 反馈。
-读取 Record「Agent 使用反馈」与 docs/AGENT_FEEDBACK.md。
-仅使用 confidence 为 lived 或 user_stated 的条目，按 severity 输出：
-删除/不做、简化、新增、需更多证据。
-每条必须回指原反馈标题与 evidence；禁止引入无证据新槽点。
-不要直接改代码。
+下面是一份来自其他 repo 的 Latch 使用反馈。
+
+先不要修改代码，也不要创建 Record 或 task。请在当前 Latch 版本中核对直接相关的实现、文档和测试，判断：
+
+1. 当前版本能否复现
+2. 是否已经修复、仍然成立、部分成立或无法确认
+3. 是产品 bug、Skill 或文档问题、使用错误、来源 repo 问题，还是单纯体验建议
+4. 是否值得修改，理由是什么
+5. 如果需要修改，应进入 Light task 还是 Standard task
+6. 如果暂不修改，是否值得在当前项目保存为 Record
+7. 给出证据、最小改动范围和验收方式
+
+核验完成后等待授权，不要自动写入、归档或删除任何内容。
 ```
 
-汇总结果默认只回复当前请求，不自动写回 Record、不创建 task、不修改产品。需要保存汇总
-或转成实施 task 时，必须取得对应的显式授权并分别遵守 Record 或 Latch task 规则。
+## 重复反馈的处理
+
+其他 Agent 再次提出已处理问题时，先检查以下事实：
+
+1. 来源 repo 是否使用旧版 CLI、旧版 Skill 或旧文档；
+2. 现有修复是否已有回归测试；
+3. 稳定规则是否已经进入 canonical Skill 或 current 文档；
+4. 新证据是否表明问题在不同条件下仍能复现。
+
+已经修复且有测试覆盖时，不新建 Record 或 task；说明当前行为和升级方式即可。新证据揭示不同根因或不同影响面时，才作为新问题核验。
 
 ## 不要做的事
 
-- 不在用户未点名时读取、生成或写入反馈；
-- 不把反馈作为 `submit`、`done`、会话结束或 Latch 使用后的默认步骤；
-- 不写无证据的「体验很好」「体验不好」或「建议全面重构」；
-- 不把聊天情绪写成观察期定量结论，不修改 `docs/OBSERVATION.md`；
-- 不创建 CLI 子命令、后台监控、数据库、跨 repo 台账或 Board 页面；
-- 不为统计制造 task，不读取其它会话或未授权 repo 作为证据；
-- 不为不同 AI 创建多份协议或多条同名 Record；
-- 不在反馈流程中修改 CLI、Core、Board 或 Skill；
-- 不执行 Git add、commit、push、branch、checkout、reset 或 clean，除非用户另行授权。
+- 不把每次任务结束都变成反馈收集；
+- 不把所有反馈追加到单一综合 Record；
+- 不在来源 repo 直接决定或实施 Latch 修复；
+- 不把主观不适直接写成 P0 / P1 产品问题；
+- 不自动跨 repo 搜索、读取或写入 Record；
+- 不读取其他对话、归档或未授权 repo 补充证据；
+- 不自动创建 task、修改 Skill、归档 Record 或清理历史数据；
+- 不把 Record 当作全局知识库或让其他 Agent 自动学习的机制；
+- 不执行 Git 操作，除非用户另行授权。

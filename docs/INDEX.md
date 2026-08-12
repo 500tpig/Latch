@@ -35,8 +35,9 @@ Latch、Latch-Board、appearance-sec 和 monitoring 的当前兼容状态。
 
 ### [Agent 使用反馈](AGENT_FEEDBACK.md)
 
-非默认流程。仅在用户明确要求时，按证据门槛向同一条 Project Record「Agent 使用反馈」
-追加；与 v2 / Schema 5 观察期的 archive 定量样本分离。
+非默认流程。其他 repo 先生成可核对的交接材料，Latch repo 再按当前版本核验并分流到
+Record、task、Skill、文档、测试或来源 repo；不再统一追加到单一 Project Record。该流程与
+v2 / Schema 5 观察期的 archive 定量样本分离。
 
 ### [观察期](OBSERVATION.md)
 

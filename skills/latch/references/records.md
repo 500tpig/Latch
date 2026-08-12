@@ -20,6 +20,25 @@ Record is an explicit, project-local note stored separately from Latch tasks. It
 
 Explicit Record CRUD is an exception to task creation rules. It authorizes only the named Record operation, not code, documentation, task, group, Git, or Board writes.
 
+## Cross-project Latch feedback
+
+Do not use a project-local Record as the default destination for every Latch issue observed in an adopter repository. When the user asks to transfer or assess Latch product feedback, use two stages:
+
+1. In the source repository, prepare a handoff with the repository and task scenario, CLI version, Skill source, commands, actual and expected results, complete errors or status output, minimal reproduction, reproducibility, likely ownership, and impact. Do not modify Latch or create a Record or task unless the user separately requests that exact write.
+2. In the Latch repository, inspect the current CLI, canonical Skill, directly relevant implementation, tests, and current documentation. Determine whether the report is fixed, reproducible, partially valid, or unconfirmed before recommending a destination.
+
+Route the result as follows:
+
+- A current, reproducible issue with a clear expected behavior belongs in a normal Latch task after explicit task authorization.
+- Repeated Agent misuse of a stable rule belongs in a task that updates the canonical Skill, project instructions, documentation, or regression tests.
+- An issue owned by the adopter repository stays there.
+- A fixed or duplicate issue creates no new Record or task; explain the current behavior and reuse existing evidence when needed.
+- An unconfirmed, intermittent, evidence-bearing observation may become a Record only with explicit save intent in the intended current project.
+
+Record status is not product resolution. Active and archived Records are both excluded from default Agent context, and another repository cannot see them. Archiving only removes a Record from the default active list; it does not teach other Agents, prove a fix, or replace a test, Skill, or current document.
+
+See `docs/AGENT_FEEDBACK.md` in the Latch repository for the human-facing handoff fields and copyable prompts. Do not copy the full workflow into Record bodies.
+
 ## Recall intent
 
 - Questions such as “did we discuss this before?”, “is there a note?”, or “what did we decide?” permit a metadata-only query in the current project.
