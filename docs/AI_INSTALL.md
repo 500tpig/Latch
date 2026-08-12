@@ -119,6 +119,25 @@ latch checkpoint "任务标题" \
 并以请求授权；C 创建或续接 Standard task，返回决策重点与 task ID 后等待明确
 approve。纯问答、只读探索、无写入意图或明确要求「不用 Latch」时不建 task。
 
+### Adopter AGENTS 规则模板
+
+以下有界区块可直接复制到 adopter repo 的 `AGENTS.md`。项目专属规则放在区块外，避免
+修改模板中的 runner、启动读取和连续 mutation 契约。
+
+```markdown
+<!-- LATCH:BEGIN -->
+## Latch task 规则
+
+- 仓库写入或可观察行为变更使用 Latch；纯问答、只读探索、无写入意图或明确要求「不用 Latch」时不建 task。
+- 开始时先运行 `latch --version`，版本必须为 `0.5.0`；版本不匹配或无法确定 runner 时停止。新 task 使用 schema 5，schema 2–4 只读且不得 mutation。
+- 启动读取依次为 `git status --short`、`latch list --json --brief`。已知 task ID 时读取 `latch context <task-id> --json --status`；否则只为 list 返回的 `current_task_id` 读取 status；两者都没有时不得调用无 task ID 的 context。
+- 先读 task artifact；status 不足时只展开一张 task 的 bounded brief。普通启动和恢复不读取 Record、其他会话或无关 task。
+- 写入前执行 A/B/C 判断：目标、成功标准、范围、根因或高风险改法不明确时停在 grill；范围固定、低风险且 `open_questions` 为空时使用 Light；涉及方案确认、多个独立验收面、产品选择、公共契约或高风险面时使用 Standard，并在创建后等待明确批准。
+- 连续 mutation 直接复用成功 JSON 返回的 `revision` 作为下一条 `--expect-revision`，并按返回的 `next_action` 继续。仅在 revision conflict、用户输入边界、warning 需要判断或 task 语义变化时刷新 status；不得只为 `revision` 或 `next_action` 重读 context，也不得自动重试 revision conflict。
+- `approve`、`takeover`、`done`、`abandon` 和 Git 操作分别遵守明确授权边界；task 授权不包含 Git add、commit、push、branch、checkout、reset 或 clean。
+<!-- LATCH:END -->
+```
+
 Grok 与 Codex 均可作为可写宿主。无法解析稳定 session ID 时保持只读，不手工设置
 `LATCH_ACTOR`。跨对话或跨工具续写同一 open task 仍需针对具体 task 和 revision 的
 明确 `takeover` 授权。

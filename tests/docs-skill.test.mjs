@@ -609,14 +609,32 @@ test('continuous mutation flows reuse returned revision without redundant contex
   const skill = text('skills/latch/SKILL.md')
   const agents = text('AGENTS.md')
   const handBook = text('docs/HANDBOOK.md')
+  const install = text('docs/AI_INSTALL.md')
+  const templateMatch = install.match(
+    /<!-- LATCH:BEGIN -->([\s\S]*?)<!-- LATCH:END -->/,
+  )
+  assert.ok(templateMatch, 'AI_INSTALL must contain the bounded adopter AGENTS template')
+  const adopterTemplate = templateMatch[1]
 
-  for (const content of [skill, agents, handBook]) {
+  for (const content of [skill, agents, handBook, install, adopterTemplate]) {
     assert.match(content, /JSON[\s\S]*`revision`/)
     assert.match(content, /--expect-revision/)
+    assert.match(content, /`next_action`/)
     assert.match(content, /revision conflict/)
-    assert.match(content, /user input\s+boundary|用户输入边界/)
-    assert.match(content, /do not reread context|不得只为(?:获取)?\s*revision 重读 context/)
+    assert.match(content, /user input\s+boundary|用户输入\s*边界/)
+    assert.match(content, /(?:warning[\s\S]{0,40}判断|判断[\s\S]{0,40}warning|judgment[\s\S]{0,40}warning)/)
+    assert.match(content, /task (?:meaning|语义) change|task 语义变化/)
+    assert.match(
+      content,
+      /do not reread context only for `revision` or\s+`next_action`|不得(?:只)?为 `revision` 或\s*`next_action` 重读 context/,
+    )
+    assert.match(content, /never auto-retry a revision\s+conflict|不(?:得)?自动重试 (?:revision )?conflict/)
   }
+
+  assert.match(adopterTemplate, /`latch --version`[\s\S]*`0\.5\.0`/)
+  assert.match(adopterTemplate, /`git status --short`[\s\S]*`latch list --json --brief`/)
+  assert.match(adopterTemplate, /已知 task ID[\s\S]*`current_task_id`/)
+  assert.match(adopterTemplate, /两者都没有时不得调用无 task ID 的 context/)
 })
 
 test('cross-session planning recovery stays artifact-first and bounded', () => {

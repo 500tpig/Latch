@@ -17,9 +17,9 @@ lint、typecheck、build 或文档索引等机械检查不单独触发 C。Light
 3. 已知 task ID 时使用同一 current runner 读取 `context <task-id> --json --status`；否则仅为 list 返回的 `current_task_id` 读取 status，两者都没有时不得调用无 task ID 的 status；
 4. 先读 task artifact；status 不足时只展开一张 task 的 `--brief --history timeline`，仅在产品契约、架构、安装、文档行为或证据不足时从 `docs/INDEX.md` 选择直接相关的 1–3 份文档。
 
-CLI `0.5.0` 是 current runner；新 task 用 schema 5，schema 2–4 只读且禁止 current runner mutation。无法确定 task schema 或 runner 时停止。
+`0.5.0` 是 current runner；新 task 用 schema 5；schema 2–4 只读，禁止 mutation。runner 或 task schema 不明时停止。
 
-连续 mutation 直接复用成功 JSON 返回的 `revision` 作为下一条 `--expect-revision`。仅在 revision conflict、用户输入边界、warning 需要判断或任务语义变化时刷新 status；不得自动重试冲突，也不得只为 revision 重读 context。
+连续 mutation：成功 JSON 的 `revision` 用作下条 `--expect-revision`，按 `next_action` 继续。仅 revision conflict、用户输入边界、需判断的 warning 或 task 语义变化刷新 status；不得为 `revision` 或 `next_action` 重读 context，不自动重试 conflict。
 
 ## 授权与恢复
 

@@ -490,10 +490,10 @@ Latch 使用批准 plan 的 `workspace_scope.paths` 分类 gate mutation，但�
 worktree，Latch 不负责创建或合并它。scope overlap 投影与现有 shared worktree warning
 相互独立；review dirty worktree 提示继续描述 Git 状态，不解释为 plan scope overlap。
 
-同一连续写入流程中，成功 mutation 的 JSON 返回值包含新的 `revision` 和 mutation
-后的 `next_action`。下一条命令直接使用该 revision 作为 `--expect-revision`，不得只为 revision 重读 context；
-也不得只为获取下一步动作重读 context。发生 `revision conflict`、进入新的用户输入边界、
-warning 需要重新判断或任务语义变化时，再刷新 status；冲突 mutation 不得自动重试。
+同一连续写入流程中，直接复用成功 mutation 的 JSON 返回值：将 `revision` 用作下一条
+命令的 `--expect-revision`，并按 `next_action` 继续。仅在 `revision conflict`、用户输入
+边界、warning 需要判断或 task 语义变化时刷新 status；不得只为 `revision` 或
+`next_action` 重读 context，也不得自动重试 revision conflict。
 
 ### Session actor 宿主
 

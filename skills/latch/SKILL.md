@@ -10,9 +10,9 @@ no-write requests, and explicit no-Latch requests do not create tasks.
 
 ## Select the task runner first
 
-- Use Latch CLI `0.5.0` as the current runner. In the Latch source repo, use
-  `node dist/cli.js`; in an adopter repo, use a verified `latch@0.5.0` install.
-- New tasks use schema 5 with minimum writer `0.5.0`.
+- Current runner: Latch CLI `0.5.0`; use `node dist/cli.js` in this repo and a
+  verified `latch@0.5.0` install in adopters.
+- New tasks: schema 5, minimum writer `0.5.0`.
 - Read `task_schema_version` from `context <task-id> --json --status` before a
   mutation. Schema 2–4 tasks are historical read-only under the current runner;
   do not claim, upgrade, downgrade, take over, or otherwise mutate them.
@@ -154,9 +154,11 @@ and explicit `done` authorization.
 - Missing canonical actor or writer mismatch is fail closed. Grok and Codex are
   equal hosts; never invent or export `LATCH_ACTOR`.
 - Pass `--expect-revision` to every task mutation. In one uninterrupted mutation
-  flow, reuse the successful JSON response's `revision`; do not reread context
-  only for revision. Refresh status after a revision conflict, user input
-  boundary, judgment-requiring warning, or task meaning change; never auto-retry.
+  flow, use the successful JSON response's `revision` next and follow
+  `next_action`; do not reread context only for `revision` or
+  `next_action`. Refresh status after a revision conflict, user input boundary,
+  judgment-requiring warning, or task meaning change; never auto-retry a revision
+  conflict.
 - Takeover transfers writer ownership only, never implementation approval.
 - Run all current named gates before submit. Prefer `verify-all` for pending gates;
   instruction-only commands such as `echo`, `printf`, and `true` are not evidence.
