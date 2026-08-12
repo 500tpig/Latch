@@ -7,10 +7,13 @@ export type {
   ChangeTaskProfileV3Input,
 } from './progress/authorization.js'
 export {
+  reconcileWorkspaceViolations,
   verifyAllTasksV2,
   verifyTaskV2,
 } from './progress/verification.js'
 export type {
+  ReconcileWorkspaceViolationsInput,
+  ReconcileWorkspaceViolationsResult,
   VerifyAllTasksV2Result,
   VerifyTaskV2Input,
   VerifyTaskV2Result,

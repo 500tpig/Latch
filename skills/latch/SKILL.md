@@ -162,9 +162,9 @@ and explicit `done` authorization.
 - Takeover transfers writer ownership only, never implementation approval.
 - Run all current named gates before submit. Prefer `verify-all` for pending gates;
   instruction-only commands such as `echo`, `printf`, and `true` are not evidence.
-- After an in-scope correction during `dev` or `check` with existing proof, do not
-  use review-only `approve --feedback`; run `verify-all` so its preflight advances
-  the proof generation and reruns every stale named gate.
+- In `dev` or `check`, use `verify-all`, not `approve --feedback`; exact violations
+  use `reconcile <task-id> --expect-revision <n> --json` without selectors. Both
+  advance proof generation; review uses `reopen-review`.
 - `workspace_scope.paths` must be repo-relative POSIX paths. Exact files omit `/`;
   directory prefixes include it. Checkpoint and plan-file save reject an existing
   directory missing `/` before task mutation; missing paths remain valid. Never

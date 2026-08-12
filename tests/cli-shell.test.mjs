@@ -28,6 +28,7 @@ test('top-level and command help have no side effects', () => {
     ['save', '--help'],
     ['approve', '--help'],
     ['verify-all', '--help'],
+    ['reconcile', '--help'],
     ['reopen-review', '--help'],
     ['artifact', '--help'],
     ['record', '--help'],
@@ -83,6 +84,10 @@ test('top-level and command help have no side effects', () => {
     run(temporaryDirectory(), ['reopen-review', '--help']).stdout,
     /--reason <text>/,
   )
+  assert.match(
+    run(temporaryDirectory(), ['reconcile', '--help']).stdout,
+    /reconcile <task-id> --expect-revision <revision>/,
+  )
   const topHelp = run(temporaryDirectory(), ['--help']).stdout
   assert.match(
     topHelp,
@@ -95,6 +100,10 @@ test('top-level and command help have no side effects', () => {
   assert.match(
     topHelp,
     /approve <task-id> --expect-revision <revision> --non-implementation-feedback <text>/,
+  )
+  assert.match(
+    topHelp,
+    /reconcile <task-id> --expect-revision <revision>/,
   )
   assert.doesNotMatch(
     topHelp,

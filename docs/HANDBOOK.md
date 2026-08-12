@@ -342,6 +342,25 @@ named gate proof stale。scope 外 mutation 还会创建 unresolved violation，
 或 plan 扩 scope 并重新批准前阻止 submit。Latch 保留工作区现状，不自动 rollback、
 reset、clean 或 stash；人工恢复也不会让旧 proof 自动恢复。
 
+人工恢复 scope 外文件后，使用独立的 reconcile mutation：
+
+```bash
+latch reconcile <task-id> --expect-revision <revision> --json
+```
+
+`reconcile` 只接受 schema 5、当前 writer、有效实施授权、非 blocked 且处于 `dev` 或
+`check` 的 task。review task 先执行 `reopen-review`。命令只采集一次当前 workspace
+evidence，不运行 gate，也不调用 `verify-all`。只有当前 entry 与 violation 保存的原始
+`before` entry 完全一致时，才以 `restored` 清除；当前 scope 覆盖该路径、内容近似、
+不同 Git 状态或调用方声明都不能替代 evidence。命令不接受 path、violation ID、ignore
+或 force 参数，也不修改 `workspace_scope`。
+
+一次成功调用清除全部精确恢复项，推进一次 proof generation，使旧 gate proof stale，
+删除失效 submission，并返回 `resolved_count`、`remaining_count`、最多 8 个稳定排序的
+resolved/remaining ID 样本及统一 mutation `workspace_proof`。`next_action` 为 `verify`，
+后续显式执行 `verify-all`。没有可恢复项、capture 不完整或任何 writer、schema、phase、
+revision 检查失败时，不修改 task、revision、event 或 evidence；revision conflict 不自动重试。
+
 `verify-all` 按 plan 顺序动态选择当前 generation 中第一个非 current gate，不执行
 diagnostic。command failure、evidence error、workspace mutation、scope violation 或
 gate 间 baseline mismatch 都会拒绝继续。首个失败 gate 写入当前事实后立即停止，

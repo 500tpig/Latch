@@ -68,6 +68,16 @@ export type VerifyAllTasksV2Result = TaskWriteResultV2 & {
   remaining: string[]
 }
 
+export type ReconcileWorkspaceViolationsInput = {
+  expectRevision: number
+  actor: string
+}
+
+export type ReconcileWorkspaceViolationsResult = TaskWriteResultV2 & {
+  resolvedIds: string[]
+  remainingIds: string[]
+}
+
 export function assertReadyForWork(task: ReturnType<typeof readTaskV2>) {
   if (task.blocked) throw new Error(`Task is blocked: ${task.blocked.reason}`)
   if (usesLightProofPackage(task)) return assertValidWorkBasis(task)
@@ -136,6 +146,7 @@ function sameViolationEntry(
 export function reconcileViolations(
   task: TaskV2,
   snapshot: WorkspaceSnapshot,
+  options: { reclassifyInScope?: boolean } = {},
 ) {
   const scope = requireWorkspaceScope(task)
   const currentEntries = new Map(snapshot.entries.map((entry) => [entry.path, entry]))
@@ -143,7 +154,10 @@ export function reconcileViolations(
   const restored: string[] = []
   const reclassified: string[] = []
   for (const violation of task.workspace_proof?.unresolved_violations ?? []) {
-    if (pathInWorkspaceScope(violation.path, scope)) {
+    if (
+      options.reclassifyInScope !== false &&
+      pathInWorkspaceScope(violation.path, scope)
+    ) {
       reclassified.push(violation.id)
       continue
     }
@@ -215,6 +229,7 @@ export function invalidateWorkspaceProof(
   delta: WorkspaceDelta,
   reason: string,
   source: string,
+  reconcileOptions: { reclassifyInScope?: boolean } = {},
 ) {
   if (!task.workspace_proof)
     throw new Error('Cannot invalidate a missing workspace proof generation.')
@@ -227,7 +242,7 @@ export function invalidateWorkspaceProof(
   )
   const deltaRef = writeWorkspaceEvidence(directory, source, 'delta', delta)
   const nextGeneration = task.workspace_proof.generation + 1
-  const reconciled = reconcileViolations(task, snapshot)
+  const reconciled = reconcileViolations(task, snapshot, reconcileOptions)
   return updateTaskV4(store, task.id, {
     expectRevision: input.expectRevision,
     actor: input.actor,
@@ -256,6 +271,86 @@ export function invalidateWorkspaceProof(
       delete next.submission
     },
   })
+}
+
+export function reconcileWorkspaceViolations(
+  store: TaskStoreV2,
+  id: string,
+  input: ReconcileWorkspaceViolationsInput,
+): ReconcileWorkspaceViolationsResult {
+  const current = assertTaskWritableV2(
+    store,
+    id,
+    input.actor,
+    input.expectRevision,
+  )
+  if (current.schema_version !== 5)
+    throw new Error(
+      `Candidate CLI 0.5.0 only reconciles schema_version 5 tasks; task ${current.id} is historical read-only.`,
+    )
+  if (current.phase !== 'dev' && current.phase !== 'check')
+    throw new LatchDomainError(
+      'phase_mismatch',
+      `Cannot reconcile workspace violations in phase ${current.phase}.`,
+    )
+  assertReadyForWork(current)
+  const scope = requireWorkspaceScope(current)
+  if (!current.workspace_proof)
+    throw new LatchDomainError(
+      'workspace_violation',
+      'Current task does not have a workspace proof generation.',
+    )
+  if (current.workspace_proof.unresolved_violations.length === 0)
+    throw new LatchDomainError(
+      'workspace_violation',
+      'Current task does not have unresolved workspace violations.',
+    )
+
+  const live = captureWorkspaceSnapshot(
+    store.paths.workspaceRoot,
+    scope,
+    current.artifacts,
+  )
+  if (!live.complete)
+    throw new Error(
+      `Reconcile workspace evidence error: ${live.error ?? 'capture incomplete'}.`,
+    )
+  const reconciled = reconcileViolations(current, live, {
+    reclassifyInScope: false,
+  })
+  const resolvedIds = [...reconciled.restored].sort()
+  if (resolvedIds.length === 0)
+    throw new LatchDomainError(
+      'workspace_violation',
+      'No unresolved workspace violation matches its original before evidence.',
+    )
+
+  let baseline: WorkspaceSnapshot
+  try {
+    baseline = readBaselineSnapshot(store, current)!
+  } catch (error) {
+    throw new Error(
+      `Reconcile workspace evidence error: ${error instanceof Error ? error.message : String(error)}.`,
+    )
+  }
+  const liveDelta = compareWorkspaceSnapshots(baseline, live, scope)
+  const written = invalidateWorkspaceProof(
+    store,
+    current,
+    input,
+    live,
+    liveDelta,
+    'workspace_violation_reconciled',
+    'reconcile',
+    { reclassifyInScope: false },
+  )
+  return {
+    ...written,
+    resolvedIds,
+    remainingIds: written.task.workspace_proof!.unresolved_violations
+      .map((violation) => violation.id)
+      .sort(),
+  }
 }
 
 function evidenceFailureResult(

@@ -29,6 +29,8 @@ export const commandUsage: Record<string, string> = {
     'Usage: latch verify <task-id> --expect-revision <revision> --name <name> [--diagnostic] [-- command...] [--json]',
   'verify-all':
     'Usage: latch verify-all <task-id> --expect-revision <revision> [--json]',
+  reconcile:
+    'Usage: latch reconcile <task-id> --expect-revision <revision> [--json]',
   'reopen-review':
     'Usage: latch reopen-review <task-id> --expect-revision <revision> --reason <text> [--json]',
   artifact:
@@ -62,6 +64,7 @@ const topLevelCommands = [
   'approve',
   'verify',
   'verify-all',
+  'reconcile',
   'reopen-review',
   'artifact',
   'submit',
@@ -98,6 +101,7 @@ export const actorRequiredCommands = new Set([
   'approve',
   'verify',
   'verify-all',
+  'reconcile',
   'reopen-review',
   'artifact',
   'submit',

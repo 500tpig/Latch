@@ -4,6 +4,7 @@ import { runBenchmark } from './commands/benchmark.js'
 import { runContext, runContextPack } from './commands/context.js'
 import { runKnowledge } from './commands/knowledge.js'
 import { runRecord, recordJsonEnvelope } from './commands/record.js'
+import { runReconcile } from './commands/reconcile.js'
 import {
   runApprove,
   runReopenReview,
@@ -92,6 +93,8 @@ async function run(argv: string[], cwd: string) {
       return runVerify(args, cwd, actor)
     case 'verify-all':
       return runVerifyAll(args, cwd, actor)
+    case 'reconcile':
+      return runReconcile(args, cwd, actor)
     case 'reopen-review':
       return runReopenReview(args, cwd, actor)
     case 'artifact':
