@@ -391,6 +391,158 @@ test('context history selector keeps defaults compatible and projects raw or rea
   assert.match(invalidHistory.stderr, /--history must be timeline, events, or both/)
 })
 
+test('context timelines distinguish blocking gate failures from diagnostic results', () => {
+  const cwd = temporaryDirectory()
+  spawnSync('git', ['init'], { cwd, encoding: 'utf8' })
+  writeFileSync(join(cwd, 'tracked.txt'), 'baseline\n')
+  spawnSync('git', ['add', 'tracked.txt'], { cwd, encoding: 'utf8' })
+  init(cwd)
+
+  function approve(id) {
+    const result = run(cwd, [
+      'approve',
+      id,
+      '--expect-revision',
+      String(readTask(cwd, id).revision),
+      '--reason',
+      '用户批准',
+      '--json',
+    ])
+    assert.equal(result.status, 0, result.stderr)
+  }
+
+  function diagnostic(id, name, exitCode) {
+    return run(cwd, [
+      'verify',
+      id,
+      '--expect-revision',
+      String(readTask(cwd, id).revision),
+      '--name',
+      name,
+      '--diagnostic',
+      '--json',
+      '--',
+      process.execPath,
+      '-e',
+      `process.exit(${exitCode})`,
+    ])
+  }
+
+  function timelineItem(context, name) {
+    return context.timeline.find((event) => event.summary.startsWith(`${name} `))
+  }
+
+  function readableFields(event) {
+    return {
+      event_type: event.event_type,
+      title: event.title,
+      summary: event.summary,
+      impact: event.impact,
+      ...(event.next_action ? { next_action: event.next_action } : {}),
+    }
+  }
+
+  const diagnosticCreated = checkpoint(cwd, 'Diagnostic timeline', {
+    workspace_scope: { paths: ['tracked.txt'] },
+    scope: ['记录 diagnostic 结果'],
+    verification_plan: [],
+  })
+  approve(diagnosticCreated.task_id)
+  const diagnosticPass = diagnostic(
+    diagnosticCreated.task_id,
+    'diagnostic-pass',
+    0,
+  )
+  assert.equal(diagnosticPass.status, 0, diagnosticPass.stderr)
+  const diagnosticFail = diagnostic(
+    diagnosticCreated.task_id,
+    'diagnostic-fail',
+    3,
+  )
+  assert.notEqual(diagnosticFail.status, 0)
+  const diagnosticStatus = JSON.parse(run(cwd, [
+    'context', diagnosticCreated.task_id, '--json', '--status',
+  ]).stdout)
+  assert.equal(diagnosticStatus.task.next_action, 'submit')
+
+  const defaultDiagnostic = JSON.parse(run(cwd, [
+    'context', diagnosticCreated.task_id, '--json',
+  ]).stdout)
+  const diagnosticPassEvent = timelineItem(defaultDiagnostic, 'diagnostic-pass')
+  assert.equal(diagnosticPassEvent.title, '记录 diagnostic 结果')
+  assert.equal(
+    diagnosticPassEvent.impact,
+    '这项 diagnostic 结果仅作记录，不构成验收 gate 证明。',
+  )
+  assert.equal('next_action' in diagnosticPassEvent, false)
+  assert.equal(diagnosticPassEvent.details.kind, 'diagnostic')
+  const diagnosticFailEvent = timelineItem(defaultDiagnostic, 'diagnostic-fail')
+  assert.equal(diagnosticFailEvent.title, '记录 diagnostic 结果')
+  assert.equal(
+    diagnosticFailEvent.impact,
+    '这项 diagnostic 未通过，但结果仅作记录，不构成验收 gate 证明，也不阻塞提交。',
+  )
+  assert.equal('next_action' in diagnosticFailEvent, false)
+  assert.equal(diagnosticFailEvent.details.kind, 'diagnostic')
+
+  const diagnosticHistory = JSON.parse(run(cwd, [
+    'context', diagnosticCreated.task_id, '--json', '--history', 'timeline',
+  ]).stdout)
+  assert.deepEqual(
+    readableFields(timelineItem(diagnosticHistory, 'diagnostic-pass')),
+    readableFields(diagnosticPassEvent),
+  )
+  assert.deepEqual(
+    readableFields(timelineItem(diagnosticHistory, 'diagnostic-fail')),
+    readableFields(diagnosticFailEvent),
+  )
+  assert.equal(
+    'details' in timelineItem(diagnosticHistory, 'diagnostic-fail'),
+    false,
+  )
+
+  const gateCreated = checkpoint(cwd, 'Gate failure timeline', {
+    workspace_scope: { paths: ['tracked.txt'] },
+    scope: ['验证 gate failure 文案'],
+    verification_plan: [
+      {
+        name: 'gate-fail',
+        command: [process.execPath, '-e', 'process.exit(2)'],
+        kind: 'gate',
+      },
+    ],
+  })
+  approve(gateCreated.task_id)
+  const gateFailure = run(cwd, [
+    'verify',
+    gateCreated.task_id,
+    '--expect-revision',
+    String(readTask(cwd, gateCreated.task_id).revision),
+    '--name',
+    'gate-fail',
+    '--json',
+  ])
+  assert.notEqual(gateFailure.status, 0)
+
+  const defaultGate = JSON.parse(run(cwd, [
+    'context', gateCreated.task_id, '--json',
+  ]).stdout)
+  const gateFailureEvent = timelineItem(defaultGate, 'gate-fail')
+  assert.equal(gateFailureEvent.title, '检查未通过')
+  assert.equal(gateFailureEvent.impact, '需要先处理失败原因，再继续提交验收。')
+  assert.equal(gateFailureEvent.next_action, '查看失败输出并修正。')
+  assert.equal(gateFailureEvent.details.kind, 'gate')
+
+  const gateHistory = JSON.parse(run(cwd, [
+    'context', gateCreated.task_id, '--json', '--history', 'timeline',
+  ]).stdout)
+  assert.deepEqual(
+    readableFields(timelineItem(gateHistory, 'gate-fail')),
+    readableFields(gateFailureEvent),
+  )
+  assert.equal('details' in timelineItem(gateHistory, 'gate-fail'), false)
+})
+
 test('status keeps task writer state and caller capability independent', () => {
   function statusFor(mutator, actor = 'codex:session:test-session') {
     const cwd = temporaryDirectory()

@@ -110,7 +110,9 @@ authorizable validation 只在创建或更新 work basis 前执行。授权要�
 创建 task 时，Standard `checkpoint` 必须读取完整 plan 文件；Light `checkpoint`
 接受六字段 authoring input，并在写入前规范化为现有完整 `TaskPlan`。plan 校验失败时，
 错误会列出期望类型、实际类型、最小合法值和模板命令。同标题 task 不覆盖。`use`
-只修改当前 actor 的索引。
+只修改当前 actor 的索引。带 `--plan-file` 的 `save` 始终按当前 task 的 `profile`
+校验 authoring input；Light save 同样接受六字段输入并持久化完整 `TaskPlan`，Standard
+save 继续要求完整 12 字段。
 
 新建或更新 plan 必须提供 `workspace_scope.paths`。该字段只接受 repo-relative POSIX
 精确文件路径或以 `/` 结尾的目录前缀；不接受绝对路径、repo escape、glob 或 Git
@@ -189,6 +191,10 @@ context 的 `current` 只表示当前 actor 的 state 指针是否指向该 task
 - `both`：返回与默认相同的两套历史字段，用 `history_view: "both"` 标明显式选择。
 
 `--status --history`、非 JSON 的 `--history` 和非法枚举值均会被拒绝。selector 只投影响应字段，不修改 task、event 存储或 timeline 文案语义。
+
+`verification_run` 的 human timeline 按 `kind` 区分 gate 与 diagnostic。gate failure
+保持阻塞提交的修正文案；diagnostic pass/fail 只表示结果已记录，不构成验收 gate
+证明，其中 diagnostic failure 明确为非阻塞，也不提供与 task `next_action` 冲突的修正指令。
 
 ### Project Record
 

@@ -209,6 +209,20 @@ function timelineEvent(task: TaskV2, event: TaskEvent): TimelineEvent {
   if (event.type === 'verification_run') {
     const name = String(detailValue(event, 'name') ?? '检查')
     const status = detailValue(event, 'status') === 'pass' ? '已通过' : '未通过'
+    const kind = detailValue(event, 'kind') === 'diagnostic'
+      ? 'diagnostic'
+      : 'gate'
+    if (kind === 'diagnostic')
+      return {
+        ...base,
+        title: '记录 diagnostic 结果',
+        summary: `${name} diagnostic 结果已记录：${status}。`,
+        impact:
+          status === '已通过'
+            ? '这项 diagnostic 结果仅作记录，不构成验收 gate 证明。'
+            : '这项 diagnostic 未通过，但结果仅作记录，不构成验收 gate 证明，也不阻塞提交。',
+        details: technicalDetails,
+      }
     return {
       ...base,
       title: `检查${status}`,

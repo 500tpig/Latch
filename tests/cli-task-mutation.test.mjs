@@ -7,6 +7,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
+import { spawnSync } from 'node:child_process'
 import {
   checkpoint,
   cleanupTemporaryDirectories,
@@ -79,6 +80,112 @@ test('save updates a plan, increments revisions, and invalidates approval and ve
   assert.equal('implementation_approval' in task, false)
   assert.equal('submission' in task, false)
   assert.deepEqual(task.verification, { gate: {}, diagnostic: {} })
+})
+
+test('save reads the current task profile for Light authoring plans', () => {
+  const cwd = temporaryDirectory()
+  spawnSync('git', ['init'], { cwd, encoding: 'utf8' })
+  writeFileSync(join(cwd, 'tracked.txt'), 'baseline\n')
+  spawnSync('git', ['add', 'tracked.txt'], { cwd, encoding: 'utf8' })
+  init(cwd)
+  const initialPlan = {
+    goal: '保存 Light plan',
+    workspace_scope: { paths: ['tracked.txt'] },
+    scope: ['更新 Light plan'],
+    acceptance: ['六字段 plan 可保存'],
+    approach: ['先验证再保存'],
+    verification_plan: [
+      {
+        name: 'tests',
+        command: [process.execPath, '-e', 'process.exit(0)'],
+        kind: 'gate',
+      },
+    ],
+  }
+  const createdResult = run(cwd, [
+    'checkpoint',
+    'Light save regression',
+    '--plan-file',
+    writePlan(cwd, initialPlan, 'light-plan.json'),
+    '--profile',
+    'light',
+    '--authorize-request',
+    '用户请求保存 Light plan',
+    '--json',
+  ])
+  assert.equal(createdResult.status, 0, createdResult.stderr)
+  const created = JSON.parse(createdResult.stdout)
+  const verified = run(cwd, [
+    'verify',
+    created.task_id,
+    '--expect-revision',
+    String(created.revision),
+    '--name',
+    'tests',
+    '--json',
+  ])
+  assert.equal(verified.status, 0, verified.stderr)
+  const verifiedRevision = JSON.parse(verified.stdout).revision
+  const changedPlan = {
+    ...initialPlan,
+    approach: ['保存修改后的六字段 plan'],
+  }
+
+  const saved = run(cwd, [
+    'save',
+    created.task_id,
+    '--expect-revision',
+    String(verifiedRevision),
+    '--plan-file',
+    writePlan(cwd, changedPlan, 'changed-light-plan.json'),
+    '--json',
+  ])
+
+  assert.equal(saved.status, 0, saved.stderr)
+  assert.equal(JSON.parse(saved.stdout).phase, 'plan')
+  const task = readTask(cwd, created.task_id)
+  assert.equal(task.profile, 'light')
+  assert.equal(task.plan_revision, 2)
+  assert.equal(task.work_basis.plan_revision, 1)
+  assert.deepEqual(task.plan, {
+    ...changedPlan,
+    api_assumptions: [],
+    permission_assumptions: [],
+    data_assumptions: [],
+    user_flow: [],
+    out_of_scope: [],
+    open_questions: [],
+  })
+  assert.deepEqual(task.verification, { gate: {}, diagnostic: {} })
+})
+
+test('save keeps complete authoring requirements for Standard plans', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const created = checkpoint(cwd)
+  const standardPlan = readTask(cwd, created.task_id).plan
+  const incompletePlan = {
+    goal: standardPlan.goal,
+    workspace_scope: standardPlan.workspace_scope,
+    scope: standardPlan.scope,
+    acceptance: standardPlan.acceptance,
+    approach: standardPlan.approach,
+    verification_plan: standardPlan.verification_plan,
+  }
+
+  const saved = run(cwd, [
+    'save',
+    created.task_id,
+    '--expect-revision',
+    '1',
+    '--plan-file',
+    writePlan(cwd, incompletePlan, 'incomplete-standard-plan.json'),
+    '--json',
+  ])
+
+  assert.notEqual(saved.status, 0)
+  assert.match(saved.stderr, /Missing required plan fields/)
+  assert.equal(readTask(cwd, created.task_id).revision, 1)
 })
 
 test('save rejects an existing directory path without mutating task, event, or state', () => {

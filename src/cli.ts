@@ -857,7 +857,7 @@ function runSave(args: string[], cwd: string, actor: string) {
   const store = openTaskStoreV2(cwd)
   const current = currentWritableTask(store, parsed.positionals[0])
   const nextPlan = parsed.values['plan-file']
-    ? readPlan(cwd, parsed.values['plan-file'])
+    ? readPlan(cwd, parsed.values['plan-file'], current.profile)
     : undefined
   const planChanged =
     nextPlan !== undefined && JSON.stringify(nextPlan) !== JSON.stringify(current.plan)
