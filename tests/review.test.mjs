@@ -259,7 +259,7 @@ test('verify JSON keeps gate stdout and stderr out of the JSON protocol stream',
   const noisyCommand = [
     process.execPath,
     '-e',
-    "process.stdout.write('gate stdout\\n'); process.stderr.write('gate stderr\\n')",
+    "process.stdout.write('gate stdout'.repeat(2000)); process.stderr.write('gate stderr'.repeat(2000))",
   ]
 
   const verifyRoot = temporaryDirectory()
@@ -326,6 +326,31 @@ test('non-JSON verify preserves inherited real-time gate output', () => {
   assert.match(result.stdout, /Verified .* noisy: pass/)
   assert.match(result.stderr, /human stdout/)
   assert.match(result.stderr, /human stderr/)
+})
+
+test('non-JSON verify-all preserves inherited real-time gate output', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const id = checkpoint(cwd, plan({
+    verification_plan: [{
+      name: 'noisy',
+      command: [
+        process.execPath,
+        '-e',
+        "process.stdout.write('all stdout\\n'); process.stderr.write('all stderr\\n')",
+      ],
+      kind: 'gate',
+    }],
+  }))
+  approve(cwd, id)
+
+  const result = run(cwd, [
+    'verify-all', id, '--expect-revision', revision(cwd, id),
+  ])
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /Verified .* noisy: pass/)
+  assert.match(result.stderr, /all stdout/)
+  assert.match(result.stderr, /all stderr/)
 })
 
 test('verify JSON bounds failure logs per stream and retains the tail', () => {
