@@ -1,5 +1,5 @@
 import { lstatSync } from 'node:fs'
-import { posix, resolve } from 'node:path'
+import { basename, posix, resolve } from 'node:path'
 import {
   materializeWorkBasisV3,
   readTaskV2,
@@ -59,6 +59,26 @@ export type AppendWorkspaceScopeResult = TaskWriteResultV2 & {
   authorizationApplied: boolean
 }
 
+export type UpdateVerificationCommandInput = {
+  expectRevision: number
+  actor: string
+  name: string
+  command: string[]
+  authorization?: ImplementationAuthorizationInput
+}
+
+export type UpdateVerificationCommandResult = TaskWriteResultV2 & {
+  gateName: string
+  previousCommand: string[]
+  command: string[]
+  previousPlanRevision: number
+  previousWorkRevision: number
+  authorizationApplied: boolean
+}
+
+const verificationCommandSentinel = 'replace-with-real-command'
+const instructionOnlyGateCommands = new Set(['echo', 'printf', 'true'])
+
 function invalidArguments(message: string): never {
   throw new PlanDeltaError('invalid_arguments', message)
 }
@@ -75,13 +95,20 @@ function typedTaskRead(store: TaskStoreV2, id: string) {
       message.startsWith('Task id is ambiguous:')
     )
       throw new PlanDeltaError('task_not_found', message)
+    // Reader shape checks run before mutation-time gate lookup; map the frozen
+    // contract codes so callers do not see opaque command_failed for these cases.
+    if (message.startsWith('Duplicate verification_plan.name'))
+      throw new PlanDeltaError('invalid_arguments', message)
+    if (message.startsWith('Invalid min_writer_version'))
+      throw new PlanDeltaError('writer_version_mismatch', message)
     throw error
   }
 }
 
 function assertWritableDeltaTask(
   task: TaskV2,
-  input: AppendWorkspaceScopeInput,
+  input: { expectRevision: number; actor: string },
+  commandName: string,
 ) {
   if (task.revision !== input.expectRevision)
     throw new PlanDeltaError(
@@ -91,7 +118,7 @@ function assertWritableDeltaTask(
   if (task.schema_version !== 5)
     throw new PlanDeltaError(
       'writer_version_mismatch',
-      `append-scope only mutates schema_version 5 tasks; task ${task.id} is historical schema_version ${task.schema_version}.`,
+      `${commandName} only mutates schema_version 5 tasks; task ${task.id} is historical schema_version ${task.schema_version}.`,
     )
   if (task.primary_writer !== input.actor)
     throw new PlanDeltaError(
@@ -106,7 +133,7 @@ function assertWritableDeltaTask(
   if (task.outcome !== undefined)
     throw new PlanDeltaError(
       'phase_mismatch',
-      `append-scope requires an open task; task ${task.id} has outcome ${task.outcome}.`,
+      `${commandName} requires an open task; task ${task.id} has outcome ${task.outcome}.`,
     )
 }
 
@@ -158,7 +185,7 @@ function assertDirectorySuffix(
   }
 }
 
-function nextPlan(task: TaskV2, appendedPaths: string[]) {
+function nextScopePlan(task: TaskV2, appendedPaths: string[]) {
   const plan: TaskPlan = {
     ...structuredClone(task.plan),
     workspace_scope: {
@@ -183,6 +210,7 @@ function materializeAuthorization(
   task: TaskV2,
   plan: TaskPlan,
   input: ImplementationAuthorizationInput | undefined,
+  commandName: string,
 ) {
   if (input === undefined) return undefined
   if (
@@ -190,7 +218,7 @@ function materializeAuthorization(
     (input.source !== 'user_delta' && input.source !== 'user_approve')
   )
     invalidArguments(
-      'append-scope authorization source must be user_delta or user_approve.',
+      `${commandName} authorization source must be user_delta or user_approve.`,
     )
   if (
     input.source === 'user_delta' &&
@@ -233,23 +261,25 @@ function typedAtomicUpdate<T>(update: () => T) {
   }
 }
 
-export function appendWorkspaceScope(
+function applyPlanDeltaMutation(
   store: TaskStoreV2,
-  id: string,
-  input: AppendWorkspaceScopeInput,
-): AppendWorkspaceScopeResult {
-  const current = typedTaskRead(store, id)
-  assertWritableDeltaTask(current, input)
-  const normalizedInputs = normalizeInputPaths(current, input.paths)
-  assertDirectorySuffix(store, normalizedInputs)
-  const existingPaths = new Set(current.plan.workspace_scope?.paths ?? [])
-  const appendedPaths = normalizedInputs.filter(
-    (candidate) => !existingPaths.has(candidate),
+  current: TaskV2,
+  input: {
+    expectRevision: number
+    actor: string
+    authorization?: ImplementationAuthorizationInput
+  },
+  plan: TaskPlan,
+  commandName: string,
+  planUpdatedFields: Record<string, unknown>,
+  options: { clearWorkspaceProof: boolean },
+) {
+  const basis = materializeAuthorization(
+    current,
+    plan,
+    input.authorization,
+    commandName,
   )
-  if (appendedPaths.length === 0)
-    invalidArguments('append-scope did not contain any new workspace scope path.')
-  const plan = nextPlan(current, appendedPaths)
-  const basis = materializeAuthorization(current, plan, input.authorization)
   const nextPlanRevision = current.plan_revision + 1
   const nextWorkRevision = basis
     ? current.work_revision + 1
@@ -264,8 +294,7 @@ export function appendWorkspaceScope(
           type: 'plan_updated',
           fields: {
             plan_revision: nextPlanRevision,
-            change: 'workspace_scope_append',
-            appended_paths: appendedPaths,
+            ...planUpdatedFields,
           },
         },
         ...(basis
@@ -297,16 +326,170 @@ export function appendWorkspaceScope(
         delete task.implementation_approval
         task.verification = { gate: {}, diagnostic: {} }
         delete task.submission
-        delete task.workspace_proof
+        if (options.clearWorkspaceProof) delete task.workspace_proof
       },
     }),
   )
 
   return {
-    ...withWarnings(result, sharedWorktreeWarnings(store, result.task.id)),
-    appendedPaths,
+    result,
+    basis,
     previousPlanRevision: current.plan_revision,
     previousWorkRevision: current.work_revision,
+  }
+}
+
+function sameCommand(left: string[], right: string[]) {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  )
+}
+
+function assertGateCommand(command: string[]) {
+  if (command.length === 0)
+    invalidArguments(
+      'update-verification-command requires a non-empty command after --.',
+    )
+  if (command.some((arg) => typeof arg !== 'string'))
+    invalidArguments('update-verification-command command argv must be strings.')
+  if (command.includes(verificationCommandSentinel))
+    invalidArguments(
+      `update-verification-command rejects sentinel command token ${verificationCommandSentinel}.`,
+    )
+  const executable = basename(command[0] ?? '')
+  if (instructionOnlyGateCommands.has(executable))
+    invalidArguments(
+      `update-verification-command rejects instruction-only gate command ${executable}.`,
+    )
+}
+
+function resolveGateTarget(task: TaskV2, name: string) {
+  if (name.trim() === '')
+    invalidArguments('--name is required.')
+  const matches = task.plan.verification_plan
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => item.name === name)
+  if (matches.length === 0)
+    invalidArguments(
+      `update-verification-command could not find verification item ${name}.`,
+    )
+  if (matches.length > 1)
+    invalidArguments(
+      `update-verification-command requires a unique verification name; ${name} matches ${matches.length} items.`,
+    )
+  const match = matches[0]!
+  if (match.item.kind !== 'gate')
+    invalidArguments(
+      `update-verification-command only updates kind=gate items; ${name} is ${match.item.kind}.`,
+    )
+  return match
+}
+
+function nextVerificationPlan(
+  task: TaskV2,
+  index: number,
+  command: string[],
+) {
+  const plan: TaskPlan = {
+    ...structuredClone(task.plan),
+    verification_plan: task.plan.verification_plan.map((item, itemIndex) =>
+      itemIndex === index
+        ? {
+            ...item,
+            command: [...command],
+          }
+        : item,
+    ),
+  }
+  try {
+    return normalizeTaskPlanInput(
+      plan,
+      profileOf(task),
+      'update-verification-command post-delta plan',
+    )
+  } catch (error) {
+    invalidArguments(error instanceof Error ? error.message : String(error))
+  }
+}
+
+export function appendWorkspaceScope(
+  store: TaskStoreV2,
+  id: string,
+  input: AppendWorkspaceScopeInput,
+): AppendWorkspaceScopeResult {
+  const current = typedTaskRead(store, id)
+  assertWritableDeltaTask(current, input, 'append-scope')
+  const normalizedInputs = normalizeInputPaths(current, input.paths)
+  assertDirectorySuffix(store, normalizedInputs)
+  const existingPaths = new Set(current.plan.workspace_scope?.paths ?? [])
+  const appendedPaths = normalizedInputs.filter(
+    (candidate) => !existingPaths.has(candidate),
+  )
+  if (appendedPaths.length === 0)
+    invalidArguments('append-scope did not contain any new workspace scope path.')
+  const plan = nextScopePlan(current, appendedPaths)
+  const { result, basis, previousPlanRevision, previousWorkRevision } =
+    applyPlanDeltaMutation(
+      store,
+      current,
+      input,
+      plan,
+      'append-scope',
+      {
+        change: 'workspace_scope_append',
+        appended_paths: appendedPaths,
+      },
+      { clearWorkspaceProof: true },
+    )
+
+  return {
+    ...withWarnings(result, sharedWorktreeWarnings(store, result.task.id)),
+    appendedPaths,
+    previousPlanRevision,
+    previousWorkRevision,
+    authorizationApplied: basis !== undefined,
+  }
+}
+
+export function updateVerificationCommand(
+  store: TaskStoreV2,
+  id: string,
+  input: UpdateVerificationCommandInput,
+): UpdateVerificationCommandResult {
+  const current = typedTaskRead(store, id)
+  assertWritableDeltaTask(current, input, 'update-verification-command')
+  assertGateCommand(input.command)
+  const target = resolveGateTarget(current, input.name)
+  const previousCommand = [...target.item.command]
+  if (sameCommand(previousCommand, input.command))
+    invalidArguments(
+      `update-verification-command command for ${input.name} is unchanged.`,
+    )
+  const plan = nextVerificationPlan(current, target.index, input.command)
+  const { result, basis, previousPlanRevision, previousWorkRevision } =
+    applyPlanDeltaMutation(
+      store,
+      current,
+      input,
+      plan,
+      'update-verification-command',
+      {
+        change: 'verification_command_update',
+        gate_name: input.name,
+        previous_command: previousCommand,
+        command: [...input.command],
+      },
+      { clearWorkspaceProof: false },
+    )
+
+  return {
+    ...withWarnings(result, sharedWorktreeWarnings(store, result.task.id)),
+    gateName: input.name,
+    previousCommand,
+    command: [...input.command],
+    previousPlanRevision,
+    previousWorkRevision,
     authorizationApplied: basis !== undefined,
   }
 }

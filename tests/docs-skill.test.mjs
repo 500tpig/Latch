@@ -191,6 +191,14 @@ test('always-loaded scope safety semantics stay in the canonical skill', () => {
     ],
     ['append scope stays append-only', /`append-scope` adds only\s+non-root, non-glob paths/],
     ['append scope needs explicit authorization', /Without\s+`user_delta` or `user_approve`[\s\S]*it returns to `plan`/],
+    [
+      'verification command delta stays gate-command-only',
+      /`update-verification-command` changes only one existing gate\s+`command` after `--`/,
+    ],
+    [
+      'verification command delta needs explicit authorization',
+      /`update-verification-command`[\s\S]*without `user_delta` or\s+`user_approve`[\s\S]*return to `plan`/,
+    ],
   ]
 
   for (const [name, pattern] of semantics) assertTextMatches(skill, pattern, name)
@@ -209,6 +217,25 @@ test('current docs describe the delivered append-scope lifecycle contract', () =
   assertTextMatches(handbook, /latch append-scope <task-id> --expect-revision <revision>/)
   assertTextMatches(handbook, /不修改 `goal`[\s\S]*`verification_plan`/)
   assertTextMatches(design, /不采集 workspace[\s\S]*历史 sidecar/)
+})
+
+test('current docs describe the delivered update-verification-command lifecycle contract', () => {
+  const handbook = text('docs/HANDBOOK.md')
+  const design = text('docs/DESIGN.md')
+  for (const content of [handbook, design]) {
+    assertTextMatches(content, /`update-verification-command`/)
+    assertTextMatches(content, /gate-command-only/)
+    assertTextMatches(content, /user_delta/)
+    assertTextMatches(content, /user_approve/)
+  }
+  assertTextMatches(
+    handbook,
+    /latch update-verification-command <task-id> --expect-revision <revision>/,
+  )
+  assertTextMatches(handbook, /exact name[\s\S]*`kind: gate`/)
+  assertTextMatches(handbook, /保留既有 baseline/)
+  assertTextMatches(design, /保留既有 `workspace_proof` baseline/)
+  assertTextMatches(design, /不运行新旧 gate command/)
 })
 
 test('canonical skill has valid minimal frontmatter', () => {

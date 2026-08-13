@@ -173,7 +173,11 @@ and explicit `done` authorization.
   directories end in `/`; missing paths stay valid. `append-scope` adds only
   non-root, non-glob paths; existing directories without `/` fail. Without
   `user_delta` or `user_approve` it returns to `plan`, invalidating proof and
-  submission. Never infer scope or authorization from prose, paths, or titles.
+  submission. `update-verification-command` changes only one existing gate
+  `command` after `--`; unknown, diagnostic, empty, same, sentinel, and
+  instruction-only commands fail closed and, without `user_delta` or
+  `user_approve`, return to `plan` while clearing verification/submission and
+  keeping the workspace baseline. Never infer scope or authorization from prose, paths, or titles.
 - New tasks use schema 5 with minimum writer `0.5.0`. Schema 2–4 tasks are
   historical read-only under CLI `0.5.0`. Never migrate during reads, startup,
   build, or verification.

@@ -182,6 +182,8 @@ test('version rejects every argument except one optional --json without side eff
     ['--version', '--version', '--json'],
     ['--version', '--json', '--json'],
     ['--version', '--help', '--json'],
+    ['--version', '--json', '--', 'unexpected'],
+    ['--version', '--', 'unexpected'],
   ]
 
   for (const args of invalidInvocations) {
@@ -189,12 +191,17 @@ test('version rejects every argument except one optional --json without side eff
     const before = readdirSync(cwd).sort()
     const result = run(cwd, args, { actor: '' })
 
-    assert.notEqual(result.status, 0)
+    assert.notEqual(result.status, 0, args.join(' '))
     assert.equal(result.stdout, '')
-    const data = JSON.parse(result.stderr)
-    assert.equal(data.schema_version, 2)
-    assert.equal(data.error.code, 'invalid_arguments')
-    assert.match(data.error.message, /Usage: latch --version \[--json\]/)
+    if (args.includes('--json') && args.indexOf('--json') < (args.indexOf('--') === -1 ? args.length : args.indexOf('--'))) {
+      const data = JSON.parse(result.stderr)
+      assert.equal(data.schema_version, 2)
+      assert.equal(data.error.code, 'invalid_arguments')
+      assert.match(data.error.message, /Usage: latch --version \[--json\]/)
+    } else {
+      assert.doesNotMatch(result.stderr.trim(), /^\{/)
+      assert.match(result.stderr, /Usage: latch --version \[--json\]/)
+    }
     assert.deepEqual(readdirSync(cwd).sort(), before)
     assert.equal(existsSync(join(cwd, '.latch')), false)
   }

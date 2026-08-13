@@ -80,19 +80,38 @@ function validateTaskEvent(
       throw new Error(`Invalid decision answer in ${path}.`)
   }
   if (value.type === 'plan_updated' && value.change !== undefined) {
-    if (value.change !== 'workspace_scope_append')
-      throw new Error(`Invalid plan update change in ${path}.`)
     if (!Number.isInteger(value.plan_revision) || (value.plan_revision as number) < 1)
       throw new Error(`Invalid plan update revision in ${path}.`)
-    if (
-      !Array.isArray(value.appended_paths) ||
-      value.appended_paths.length === 0 ||
-      value.appended_paths.some(
-        (candidate) => typeof candidate !== 'string' || candidate.trim() === '',
-      ) ||
-      new Set(value.appended_paths).size !== value.appended_paths.length
-    )
-      throw new Error(`Invalid appended workspace scope paths in ${path}.`)
+    if (value.change === 'workspace_scope_append') {
+      if (
+        !Array.isArray(value.appended_paths) ||
+        value.appended_paths.length === 0 ||
+        value.appended_paths.some(
+          (candidate) => typeof candidate !== 'string' || candidate.trim() === '',
+        ) ||
+        new Set(value.appended_paths).size !== value.appended_paths.length
+      )
+        throw new Error(`Invalid appended workspace scope paths in ${path}.`)
+    } else if (value.change === 'verification_command_update') {
+      if (typeof value.gate_name !== 'string' || !value.gate_name.trim())
+        throw new Error(`Invalid verification command update gate_name in ${path}.`)
+      if (
+        !Array.isArray(value.previous_command) ||
+        value.previous_command.length === 0 ||
+        value.previous_command.some((candidate) => typeof candidate !== 'string')
+      )
+        throw new Error(
+          `Invalid verification command update previous_command in ${path}.`,
+        )
+      if (
+        !Array.isArray(value.command) ||
+        value.command.length === 0 ||
+        value.command.some((candidate) => typeof candidate !== 'string')
+      )
+        throw new Error(`Invalid verification command update command in ${path}.`)
+    } else {
+      throw new Error(`Invalid plan update change in ${path}.`)
+    }
   }
   if (value.type === 'review_feedback') {
     if (!Number.isInteger(value.plan_revision) || (value.plan_revision as number) < 1)

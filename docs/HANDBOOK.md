@@ -156,13 +156,18 @@ artifact 均不替代该字段。不带 `/` 的条目只表示精确文件，不
 path 和目录 symlink 不会被自动解释为目录；后续 verify 发现 exact path 的后代越界时，
 warning 会建议将该条目改为以 `/` 结尾的目录前缀，但不会修改 plan 或扩大 scope。
 
-只增加机器范围时使用独立命令，不重写完整 plan：
+只追加机器范围或只更新既有 gate command 时，使用独立命令，不重写完整 plan：
 
 ```bash
 latch append-scope <task-id> --expect-revision <revision> \
   --path docs/new.md --path src/new/
 latch append-scope <task-id> --expect-revision <revision> \
   --path docs/new.md --authorization-file authorization.json --json
+latch update-verification-command <task-id> --expect-revision <revision> \
+  --name project-check -- pnpm check
+latch update-verification-command <task-id> --expect-revision <revision> \
+  --name project-check --authorization-file authorization.json --json -- \
+  pnpm check
 ```
 
 `append-scope` 只向 `workspace_scope.paths` 追加一个或多个路径，并保留既有路径与顺序。
@@ -171,12 +176,20 @@ latch append-scope <task-id> --expect-revision <revision> \
 `invalid_arguments`。该命令不修改 `goal`、自然语言 `scope`、`acceptance`、`approach`、
 `verification_plan` 或其它 plan 字段。
 
-未提供 `--authorization-file` 时，命令增加 `plan_revision`，回到 `plan`，清空旧验证与
-submission，并移除 active `workspace_proof` 引用；历史 evidence sidecar 保留。提供文件
-时，只接受 `source: user_delta` 或 `source: user_approve`。`user_delta` 要求当前 plan 已有
-有效 implementation authorization；两种 source 都必须通过 post-delta authorizable
-校验，成功后原子绑定新 plan revision、增加 `work_revision` 并进入 `dev`。命令名称、
-路径、task title 或调用方意图均不构成授权。
+`update-verification-command` 只按 exact name 更新唯一现有 `kind: gate` 的 `command`。
+新 argv 必须写在 `--` 之后，按字节顺序保存且不经过 shell；未知 name、重复 name、
+diagnostic name、空 argv、相同 argv、sentinel 与 instruction-only gate command 均在
+mutation 前返回 `invalid_arguments`。该命令不新增、删除或重命名 verification item，
+也不修改 `name`、`kind`、顺序、数量或其它 plan 字段。
+
+未提供 `--authorization-file` 时，两条命令都增加 `plan_revision`，回到 `plan`，并清空
+旧验证与 submission。`append-scope` 还会移除 active `workspace_proof` 引用；
+`update-verification-command` 因 machine scope 未变而保留既有 baseline，但不运行新旧
+command，也不采集 evidence。提供 authorization 文件时，只接受 `source: user_delta` 或
+`source: user_approve`。`user_delta` 要求当前 plan 已有有效 implementation
+authorization；两种 source 都必须通过 post-delta authorizable 校验，成功后原子绑定新
+plan revision、增加 `work_revision` 并进入 `dev`。命令名称、路径、argv、task title 或
+调用方意图均不构成授权。
 
 无新增参数时，`checkpoint` 创建 standard plan task。`--authorization-file` 只接受
 `source: user_request`，并原子创建 light task、写入 work basis、进入 dev 且将
@@ -299,9 +312,11 @@ latch save <task-id> --expect-revision 7 \
   --provenance mixed --provenance-reason "用户允许重叠并行"
 latch append-scope <task-id> --expect-revision 8 \
   --path docs/new.md --path src/new/
-latch artifact add <task-id> --expect-revision 9 \
+latch update-verification-command <task-id> --expect-revision 9 \
+  --name project-check -- pnpm check
+latch artifact add <task-id> --expect-revision 10 \
   doc:docs/example.md skill:skills/example/SKILL.md
-latch artifact remove <task-id> --expect-revision 10 \
+latch artifact remove <task-id> --expect-revision 11 \
   doc:docs/obsolete.md
 ```
 
@@ -311,6 +326,11 @@ plan 任一持久化值变化都会增加 `plan_revision`，phase 回到 plan，
 authorization 时同样回到 `plan`，携带合法 authorization 时按新 plan revision 原子进入
 `dev`。scope 删除、替换、缩小，以及伴随 goal、acceptance 或产品范围变化的调整继续使用
 完整 `save --plan-file`。
+
+`update-verification-command` 是唯一的 gate-command-only plan delta。它只改一个现有
+gate 的 argv；未携带结构化 authorization 时回到 `plan`，携带合法 authorization 时按新
+plan revision 原子进入 `dev`。新增、删除、rename gate，或把 diagnostic 改成 gate，继续
+使用完整 `save --plan-file`。
 
 `artifact add` 和 `artifact remove` 一次接受一个或多个 `<kind>:<path>`。两条命令复用 `save --artifact` 和 `save --remove-artifact` 的去重、相对路径校验、`artifact_updated` event 与 revision 语义；`save` 的既有参数保持兼容。
 

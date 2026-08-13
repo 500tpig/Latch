@@ -2,6 +2,7 @@
 import { CliV2Error, fail } from './cli-support.js'
 import { runAppendScope } from './commands/append-scope.js'
 import { runBenchmark } from './commands/benchmark.js'
+import { runUpdateVerificationCommand } from './commands/update-verification-command.js'
 import { runContext, runContextPack } from './commands/context.js'
 import { runKnowledge } from './commands/knowledge.js'
 import { runRecord, recordJsonEnvelope } from './commands/record.js'
@@ -40,27 +41,38 @@ import { jsonEnvelopeV2 } from './core/task-view.js'
 import { DowngradeTaskV2Error } from './core/task-store.js'
 import { injectHostActor } from './host-adapter.js'
 
+/** CLI options only; tokens after `--` belong to command argv and must not
+ *  change top-level Latch flag handling or error output mode. */
+function cliOptionArgv(argv: string[]) {
+  const separator = argv.indexOf('--')
+  return separator === -1 ? argv : argv.slice(0, separator)
+}
+
 async function run(argv: string[], cwd: string) {
-  if (argv.includes('--version')) return runVersion(argv)
+  const optionArgv = cliOptionArgv(argv)
+  // Detect --version only before `--`, but validate the full argv so trailing
+  // tokens after `--` still fail closed under the version contract.
+  if (optionArgv.includes('--version')) return runVersion(argv)
   const command = argv[0]
   if (!command || command === '--help' || command === '-h') {
     process.stdout.write(`${usage}\n`)
     return
   }
   const args = argv.slice(1)
+  const optionArgs = cliOptionArgv(args)
   injectHostActor()
   const actor = actorId()
   const printsCheckpointTemplate =
     command === 'checkpoint' &&
-    args.some(
+    optionArgs.some(
       (arg) =>
         arg === '--print-plan-template' ||
         arg.startsWith('--print-plan-template='),
     )
   if (
     actorRequiredCommands.has(command) &&
-    !args.includes('--help') &&
-    !args.includes('-h') &&
+    !optionArgs.includes('--help') &&
+    !optionArgs.includes('-h') &&
     !printsCheckpointTemplate
   )
     assertWritableActor(actor)
@@ -90,6 +102,8 @@ async function run(argv: string[], cwd: string) {
       return runSave(args, cwd, actor)
     case 'append-scope':
       return runAppendScope(args, cwd, actor)
+    case 'update-verification-command':
+      return runUpdateVerificationCommand(args, cwd, actor)
     case 'approve':
       return runApprove(args, cwd, actor)
     case 'verify':
@@ -120,8 +134,10 @@ async function run(argv: string[], cwd: string) {
 }
 
 async function main() {
+  const argv = process.argv.slice(2)
+  const optionArgv = cliOptionArgv(argv)
   try {
-    await run(process.argv.slice(2), process.cwd())
+    await run(argv, process.cwd())
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     const code =
@@ -130,10 +146,10 @@ async function main() {
       error instanceof NotInitializedError
         ? error.code
         : 'command_failed'
-    if (process.argv.includes('--json'))
+    if (optionArgv.includes('--json'))
       process.stderr.write(
         `${JSON.stringify({
-          ...(process.argv.includes('--version') || process.argv[2] !== 'record'
+          ...(optionArgv.includes('--version') || argv[0] !== 'record'
             ? jsonEnvelopeV2()
             : recordJsonEnvelope()),
           ...(error instanceof DowngradeTaskV2Error

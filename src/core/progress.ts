@@ -9,11 +9,14 @@ export type {
 export {
   appendWorkspaceScope,
   PlanDeltaError,
+  updateVerificationCommand,
 } from './progress/plan-delta.js'
 export type {
   AppendWorkspaceScopeInput,
   AppendWorkspaceScopeResult,
   PlanDeltaErrorCode,
+  UpdateVerificationCommandInput,
+  UpdateVerificationCommandResult,
 } from './progress/plan-delta.js'
 export {
   reconcileWorkspaceViolations,
