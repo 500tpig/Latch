@@ -32,9 +32,9 @@ export const commandUsage: Record<string, string> = {
     '       latch approve <task-id> --expect-revision <revision> --feedback <text> [--authorization-file <path|->] [--json]\n' +
     '       latch approve <task-id> --expect-revision <revision> --non-implementation-feedback <text> [--json]',
   verify:
-    'Usage: latch verify <task-id> --expect-revision <revision> --name <name> [--diagnostic] [-- command...] [--json]',
+    'Usage: latch verify <task-id> --expect-revision <revision> --name <name> [--diagnostic] [--verbose] [--timeout-ms <milliseconds>] [--json] [-- command...]',
   'verify-all':
-    'Usage: latch verify-all <task-id> --expect-revision <revision> [--json]',
+    'Usage: latch verify-all <task-id> --expect-revision <revision> [--verbose] [--timeout-ms <milliseconds>] [--json]',
   reconcile:
     'Usage: latch reconcile <task-id> --expect-revision <revision> [--json]',
   'reopen-review':

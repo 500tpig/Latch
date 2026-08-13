@@ -1,5 +1,7 @@
 import {
+  assertOptionNotRepeated,
   assertSingleStdinInput,
+  boundedPositiveInteger,
   commonOptions,
   fail,
   json,
@@ -14,6 +16,11 @@ import {
   verifyAllTasksV2,
   verifyTaskV2,
 } from '../core/progress.js'
+import {
+  MAX_TIMEOUT_MS,
+  type VerificationProjection,
+  type VerificationStreamProjection,
+} from '../core/progress/command-output.js'
 import { openTaskStoreV2 } from '../core/task-store.js'
 import type {
   ImplementationAuthorizationInput,
@@ -25,6 +32,37 @@ import {
   requirePositionals,
 } from './task-common.js'
 import { commandUsage } from './usage.js'
+
+function writeStreamSummary(
+  label: 'stdout' | 'stderr',
+  stream: VerificationStreamProjection,
+) {
+  const summary = stream.summary
+  process.stdout.write(
+    `${label}: bytes=${stream.bytes} truncated=${summary.truncated} omitted_bytes=${summary.omitted_bytes}\n`,
+  )
+  if (summary.head)
+    process.stdout.write(`  head: ${JSON.stringify(summary.head)}\n`)
+  if (summary.tail)
+    process.stdout.write(`  tail: ${JSON.stringify(summary.tail)}\n`)
+}
+
+function writeVerificationResult(taskId: string, output: VerificationProjection) {
+  const details = [
+    `exit_code=${output.exit_code === null ? 'null' : output.exit_code}`,
+    `duration_ms=${output.duration_ms}`,
+    ...(output.termination ? [`termination=${output.termination}`] : []),
+    ...(output.signal ? [`signal=${output.signal}`] : []),
+    ...(output.timeout_ms !== undefined ? [`timeout_ms=${output.timeout_ms}`] : []),
+  ]
+  process.stdout.write(
+    `Verified ${taskId} ${output.name}: ${output.status} (${details.join(', ')})\n`,
+  )
+  writeStreamSummary('stdout', output.stdout)
+  writeStreamSummary('stderr', output.stderr)
+  if (output.error)
+    process.stdout.write(`error: ${JSON.stringify(output.error)}\n`)
+}
 
 export function runApprove(args: string[], cwd: string, actor: string) {
   const parsed = parseCommand(args, {
@@ -115,11 +153,14 @@ export function runApprove(args: string[], cwd: string, actor: string) {
 }
 
 export async function runVerify(args: string[], cwd: string, actor: string) {
+  assertOptionNotRepeated(args, '--timeout-ms')
   const parsed = parseCommand(args, {
     ...commonOptions(),
     'expect-revision': { type: 'string' },
     name: { type: 'string' },
     diagnostic: { type: 'boolean' },
+    verbose: { type: 'boolean' },
+    'timeout-ms': { type: 'string' },
   })
   if (parsed.values.help) return process.stdout.write(`${commandUsage.verify}\n`)
   const diagnostic = Boolean(parsed.values.diagnostic)
@@ -128,6 +169,13 @@ export async function runVerify(args: string[], cwd: string, actor: string) {
     parsed.values['expect-revision'],
     '--expect-revision',
   )
+  const timeoutMs = parsed.values['timeout-ms'] === undefined
+    ? undefined
+    : boundedPositiveInteger(
+        parsed.values['timeout-ms'],
+        '--timeout-ms',
+        MAX_TIMEOUT_MS,
+      )
   if (!parsed.values.name) fail('invalid_arguments', '--name is required.')
   const command = parsed.positionals.slice(1)
   if (!diagnostic && command.length > 0)
@@ -140,27 +188,29 @@ export async function runVerify(args: string[], cwd: string, actor: string) {
     name: parsed.values.name,
     diagnostic,
     command: command.length > 0 ? command : undefined,
-    outputMode: parsed.values.json ? 'capture' : 'inherit',
+    outputMode: parsed.values.json ? 'json' : 'human',
+    verbose: Boolean(parsed.values.verbose),
+    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
   })
   if (parsed.values.json)
     json({
       ...mutationJson(store, result.task, actor, result.warnings, expectRevision),
-      verification: result.verification,
-      ...(result.failureLog ? { failure_log: result.failureLog } : {}),
+      verification: result.output,
     })
   else {
-    process.stdout.write(
-      `Verified ${result.task.id} ${result.verification.name}: ${result.verification.status}\n`,
-    )
+    writeVerificationResult(result.task.id, result.output)
     printWarnings(result.warnings)
   }
   if (result.verification.status === 'fail') process.exitCode = 1
 }
 
 export async function runVerifyAll(args: string[], cwd: string, actor: string) {
+  assertOptionNotRepeated(args, '--timeout-ms')
   const parsed = parseCommand(args, {
     ...commonOptions(),
     'expect-revision': { type: 'string' },
+    verbose: { type: 'boolean' },
+    'timeout-ms': { type: 'string' },
   })
   if (parsed.values.help)
     return process.stdout.write(`${commandUsage['verify-all']}\n`)
@@ -169,20 +219,25 @@ export async function runVerifyAll(args: string[], cwd: string, actor: string) {
     parsed.values['expect-revision'],
     '--expect-revision',
   )
+  const timeoutMs = parsed.values['timeout-ms'] === undefined
+    ? undefined
+    : boundedPositiveInteger(
+        parsed.values['timeout-ms'],
+        '--timeout-ms',
+        MAX_TIMEOUT_MS,
+      )
   const store = openTaskStoreV2(cwd)
   currentWritableTask(store, parsed.positionals[0])
   const result = await verifyAllTasksV2(store, parsed.positionals[0], {
     expectRevision,
     actor,
-    outputMode: parsed.values.json ? 'capture' : 'inherit',
+    outputMode: parsed.values.json ? 'json' : 'human',
+    verbose: Boolean(parsed.values.verbose),
+    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
   })
-  const executed = result.executions.map(({ verification, revision }) => ({
-    name: verification.name,
-    status: verification.status,
+  const executed = result.executions.map(({ output, revision }) => ({
+    ...output,
     revision,
-    ...(verification.failure_reason
-      ? { failure_reason: verification.failure_reason }
-      : {}),
   }))
   if (parsed.values.json)
     json({
@@ -195,14 +250,13 @@ export async function runVerifyAll(args: string[], cwd: string, actor: string) {
       proof_generation: result.task.workspace_proof?.generation ?? null,
       unresolved_violations:
         result.task.workspace_proof?.unresolved_violations.length ?? 0,
-      ...(result.failureLog ? { failure_log: result.failureLog } : {}),
     })
   else {
-    process.stdout.write(
-      executed.length === 0
-        ? `No pending gates for ${result.task.id}.\n`
-        : `Verified ${result.task.id}: ${executed.map((item) => `${item.name}: ${item.status}`).join('; ')}\n`,
-    )
+    for (const execution of result.executions)
+      writeVerificationResult(result.task.id, execution.output)
+    process.stdout.write(executed.length === 0
+      ? `No pending gates for ${result.task.id}.\n`
+      : `Verified ${result.task.id}: ${executed.map((item) => `${item.name}: ${item.status}`).join('; ')}\n`)
     printWarnings(result.warnings)
   }
   if (result.failed || result.stoppedReason) process.exitCode = 1

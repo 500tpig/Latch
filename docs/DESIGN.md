@@ -37,6 +37,9 @@ Latch 是个人 macOS 开发环境中的本地任务状态记录器。它帮助 
 - `update-verification-command` 是独立的 gate-command-only plan delta：只按 exact name 更新唯一现有 `kind: gate` 的 argv，拒绝未知 name、重复 name、diagnostic、空 argv、相同 argv、sentinel 与 instruction-only command。未提供结构化 authorization 时回到 `plan`；只有显式 `user_delta` 或 `user_approve` 通过 post-delta 校验后，才原子绑定新 plan revision 并进入 `dev`。
 - `resolve-open-questions` 是独立的原子 open-question plan delta：只接受 `plan` 阶段当前全部问题的结构化 exact resolution，清空 `plan.open_questions`，并按输入顺序记录 `plan_updated` 与 `decision_recorded` events。未提供 authorization 时回到 `plan`；只有显式 `user_approve` 通过 post-delta 校验后，才原子绑定新 plan revision 并进入 `dev`。
 - named gate 保存 command outcome、before/after workspace evidence、workspace effect 和 proof generation；只有当前 generation 上的完整无 mutation proof 才能参与 submit。
+- `verify`、diagnostic 和 `verify-all` 共用不经过 shell 的 streaming command runner；stdout 与 stderr 分别使用固定容量 head/tail、原始 byte count 和 monotonic duration，输出超过摘要配额只标记截断，不改变 command outcome。
+- gate 的 ephemeral output projection 不写入 task、event 或 workspace evidence。默认 human 与 JSON 响应只返回有界摘要；显式 `--verbose` 实时转发本次完整输出，`--json --verbose` 仍保证 stdout 只有一个 JSON document，完整 gate stream 只写 stderr。
+- gate output 首版不持久化，不提供 `log_ref`、日志目录或隐式 cache；workspace evidence ref 只证明 workspace snapshot 与 delta，不引用普通 gate 日志。
 - workspace evidence 覆盖 Git-visible 脏路径、非 ignored untracked 路径，以及 scope 或 artifact 精确引用的 ignored 文件；不递归扫描 ignored 目录。
 - 新 evidence 在既有 dirty `entries` 外保存可选的 `scope_entries` 内容视图；gate 前后仍比较完整 dirty worktree，review live freshness 与 done 只比较 task scope 的 worktree 内容。历史 sidecar 缺少该字段时继续使用旧的 fail-closed 比较，不迁移或重写。
 - schema 5 submission 使用结构化 `unverified_items`，closeout 为每项保存 `resolved`、`accepted_risk` 或 `followup` resolution；不保留自由文本 closeout 双路径。

@@ -212,22 +212,21 @@ test('verify-all skips current passes, stops on failure, and preserves per-gate 
   const failedEnvelope = JSON.parse(failed.stdout)
   assert.equal(failedEnvelope.schema_version, 2)
   assert.equal('envelope_schema_version' in failedEnvelope, false)
-  assert.deepEqual(failedEnvelope.executed, [
-    {
-      name: 'second',
-      status: 'fail',
-      revision: 4,
-      failure_reason: 'command_failed',
-    },
-  ])
+  assert.equal(failedEnvelope.executed.length, 1)
+  assert.equal(failedEnvelope.executed[0].name, 'second')
+  assert.equal(failedEnvelope.executed[0].status, 'fail')
+  assert.equal(failedEnvelope.executed[0].revision, 4)
+  assert.equal(failedEnvelope.executed[0].failure_reason, 'command_failed')
+  assert.equal(failedEnvelope.executed[0].exit_code, 1)
+  assert.equal(failedEnvelope.executed[0].stdout.bytes, 13)
+  assert.equal(failedEnvelope.executed[0].stdout.summary.head, 'second stdout')
+  assert.equal(failedEnvelope.executed[0].stderr.bytes, 13)
+  assert.equal(failedEnvelope.executed[0].stderr.summary.head, 'second stderr')
+  assert.equal(failedEnvelope.executed[0].duration_ms >= 0, true)
   assert.equal(failedEnvelope.failed, 'second')
   assert.equal(failedEnvelope.revision, 4)
-  assert.deepEqual(failedEnvelope.failure_log, {
-    limit_bytes_per_stream: 8192,
-    retained: 'tail',
-    stdout: { text: 'second stdout', truncated: false },
-    stderr: { text: 'second stderr', truncated: false },
-  })
+  assert.equal('failure_log' in failedEnvelope, false)
+  assert.equal('log_ref' in failedEnvelope, false)
   assert.equal(failed.stderr, '')
   assert.equal(readTask(cwd, id).verification.gate.third, undefined)
   assert.equal(readTask(cwd, id).verification.diagnostic.diagnostic, undefined)
@@ -239,11 +238,15 @@ test('verify-all skips current passes, stops on failure, and preserves per-gate 
     'verify-all', id, '--expect-revision', '4', '--json',
   ])
   assert.equal(passed.status, 0, passed.stderr)
-  assert.deepEqual(JSON.parse(passed.stdout).executed, [
-    { name: 'second', status: 'pass', revision: 5 },
-    { name: 'third', status: 'pass', revision: 6 },
-  ])
-  assert.equal(JSON.parse(passed.stdout).failed, null)
+  const passedEnvelope = JSON.parse(passed.stdout)
+  assert.deepEqual(
+    passedEnvelope.executed.map(({ name, status, revision }) => ({ name, status, revision })),
+    [
+      { name: 'second', status: 'pass', revision: 5 },
+      { name: 'third', status: 'pass', revision: 6 },
+    ],
+  )
+  assert.equal(passedEnvelope.failed, null)
 
   const before = readFileSync(taskPath(cwd, id), 'utf8')
   const noOp = run(cwd, [
@@ -276,7 +279,12 @@ test('verify JSON keeps gate stdout and stderr out of the JSON protocol stream',
   assert.equal(verifiedEnvelope.schema_version, 2)
   assert.equal('envelope_schema_version' in verifiedEnvelope, false)
   assert.equal(verifiedEnvelope.verification.status, 'pass')
+  assert.equal(verifiedEnvelope.verification.stdout.bytes, 22000)
+  assert.equal(verifiedEnvelope.verification.stderr.bytes, 22000)
+  assert.equal(verifiedEnvelope.verification.stdout.summary.limit_bytes, 4096)
+  assert.equal(verifiedEnvelope.verification.stdout.summary.truncated, true)
   assert.equal('failure_log' in verifiedEnvelope, false)
+  assert.equal('log_ref' in verifiedEnvelope, false)
   assert.equal(verified.stdout.trimStart().startsWith('{'), true)
   assert.equal(verified.stdout.trimEnd().endsWith('}'), true)
   assert.equal(verified.stderr, '')
@@ -294,16 +302,122 @@ test('verify JSON keeps gate stdout and stderr out of the JSON protocol stream',
   ])
   assert.equal(verifiedAll.status, 0, verifiedAll.stderr)
   const verifiedAllEnvelope = JSON.parse(verifiedAll.stdout)
-  assert.deepEqual(verifiedAllEnvelope.executed, [
-    { name: 'noisy', status: 'pass', revision: 3 },
-  ])
+  assert.deepEqual(
+    verifiedAllEnvelope.executed.map(({ name, status, revision }) => ({ name, status, revision })),
+    [{ name: 'noisy', status: 'pass', revision: 3 }],
+  )
+  assert.equal(verifiedAllEnvelope.executed[0].stdout.bytes, 22000)
+  assert.equal(verifiedAllEnvelope.executed[0].stderr.bytes, 22000)
   assert.equal('failure_log' in verifiedAllEnvelope, false)
   assert.equal(verifiedAll.stdout.trimStart().startsWith('{'), true)
   assert.equal(verifiedAll.stdout.trimEnd().endsWith('}'), true)
   assert.equal(verifiedAll.stderr, '')
 })
 
-test('non-JSON verify preserves inherited real-time gate output', () => {
+test('JSON verbose forwards both gate streams only to stderr and keeps one stdout document', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const id = checkpoint(cwd, plan({
+    verification_plan: [{
+      name: 'noisy',
+      command: [
+        process.execPath,
+        '-e',
+        "process.stdout.write('json verbose stdout'); process.stderr.write('json verbose stderr')",
+      ],
+      kind: 'gate',
+    }],
+  }))
+  approve(cwd, id)
+
+  const result = verify(cwd, id, 'noisy', ['--verbose'])
+  assert.equal(result.status, 0, result.stderr)
+  const envelope = JSON.parse(result.stdout)
+  assert.equal(envelope.verification.status, 'pass')
+  assert.equal(envelope.verification.stdout.summary.head, 'json verbose stdout')
+  assert.equal(envelope.verification.stderr.summary.head, 'json verbose stderr')
+  assert.equal(result.stdout.trimStart().startsWith('{'), true)
+  assert.equal(result.stdout.trimEnd().endsWith('}'), true)
+  assert.match(result.stderr, /json verbose stdout/)
+  assert.match(result.stderr, /json verbose stderr/)
+  assert.equal(result.stderr.endsWith('\n'), true)
+})
+
+test('verify timeout arguments fail before task or evidence mutation', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const id = checkpoint(cwd, plan({ verification_plan: [plan().verification_plan[0]] }))
+  approve(cwd, id)
+  const beforeTask = readFileSync(taskPath(cwd, id), 'utf8')
+  const beforeEvents = readFileSync(eventsPath(cwd, id), 'utf8')
+
+  const attempts = [
+    ['--timeout-ms', '0'],
+    ['--timeout-ms=-1'],
+    ['--timeout-ms', '1.5'],
+    ['--timeout-ms', '86400001'],
+    ['--timeout-ms', '9007199254740992'],
+    ['--timeout-ms', '1', '--timeout-ms', '2'],
+  ]
+  for (const extra of attempts) {
+    const result = run(cwd, [
+      'verify', id, '--expect-revision', revision(cwd, id), '--name', 'first',
+      ...extra, '--json',
+    ])
+    assert.notEqual(result.status, 0)
+    assert.equal(JSON.parse(result.stderr).error.code, 'invalid_arguments')
+    assert.equal(result.stdout, '')
+    assert.equal(readFileSync(taskPath(cwd, id), 'utf8'), beforeTask)
+    assert.equal(readFileSync(eventsPath(cwd, id), 'utf8'), beforeEvents)
+  }
+})
+
+test('verify accepts timeout boundaries and timeout cannot turn into a pass', () => {
+  const maxRoot = temporaryDirectory()
+  init(maxRoot)
+  const maxId = checkpoint(maxRoot, plan({
+    verification_plan: [{
+      name: 'quick',
+      command: [process.execPath, '-e', "process.stdout.write('quick')"],
+      kind: 'gate',
+    }],
+  }))
+  approve(maxRoot, maxId)
+  const maximum = run(maxRoot, [
+    'verify', maxId, '--expect-revision', revision(maxRoot, maxId),
+    '--name', 'quick', '--timeout-ms', '86400000', '--json',
+  ])
+  assert.equal(maximum.status, 0, maximum.stderr)
+  assert.equal(JSON.parse(maximum.stdout).verification.status, 'pass')
+
+  const minRoot = temporaryDirectory()
+  init(minRoot)
+  const minId = checkpoint(minRoot, plan({
+    verification_plan: [{
+      name: 'slow',
+      command: [
+        process.execPath,
+        '-e',
+        "process.on('SIGTERM', () => process.exit(0)); setInterval(() => {}, 1000)",
+      ],
+      kind: 'gate',
+    }],
+  }))
+  approve(minRoot, minId)
+  const minimum = run(minRoot, [
+    'verify', minId, '--expect-revision', revision(minRoot, minId),
+    '--name', 'slow', '--timeout-ms', '1', '--json',
+  ])
+  assert.notEqual(minimum.status, 0)
+  const output = JSON.parse(minimum.stdout).verification
+  assert.equal(output.status, 'fail')
+  assert.equal(output.failure_reason, 'command_failed')
+  assert.equal(output.exit_code, null)
+  assert.equal(output.termination, 'timeout')
+  assert.equal(output.timeout_ms, 1)
+})
+
+test('non-JSON verify defaults to escaped bounded summaries and verbose forwards full streams', () => {
   const cwd = temporaryDirectory()
   init(cwd)
   const id = checkpoint(cwd, plan({
@@ -324,11 +438,23 @@ test('non-JSON verify preserves inherited real-time gate output', () => {
   ])
   assert.equal(result.status, 0, result.stderr)
   assert.match(result.stdout, /Verified .* noisy: pass/)
-  assert.match(result.stderr, /human stdout/)
-  assert.match(result.stderr, /human stderr/)
+  assert.match(result.stdout, /stdout: bytes=13 truncated=false omitted_bytes=0/)
+  assert.match(result.stdout, /head: "human stdout\\n"/)
+  assert.match(result.stdout, /stderr: bytes=13 truncated=false omitted_bytes=0/)
+  assert.match(result.stdout, /head: "human stderr\\n"/)
+  assert.equal(result.stderr, '')
+
+  const verbose = run(cwd, [
+    'verify', id, '--expect-revision', revision(cwd, id), '--name', 'noisy',
+    '--verbose',
+  ])
+  assert.equal(verbose.status, 0, verbose.stderr)
+  assert.match(verbose.stdout, /^human stdout\nVerified /)
+  assert.match(verbose.stderr, /^human stderr\n$/)
+  assert.match(verbose.stdout, /stdout: bytes=13 truncated=false omitted_bytes=0/)
 })
 
-test('non-JSON verify-all preserves inherited real-time gate output', () => {
+test('non-JSON verify-all defaults to bounded per-gate summaries and supports verbose', () => {
   const cwd = temporaryDirectory()
   init(cwd)
   const id = checkpoint(cwd, plan({
@@ -349,11 +475,34 @@ test('non-JSON verify-all preserves inherited real-time gate output', () => {
   ])
   assert.equal(result.status, 0, result.stderr)
   assert.match(result.stdout, /Verified .* noisy: pass/)
-  assert.match(result.stderr, /all stdout/)
-  assert.match(result.stderr, /all stderr/)
+  assert.match(result.stdout, /head: "all stdout\\n"/)
+  assert.match(result.stdout, /head: "all stderr\\n"/)
+  assert.equal(result.stderr, '')
+
+  const verboseRoot = temporaryDirectory()
+  init(verboseRoot)
+  const verboseId = checkpoint(verboseRoot, plan({
+    verification_plan: [{
+      name: 'noisy',
+      command: [
+        process.execPath,
+        '-e',
+        "process.stdout.write('all stdout'); process.stderr.write('all stderr')",
+      ],
+      kind: 'gate',
+    }],
+  }))
+  approve(verboseRoot, verboseId)
+  const verbose = run(verboseRoot, [
+    'verify-all', verboseId, '--expect-revision', revision(verboseRoot, verboseId),
+    '--verbose',
+  ])
+  assert.equal(verbose.status, 0, verbose.stderr)
+  assert.match(verbose.stdout, /^all stdout\nVerified /)
+  assert.match(verbose.stderr, /^all stderr\n$/)
 })
 
-test('verify JSON bounds failure logs per stream and retains the tail', () => {
+test('verify JSON returns bounded failure head and tail per stream', () => {
   const cwd = temporaryDirectory()
   init(cwd)
   const id = checkpoint(cwd, plan({
@@ -400,42 +549,55 @@ test('verify JSON bounds failure logs per stream and retains the tail', () => {
 
   const stdoutOnly = verify(cwd, id, 'stdout-only')
   assert.notEqual(stdoutOnly.status, 0)
-  assert.deepEqual(JSON.parse(stdoutOnly.stdout).failure_log, {
-    limit_bytes_per_stream: 8192,
-    retained: 'tail',
-    stdout: { text: 'stdout only', truncated: false },
-    stderr: { text: '', truncated: false },
-  })
+  let output = JSON.parse(stdoutOnly.stdout).verification
+  assert.equal(output.stdout.bytes, 11)
+  assert.equal(output.stdout.summary.head, 'stdout only')
+  assert.equal(output.stderr.bytes, 0)
+  assert.equal(output.exit_code, 2)
   assert.equal(stdoutOnly.stderr, '')
 
   const stderrOnly = verify(cwd, id, 'stderr-only')
   assert.notEqual(stderrOnly.status, 0)
-  assert.deepEqual(JSON.parse(stderrOnly.stdout).failure_log, {
-    limit_bytes_per_stream: 8192,
-    retained: 'tail',
-    stdout: { text: '', truncated: false },
-    stderr: { text: 'stderr only', truncated: false },
-  })
+  output = JSON.parse(stderrOnly.stdout).verification
+  assert.equal(output.stdout.bytes, 0)
+  assert.equal(output.stderr.bytes, 11)
+  assert.equal(output.stderr.summary.head, 'stderr only')
+  assert.equal(output.exit_code, 3)
   assert.equal(stderrOnly.stderr, '')
 
   const boundary = verify(cwd, id, 'boundary')
   assert.notEqual(boundary.status, 0)
-  const failureLog = JSON.parse(boundary.stdout).failure_log
-  assert.equal(failureLog.stdout.text, 'x'.repeat(8192))
-  assert.equal(failureLog.stdout.truncated, false)
-  assert.equal(failureLog.stderr.text, 'y'.repeat(8192))
-  assert.equal(failureLog.stderr.truncated, true)
+  output = JSON.parse(boundary.stdout).verification
+  assert.equal(output.stdout.bytes, 8192)
+  assert.equal(output.stdout.summary.head, 'x'.repeat(8192))
+  assert.equal(output.stdout.summary.truncated, false)
+  assert.equal(output.stderr.bytes, 8199)
+  assert.equal(output.stderr.summary.head, `discard${'y'.repeat(8192)}`)
+  assert.equal(output.stderr.summary.truncated, false)
   assert.equal(boundary.stderr, '')
 
   const utf8Tail = verify(cwd, id, 'utf8-tail')
   assert.notEqual(utf8Tail.status, 0)
-  const utf8Log = JSON.parse(utf8Tail.stdout).failure_log.stdout
-  assert.equal(utf8Log.truncated, true)
-  assert.equal(utf8Log.text.includes('\uFFFD'), false)
-  assert.equal(Buffer.byteLength(utf8Log.text) <= 8192, true)
+  const utf8Output = JSON.parse(utf8Tail.stdout).verification.stdout
+  assert.equal(utf8Output.bytes, 8196)
+  assert.equal(utf8Output.summary.truncated, false)
+  assert.equal(utf8Output.summary.head.includes('\uFFFD'), false)
   assert.equal(utf8Tail.stderr, '')
   assert.equal(readFileSync(taskPath(cwd, id), 'utf8').includes('failure_log'), false)
   assert.equal(readFileSync(eventsPath(cwd, id), 'utf8').includes('failure_log'), false)
+  assert.equal(readFileSync(taskPath(cwd, id), 'utf8').includes('duration_ms'), false)
+  assert.equal(readFileSync(eventsPath(cwd, id), 'utf8').includes('duration_ms'), false)
+  const evidenceDirectory = join(cwd, '.latch', 'tasks', id, 'evidence')
+  const evidence = readdirSync(evidenceDirectory)
+    .map((name) => readFileSync(join(evidenceDirectory, name), 'utf8'))
+    .join('\n')
+  assert.doesNotMatch(evidence, /failure_log|duration_ms|log_ref|stdout only|stderr only/)
+  assert.deepEqual(readdirSync(join(cwd, '.latch', 'archive')), [])
+  assert.equal(
+    readdirSync(join(cwd, '.latch'), { recursive: true })
+      .some((path) => /(^|\/)logs?(\/|$)/.test(String(path))),
+    false,
+  )
 })
 
 test('same gate rerun replaces its current result and a failure blocks submit', () => {
@@ -494,15 +656,12 @@ test('verify and verify-all keep command-not-found diagnostics bounded', () => {
   const missing = verify(cwd, id, 'missing')
   assert.notEqual(missing.status, 0)
   const missingEnvelope = JSON.parse(missing.stdout)
-  assert.deepEqual(missingEnvelope.failure_log.stdout, {
-    text: '',
-    truncated: false,
-  })
-  assert.deepEqual(missingEnvelope.failure_log.stderr, {
-    text: '',
-    truncated: false,
-  })
-  assert.match(missingEnvelope.failure_log.spawn_error, /ENOENT/)
+  assert.equal(missingEnvelope.verification.stdout.bytes, 0)
+  assert.equal(missingEnvelope.verification.stderr.bytes, 0)
+  assert.equal(missingEnvelope.verification.exit_code, null)
+  assert.equal(missingEnvelope.verification.termination, 'spawn_error')
+  assert.equal(missingEnvelope.verification.error.code, 'ENOENT')
+  assert.match(missingEnvelope.verification.error.message, /ENOENT/)
   assert.equal(missing.stderr, '')
   const task = readTask(cwd, id)
   assert.equal(task.phase, 'check')
@@ -526,7 +685,8 @@ test('verify and verify-all keep command-not-found diagnostics bounded', () => {
   assert.notEqual(missingAll.status, 0)
   const missingAllEnvelope = JSON.parse(missingAll.stdout)
   assert.equal(missingAllEnvelope.failed, 'missing')
-  assert.match(missingAllEnvelope.failure_log.spawn_error, /ENOENT/)
+  assert.equal(missingAllEnvelope.executed[0].termination, 'spawn_error')
+  assert.equal(missingAllEnvelope.executed[0].error.code, 'ENOENT')
   assert.equal(missingAll.stderr, '')
 })
 

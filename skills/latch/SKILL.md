@@ -5,17 +5,15 @@ description: Track Latch tasks for repository writes and behavior changes, and h
 
 # Latch
 
-Use for repository writes and observable behavior changes. Pure Q&A, read-only work,
-no-write requests, and explicit no-Latch requests do not create tasks.
+Use for repo writes or behavior changes. Pure Q&A, read-only, no-write, and explicit
+no-Latch do not create tasks.
 
 ## Select the task runner first
 
-- Current runner: Latch CLI `0.5.0`; use `node dist/cli.js` in this repo and a
-  verified `latch@0.5.0` install in adopters.
+- Runner: CLI `0.5.0`; use `node dist/cli.js` here and verified `latch@0.5.0` in adopters.
 - New tasks: schema 5, minimum writer `0.5.0`.
-- Read `task_schema_version` from `context <task-id> --json --status` before a
-  mutation. Schema 2–4 tasks are historical read-only under the current runner;
-  do not claim, upgrade, downgrade, take over, or otherwise mutate them.
+- Read `task_schema_version` before mutation. Schema 2–4 tasks are read-only; never
+  claim, upgrade, downgrade, take over, or mutate them.
 - Stop when the task schema or runner cannot be determined.
 
 ## Start with bounded state
@@ -136,8 +134,10 @@ Archive intent alone is not risk acceptance, and Git delivery remains separate.
   judgment-requiring warning, or task meaning change; never auto-retry a revision
   conflict.
 - Takeover transfers writer ownership only, never implementation approval.
-- Run all current named gates before submit. Prefer `verify-all` for pending gates;
-  instruction-only commands such as `echo`, `printf`, and `true` are not evidence.
+- Run every gate; prefer `verify-all` for pending gates; instruction-only commands
+  `echo`/`printf`/`true` are not evidence. Output is bounded; `--verbose` streams it;
+  `--json` keeps one JSON document and streams to stderr; truncation is not failure;
+  `--timeout-ms` per gate; no `log_ref`.
 - In `dev` or `check`, use `verify-all`, not `approve --feedback`; exact violations
   use `reconcile <task-id> --expect-revision <n> --json` without selectors. Both
   advance proof generation; review uses `reopen-review`.

@@ -401,10 +401,16 @@ test('clean workspace passes and in-scope mutation denies pass', () => {
   const mutated = verify(mutateRoot, mutateId, 'mutate')
   assert.notEqual(mutated.status, 0)
   const body = JSON.parse(mutated.stdout)
+  assert.equal(body.verification.status, 'fail')
   assert.equal(body.verification.failure_reason, 'workspace_mutated')
-  assert.equal(body.verification.command_outcome.status, 'pass')
-  assert.equal(body.verification.workspace_effect.status, 'in_scope_mutation')
-  assert.equal(readTask(mutateRoot, mutateId).workspace_proof.generation, 2)
+  assert.equal(body.verification.exit_code, 0)
+  const mutatedTask = readTask(mutateRoot, mutateId)
+  assert.equal(mutatedTask.verification.gate.mutate.command_outcome.status, 'pass')
+  assert.equal(
+    mutatedTask.verification.gate.mutate.workspace_effect.status,
+    'in_scope_mutation',
+  )
+  assert.equal(mutatedTask.workspace_proof.generation, 2)
 })
 
 test('dirty baseline warning separates in-scope and ambient paths', () => {

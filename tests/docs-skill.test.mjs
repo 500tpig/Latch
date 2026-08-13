@@ -608,6 +608,23 @@ test('current docs describe compact verification, artifact, and warning commands
   assertTextMatches(contract, /每项仍独立记录 event 和 revision/)
 })
 
+test('current docs and canonical skill describe the bounded gate output contract', () => {
+  const skill = text('skills/latch/SKILL.md')
+  const handBook = text('docs/HANDBOOK.md')
+  const design = text('docs/DESIGN.md')
+  for (const content of [skill, handBook, design]) {
+    assertTextMatches(content, /bounded|有界|固定容量/)
+    assertTextMatches(content, /--verbose/)
+    assertTextMatches(content, /JSON document/)
+    assertTextMatches(content, /log_ref/)
+  }
+  assertTextMatches(handBook, /4096 bytes[\s\S]*2048-byte[\s\S]*head[\s\S]*2048-byte[\s\S]*tail/)
+  assertTextMatches(handBook, /16384 bytes[\s\S]*4096-byte[\s\S]*head[\s\S]*12288-byte[\s\S]*tail/)
+  assertTextMatches(handBook, /--timeout-ms <milliseconds>[\s\S]*1\.\.86400000/)
+  assertTextMatches(skill, /truncation is not failure/)
+  assertTextMatches(design, /不经过 shell/)
+})
+
 test('Record contract stays explicit, project-local, and metadata-first', () => {
   const skill = text('skills/latch/SKILL.md')
   const records = text(recordsReference)

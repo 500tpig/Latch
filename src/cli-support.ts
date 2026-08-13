@@ -22,6 +22,28 @@ export function positiveInteger(raw: string | undefined, name: string) {
   return Number(raw)
 }
 
+export function boundedPositiveInteger(
+  raw: string | undefined,
+  name: string,
+  maximum: number,
+) {
+  if (!raw || !/^\d+$/.test(raw) || Number(raw) < 1 || Number(raw) > maximum)
+    fail(
+      'invalid_arguments',
+      `${name} must be a decimal integer from 1 to ${maximum}.`,
+    )
+  return Number(raw)
+}
+
+export function assertOptionNotRepeated(args: string[], name: string) {
+  let count = 0
+  for (const argument of args) {
+    if (argument === '--') break
+    if (argument === name || argument.startsWith(`${name}=`)) count += 1
+  }
+  if (count > 1) fail('invalid_arguments', `${name} may only be provided once.`)
+}
+
 export function json(value: unknown) {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`)
 }

@@ -35,10 +35,11 @@ import {
   usesLightProofPackage,
 } from './shared.js'
 import {
-  emptyVerificationFailureLog,
+  notStartedVerificationProjection,
+  projectVerificationCommand,
   runVerificationCommand,
-  type VerificationFailureLog,
   type VerificationOutputMode,
+  type VerificationProjection,
 } from './command-output.js'
 
 export type VerifyTaskV2Input = {
@@ -48,21 +49,23 @@ export type VerifyTaskV2Input = {
   diagnostic: boolean
   command?: string[]
   outputMode: VerificationOutputMode
+  verbose: boolean
+  timeoutMs?: number
 }
 
 export type VerifyTaskV2Result = TaskWriteResultV2 & {
   verification: VerifyResult
-  failureLog?: VerificationFailureLog
+  output: VerificationProjection
 }
 
 export type VerifyAllTasksV2Result = TaskWriteResultV2 & {
   verifications: VerifyResult[]
   executions: Array<{
     verification: VerifyResult
+    output: VerificationProjection
     revision: number
   }>
   failed?: VerifyResult
-  failureLog?: VerificationFailureLog
   stoppedReason?: string
   stoppedGate?: string
   remaining: string[]
@@ -427,9 +430,13 @@ export async function verifyTaskV2(
     const executed = await runVerificationCommand(
       command,
       store.paths.workspaceRoot,
-      input.outputMode,
+      {
+        outputMode: input.outputMode,
+        verbose: input.verbose,
+        ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
+      },
     )
-    const exitCode = executed.status ?? 127
+    const exitCode = executed.exitCode ?? 127
     const result: VerifyResult = {
       name,
       kind,
@@ -460,9 +467,12 @@ export async function verifyTaskV2(
     return {
       ...written,
       verification: result,
-      ...(result.status === 'fail' && executed.failureLog
-        ? { failureLog: executed.failureLog }
-        : {}),
+      output: projectVerificationCommand(
+        executed,
+        name,
+        result.status,
+        result.status === 'fail' ? 'command_failed' : undefined,
+      ),
     }
   }
 
@@ -506,9 +516,7 @@ export async function verifyTaskV2(
         `Workspace evidence capture failed before gate ${name}; command was not started.`,
       ],
       verification: result,
-      ...(input.outputMode === 'capture'
-        ? { failureLog: emptyVerificationFailureLog() }
-        : {}),
+      output: notStartedVerificationProjection(name, 'evidence_error'),
     }
   }
 
@@ -552,9 +560,7 @@ export async function verifyTaskV2(
       return {
         ...written,
         verification: result,
-        ...(input.outputMode === 'capture'
-          ? { failureLog: emptyVerificationFailureLog() }
-          : {}),
+        output: notStartedVerificationProjection(name, 'evidence_error'),
       }
     }
     const liveDelta = compareWorkspaceSnapshots(baseline, before, scope)
@@ -585,9 +591,13 @@ export async function verifyTaskV2(
   const executed = await runVerificationCommand(
     command,
     store.paths.workspaceRoot,
-    input.outputMode,
+    {
+      outputMode: input.outputMode,
+      verbose: input.verbose,
+      ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
+    },
   )
-  const exitCode = executed.status ?? 127
+  const exitCode = executed.exitCode ?? 127
   const after = captureWorkspaceSnapshot(
     store.paths.workspaceRoot,
     scope,
@@ -750,16 +760,22 @@ export async function verifyTaskV2(
       ...(baselineWarning ? [baselineWarning] : []),
     ],
     verification: result,
-    ...(result.status === 'fail' && executed.failureLog
-      ? { failureLog: executed.failureLog }
-      : {}),
+    output: projectVerificationCommand(
+      executed,
+      name,
+      result.status,
+      result.failure_reason,
+    ),
   }
 }
 
 export async function verifyAllTasksV2(
   store: TaskStoreV2,
   id: string,
-  input: Pick<VerifyTaskV2Input, 'expectRevision' | 'actor' | 'outputMode'>,
+  input: Pick<
+    VerifyTaskV2Input,
+    'expectRevision' | 'actor' | 'outputMode' | 'verbose' | 'timeoutMs'
+  >,
 ): Promise<VerifyAllTasksV2Result> {
   const current = assertTaskWritableV2(
     store,
@@ -780,10 +796,10 @@ export async function verifyAllTasksV2(
   const verifications: VerifyResult[] = []
   const executions: Array<{
     verification: VerifyResult
+    output: VerificationProjection
     revision: number
   }> = []
   let failed: VerifyResult | undefined
-  let failureLog: VerificationFailureLog | undefined
   let stoppedReason: string | undefined
   let stoppedGate: string | undefined
 
@@ -887,6 +903,8 @@ export async function verifyAllTasksV2(
       name: item.name,
       diagnostic: false,
       outputMode: input.outputMode,
+      verbose: input.verbose,
+      ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
     })
     task = result.task
     revision = result.task.revision
@@ -894,11 +912,11 @@ export async function verifyAllTasksV2(
     verifications.push(result.verification)
     executions.push({
       verification: result.verification,
+      output: result.output,
       revision: result.task.revision,
     })
     if (result.verification.status === 'fail') {
       failed = result.verification
-      failureLog = result.failureLog
       stoppedReason = result.verification.failure_reason ?? 'command_failed'
       stoppedGate = result.verification.name
       break
@@ -912,7 +930,6 @@ export async function verifyAllTasksV2(
     executions,
     remaining,
     ...(failed ? { failed } : {}),
-    ...(failureLog ? { failureLog } : {}),
     ...(stoppedReason ? { stoppedReason } : {}),
     ...(stoppedGate ? { stoppedGate } : {}),
   }

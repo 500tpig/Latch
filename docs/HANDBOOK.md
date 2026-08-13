@@ -402,17 +402,37 @@ non-implementation feedback 只使用 `--non-implementation-feedback`。不支�
 
 ```bash
 latch verify <task-id> --expect-revision 8 --name typecheck
-latch verify <task-id> --expect-revision 9 --diagnostic --name exploratory -- pnpm typecheck
-latch verify-all <task-id> --expect-revision 10
+latch verify <task-id> --expect-revision 9 --diagnostic --name exploratory --verbose -- pnpm typecheck
+latch verify-all <task-id> --expect-revision 10 --timeout-ms 300000
 ```
 
 普通 gate 执行 plan 保存的 argv，不接受调用方替换命令。diagnostic 可以使用 plan 命令或 `--` 后的临时 argv，不参与 submit 门禁。验证进程不经过 shell。
 
-非 JSON 模式实时转发 gate 的 stdout 和 stderr。JSON 模式不转发成功 gate 的命令
-日志，stdout 只写入最终 JSON envelope。gate 失败时，envelope 顶层增加
-`failure_log`：stdout 和 stderr 分开保存，各保留最后 8192 字节，并通过
-`truncated` 标明是否截断。`retained` 固定为 `tail`；命令无法启动时，
-`spawn_error` 保存启动错误。完整日志不写入 task、evidence 或临时文件。
+`verify`、diagnostic 和 `verify-all` 共用同一个 streaming command runner。runner 始终使用
+pipe，分别统计 stdout 与 stderr 的原始字节数，并从运行开始保留固定容量的 head/tail；输出
+超过摘要配额不会终止命令，也不会被判断为 command failure。human 与 JSON formatter 使用同一
+次运行结果，不重新执行命令或计算第二份摘要。
+
+默认模式不实时转发 gate 输出。每个 stream 的成功摘要最多保留 4096 bytes，按 2048-byte
+head 与 2048-byte tail 分配；失败摘要最多保留 16384 bytes，按 4096-byte head 与
+12288-byte tail 分配。未截断时全文只保存在 `head`，`tail` 为空。响应同时返回原始 `bytes`、
+`omitted_bytes`、`truncated`、`invalid_utf8` 与 monotonic `duration_ms`。human formatter 将
+保留段显示为 JSON string literal，不回放控制字符。
+
+`--verbose` 只对本次运行实时转发完整原始输出，不改变摘要、gate 结果、task mutation、proof、
+revision 或 CLI exit status。human verbose 将 gate stdout 写入 parent stdout、gate stderr 写入
+parent stderr；`--json --verbose` 将两个 gate stream 都写入 parent stderr。JSON protocol 的
+stdout 始终只包含一个最终 JSON document；JSON 默认模式下 gate 输出也不会写入 stderr。
+
+`--timeout-ms <milliseconds>` 只接受十进制正整数 `1..86400000`。省略时不设置 timeout；
+`verify-all` 对每个实际启动的 gate 分别计时。timeout 触发后，POSIX runner 向独立 process
+group 发送 `SIGTERM`，等待 2000 ms 后按需发送 `SIGKILL`。timeout、signal、spawn error 与
+runner error 的 ephemeral `exit_code` 为 `null`，并通过 `termination`、`signal`、
+`timeout_ms` 或 bounded `error` 区分；schema 5 内部持久化的 current 哨兵值保持不变。
+
+`verification.stdout` 和 `verification.stderr` 只属于当前 CLI 响应，不写入 task、event、
+workspace evidence、archive、临时目录或全局 cache。所有模式均省略 `log_ref`，workspace
+evidence ref 不得作为日志引用。完整输出只可在本次运行期间通过显式 `--verbose` 查看。
 
 `echo`、`printf`、`true` 和只输出操作说明的命令不得配置为 gate。这类命令返回 0 只能证明命令成功退出，不能证明手工步骤已经执行。需要在 plan 中保留手工步骤时，将其标为 diagnostic；diagnostic 的执行结果不构成手工验收事实。手工验收尚未完成时，通过重复的 `--unverified-item` 写入 `submission.unverified_items`。
 
