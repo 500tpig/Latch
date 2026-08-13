@@ -57,6 +57,17 @@ v2 / Schema 5 观察期的 archive 定量样本分离。
 - 边界：不修改 current 产品契约，不直接授权 CLI、Core、Skill 或外部 repo 变更；
   不替代 schema 5 观察期评估（schema 5 满 10 张后另建评估 task）。
 
+## 待实现设计
+
+### [Gate stdout/stderr 有界输出契约](briefs/2026-08-12-latch-gate-output-contract.md)
+
+- 状态：`proposed`；
+- Source-Task：`20260813033522311-设计-latch-gate-有界输出契约-86cf23`；
+- 用途：冻结 `verify`、`verify-all` 与共享 command runner 的默认有界摘要、显式 verbose、
+  JSON stream 隔离、timeout、signal、UTF-8、超大输出和 formatter 复用契约；
+- 边界：current CLI/Core 行为尚未改变；首版不持久化普通 gate 日志，不提供 `log_ref`，
+  不把日志或摘要伪装为 workspace proof，也不依赖聊天保存日志。
+
 ## 已实现设计
 
 ### [轻量 lifecycle delta CLI 契约](briefs/2026-08-12-latch-lifecycle-delta-contract.md)
