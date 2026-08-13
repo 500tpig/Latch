@@ -178,20 +178,37 @@ test('always-loaded scope safety semantics stay in the canonical skill', () => {
   const skill = text('skills/latch/SKILL.md')
   const semantics = [
     ['repo-relative POSIX scope paths', /`workspace_scope\.paths` must be repo-relative POSIX paths/],
-    ['exact files omit slash', /Exact files omit `\//],
-    ['directory prefixes include slash', /directory prefixes include it\./],
+    ['exact files omit slash', /Files omit `\//],
+    ['directory prefixes include slash', /directories end in `\/`/],
     [
       'existing directories without slash fail before mutation',
-      /Checkpoint and plan-file save reject an existing\s+directory missing `\//,
+      /existing directories without `\/` fail/,
     ],
-    ['missing paths remain valid', /missing paths remain valid/],
+    ['missing paths remain valid', /missing paths stay valid/],
     [
       'scope is not inferred from prose authorization or artifacts',
-      /Never\s+infer scope from prose, authorization, or artifacts/,
+      /Never infer scope or authorization from prose, paths, or titles/,
     ],
+    ['append scope stays append-only', /`append-scope` adds only\s+non-root, non-glob paths/],
+    ['append scope needs explicit authorization', /Without\s+`user_delta` or `user_approve`[\s\S]*it returns to `plan`/],
   ]
 
   for (const [name, pattern] of semantics) assertTextMatches(skill, pattern, name)
+})
+
+test('current docs describe the delivered append-scope lifecycle contract', () => {
+  const handbook = text('docs/HANDBOOK.md')
+  const design = text('docs/DESIGN.md')
+  for (const content of [handbook, design]) {
+    assertTextMatches(content, /`append-scope`/)
+    assertTextMatches(content, /scope-only/)
+    assertTextMatches(content, /user_delta/)
+    assertTextMatches(content, /user_approve/)
+    assertTextMatches(content, /workspace_proof/)
+  }
+  assertTextMatches(handbook, /latch append-scope <task-id> --expect-revision <revision>/)
+  assertTextMatches(handbook, /不修改 `goal`[\s\S]*`verification_plan`/)
+  assertTextMatches(design, /不采集 workspace[\s\S]*历史 sidecar/)
 })
 
 test('canonical skill has valid minimal frontmatter', () => {

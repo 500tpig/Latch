@@ -21,6 +21,8 @@ export const commandUsage: Record<string, string> = {
     'Usage: latch takeover <task-id> --expect-revision <revision> --reason <text> [--json]',
   save:
     'Usage: latch save <task-id> --expect-revision <revision> [--plan-file <path|->] [--feedback <text>] [--decision <text>] [--artifact <kind>:<path>] [--remove-artifact <kind>:<path>] [--block-reason <text> --waiting-for <text> | --unblock] [--profile <light|standard> --profile-reason <text> [--user-requested-narrowing] | --provenance <clean|mixed> --provenance-reason <text> | --group <id> | --clear-group] [--json]',
+  'append-scope':
+    'Usage: latch append-scope <task-id> --expect-revision <revision> --path <repo-relative-path>... [--authorization-file <path|->] [--json]',
   approve:
     'Usage: latch approve <task-id> --expect-revision <revision> (--reason <text> | --authorization-file <path|-> | --retrospective-file <path|->) [--json]\n' +
     '       latch approve <task-id> --expect-revision <revision> --feedback <text> [--authorization-file <path|->] [--json]\n' +
@@ -61,6 +63,7 @@ const topLevelCommands = [
   'benchmark',
   'takeover',
   'save',
+  'append-scope',
   'approve',
   'verify',
   'verify-all',
@@ -98,6 +101,7 @@ export const actorRequiredCommands = new Set([
   'claim',
   'takeover',
   'save',
+  'append-scope',
   'approve',
   'verify',
   'verify-all',

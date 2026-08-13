@@ -7,6 +7,15 @@ export type {
   ChangeTaskProfileV3Input,
 } from './progress/authorization.js'
 export {
+  appendWorkspaceScope,
+  PlanDeltaError,
+} from './progress/plan-delta.js'
+export type {
+  AppendWorkspaceScopeInput,
+  AppendWorkspaceScopeResult,
+  PlanDeltaErrorCode,
+} from './progress/plan-delta.js'
+export {
   reconcileWorkspaceViolations,
   verifyAllTasksV2,
   verifyTaskV2,

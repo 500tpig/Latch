@@ -79,6 +79,21 @@ function validateTaskEvent(
     if (value.answer !== undefined && typeof value.answer !== 'string')
       throw new Error(`Invalid decision answer in ${path}.`)
   }
+  if (value.type === 'plan_updated' && value.change !== undefined) {
+    if (value.change !== 'workspace_scope_append')
+      throw new Error(`Invalid plan update change in ${path}.`)
+    if (!Number.isInteger(value.plan_revision) || (value.plan_revision as number) < 1)
+      throw new Error(`Invalid plan update revision in ${path}.`)
+    if (
+      !Array.isArray(value.appended_paths) ||
+      value.appended_paths.length === 0 ||
+      value.appended_paths.some(
+        (candidate) => typeof candidate !== 'string' || candidate.trim() === '',
+      ) ||
+      new Set(value.appended_paths).size !== value.appended_paths.length
+    )
+      throw new Error(`Invalid appended workspace scope paths in ${path}.`)
+  }
   if (value.type === 'review_feedback') {
     if (!Number.isInteger(value.plan_revision) || (value.plan_revision as number) < 1)
       throw new Error(`Invalid feedback plan_revision in ${path}.`)

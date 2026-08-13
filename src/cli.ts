@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { CliV2Error, fail } from './cli-support.js'
+import { runAppendScope } from './commands/append-scope.js'
 import { runBenchmark } from './commands/benchmark.js'
 import { runContext, runContextPack } from './commands/context.js'
 import { runKnowledge } from './commands/knowledge.js'
@@ -87,6 +88,8 @@ async function run(argv: string[], cwd: string) {
       return runTakeover(args, cwd, actor)
     case 'save':
       return runSave(args, cwd, actor)
+    case 'append-scope':
+      return runAppendScope(args, cwd, actor)
     case 'approve':
       return runApprove(args, cwd, actor)
     case 'verify':

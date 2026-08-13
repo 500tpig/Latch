@@ -29,6 +29,7 @@ Latch 是个人 macOS 开发环境中的本地任务状态记录器。它帮助 
 - plan validation 分为历史可读 shape、schema 5 writable 和 authorizable 三层；只有第三层在创建或更新 work basis 前要求执行字段完整，并按 profile 检查 Light gate。
 - Light 与 Standard scaffold 共用 `TaskPlan` shape，只证明结构合法，不能直接获得 work basis。
 - 新 plan 使用 `workspace_scope.paths` 保存机器范围；自然语言 `plan.scope`、授权摘要和 artifact 不替代该字段，获得 work basis 前 paths 必须非空。
+- `append-scope` 是独立的 scope-only plan delta：只追加 normalized path，拒绝 repo root、glob、删除、替换、缩小和 no-op。未提供结构化 authorization 时回到 `plan`；只有显式 `user_delta` 或 `user_approve` 通过 post-delta 校验后，才原子绑定新 plan revision 并进入 `dev`。
 - named gate 保存 command outcome、before/after workspace evidence、workspace effect 和 proof generation；只有当前 generation 上的完整无 mutation proof 才能参与 submit。
 - workspace evidence 覆盖 Git-visible 脏路径、非 ignored untracked 路径，以及 scope 或 artifact 精确引用的 ignored 文件；不递归扫描 ignored 目录。
 - 新 evidence 在既有 dirty `entries` 外保存可选的 `scope_entries` 内容视图；gate 前后仍比较完整 dirty worktree，review live freshness 与 done 只比较 task scope 的 worktree 内容。历史 sidecar 缺少该字段时继续使用旧的 fail-closed 比较，不迁移或重写。
@@ -52,6 +53,7 @@ Latch 是个人 macOS 开发环境中的本地任务状态记录器。它帮助 
 - stale review 使用显式 `reopen-review` 返回 `dev`、推进 work revision 并移除旧 submission，之后重新运行 `verify-all` 并提交；proof 或 Git 状态恢复不伪装成 implementation feedback，也不允许在 review 中刷新 gate 后复用旧 submission。
 - scope 内 mutation 拒绝当前 gate pass；scope 外 mutation 还创建 unresolved violation，并在恢复或重新批准前阻止 submit。
 - 独立 `reconcile` mutation 只在 schema 5 的 `dev` / `check` 阶段按 violation 原始 `before` entry 精确恢复；当前 scope reclassification、近似内容和调用方选择都不能清除 violation。成功调用单次推进 proof generation、删除 submission，并要求重新验证；no-op 与拒绝不写 task、event 或 evidence。
+- `append-scope` 不采集 workspace，也不创建或重写 evidence。scope coverage 变化会移除 active `workspace_proof` 引用，保留历史 sidecar，并使旧验证与 submission 失效；后续 `verify` 或 `verify-all` 为追加后的完整 scope 建立新 generation。
 - `context` 只读计算 live workspace status，不推进 generation，也不写 task、event 或 evidence。
 - 不同 task 可以在同一 workspace 独立推进；结构化 scope overlap 与 human warning 均不声明文件归属、不自动修改 provenance，也不阻止 lifecycle mutation；
 - 原子写和短锁保护当前事实，不引入通用事务框架；

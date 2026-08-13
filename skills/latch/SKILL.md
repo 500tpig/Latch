@@ -151,12 +151,10 @@ and explicit `done` authorization.
 
 ## Invariants
 
-- Structured JSON file options accept the literal `-` for stdin. A command may
-  have at most one such stdin consumer; multiple `-` values fail before stdin is
-  read. Stdin contains exactly one complete JSON value with optional trailing
-  whitespace. It has no workspace path and never becomes workspace evidence;
-  real input files keep their existing evidence semantics. Record body files and
-  other non-JSON inputs do not use this contract.
+- Structured JSON file options accept `-` for one stdin consumer; multiple `-`
+  values fail before reading. Input is one complete JSON value plus optional trailing
+  whitespace. It has no workspace path or evidence; real files keep their evidence
+  semantics. Record bodies and other non-JSON inputs are excluded.
 - Missing canonical actor or writer mismatch is fail closed. Grok and Codex are
   equal hosts; never invent or export `LATCH_ACTOR`.
 - Pass `--expect-revision` to every task mutation. In one uninterrupted mutation
@@ -171,10 +169,11 @@ and explicit `done` authorization.
 - In `dev` or `check`, use `verify-all`, not `approve --feedback`; exact violations
   use `reconcile <task-id> --expect-revision <n> --json` without selectors. Both
   advance proof generation; review uses `reopen-review`.
-- `workspace_scope.paths` must be repo-relative POSIX paths. Exact files omit `/`;
-  directory prefixes include it. Checkpoint and plan-file save reject an existing
-  directory missing `/` before task mutation; missing paths remain valid. Never
-  infer scope from prose, authorization, or artifacts.
+- `workspace_scope.paths` must be repo-relative POSIX paths. Files omit `/`;
+  directories end in `/`; missing paths stay valid. `append-scope` adds only
+  non-root, non-glob paths; existing directories without `/` fail. Without
+  `user_delta` or `user_approve` it returns to `plan`, invalidating proof and
+  submission. Never infer scope or authorization from prose, paths, or titles.
 - New tasks use schema 5 with minimum writer `0.5.0`. Schema 2–4 tasks are
   historical read-only under CLI `0.5.0`. Never migrate during reads, startup,
   build, or verification.

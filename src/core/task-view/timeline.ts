@@ -152,6 +152,8 @@ function timelineEvent(task: TaskV2, event: TaskEvent): TimelineEvent {
     'changed_count',
     'resolution',
     'violation_ids',
+    'change',
+    'appended_paths',
   ])
 
   if (event.type === 'task_created')

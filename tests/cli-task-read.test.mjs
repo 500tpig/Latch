@@ -123,6 +123,46 @@ test('list and context expose stable full and brief JSON', () => {
   assert.equal(delta.timeline[0].summary, '记录增量')
 })
 
+test('append-scope plan_updated timeline exposes only the saved delta facts', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const created = checkpoint(cwd, 'Append scope timeline', {
+    workspace_scope: { paths: ['existing.txt'] },
+  })
+  const appended = run(cwd, [
+    'append-scope',
+    created.task_id,
+    '--expect-revision',
+    '1',
+    '--path',
+    'docs/new.md',
+    '--json',
+  ])
+  assert.equal(appended.status, 0, appended.stderr)
+
+  const standard = JSON.parse(
+    run(cwd, ['context', created.task_id, '--json']).stdout,
+  )
+  const standardEvent = standard.timeline.at(-1)
+  assert.equal(standardEvent.event_type, 'plan_updated')
+  assert.equal(standardEvent.details.change, 'workspace_scope_append')
+  assert.deepEqual(standardEvent.details.appended_paths, ['docs/new.md'])
+
+  const timeline = JSON.parse(
+    run(cwd, [
+      'context',
+      created.task_id,
+      '--json',
+      '--history',
+      'timeline',
+    ]).stdout,
+  )
+  assert.equal('recent_events' in timeline, false)
+  assert.equal(timeline.timeline.at(-1).event_type, 'plan_updated')
+  assert.equal(timeline.timeline.at(-1).summary, '任务计划已更新。')
+  assert.equal('details' in timeline.timeline.at(-1), false)
+})
+
 test('context 按精确 ID 只读归档 task 并保持 mutation 为 open-only', () => {
   const cwd = temporaryDirectory()
   init(cwd)
