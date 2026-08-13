@@ -22,6 +22,8 @@ Updated: 2026-07-28 — 修订 A/B/C 的多 gate 判定，按独立验收面与�
 
 Updated: 2026-08-03 — schema 5、CLI `0.5.0`、structured closeout 与 richer event/view 进入 Latch repo current；外部 adopter 保持 pending。
 
+Updated: 2026-08-13 — 区分已决设计状态记录与产品决策，并允许紧邻 checkpoint 的明确 Standard 实施授权复用。
+
 ## 0. 地位
 
 本文件与以下七个 current 分章共同构成 Latch 的产品契约。分章路径保留历史 `-draft` 文件名，仅为兼容既有链接；该文件名不表示文档状态。
@@ -93,7 +95,11 @@ task（唯一可写生命周期）、events、primary_writer、group_id、模块
 
 ## 6. 触发与授权
 
-触发章的判定表是权威定义：A 命中不明确或高风险改法不清时停在 grill；B 在范围明确、低风险且无未决问题时创建或续接 light task，并以请求作为授权，多个 lint、typecheck、build、文档索引等机械检查本身不触发 Standard；C 在需要方案确认、存在多个独立验收面、产品选择、公共契约或高风险面时创建或续接 standard task，展示 plan 后等待明确 approve。Light task 出现 plan change、产品选择或 scope 扩大时，必须重新执行 A/B/C 判断，并按结果保持 Light、停在 grill 或升级 Standard。
+触发章的判定表是权威定义：A 命中不明确或高风险改法不清时停在 grill；B 在范围明确、低风险且无未决问题时创建或续接 light task，并以请求作为授权，多个 lint、typecheck、build、文档索引等机械检查本身不触发 Standard；C 在需要方案确认、存在多个独立验收面、产品选择、公共契约或高风险面时创建或续接 standard task，展示 plan 后等待明确 approve，通常先展示已创建的 task id。Light task 出现 plan change、产品选择或 scope 扩大时，必须重新执行 A/B/C 判断，并按结果保持 Light、停在 grill 或升级 Standard。
+
+已决设计的纯状态同步是 B 的窄例外，但必须同时满足：设计正文已冻结、`open_questions` 为空、用户已明确批准当前设计、改动仅包含 artifact 状态与索引元数据，且不新增产品选择、公共行为或 scope。来源设计 task 仍 open、同一 writer 可写且 approved scope 已覆盖时，按原 lifecycle 继续；来源 task 已关闭、只读或不存在时，创建并原子授权 Light task；open 来源 task 的 writer 或 scope 不满足时，先处理 handoff 或 plan。任一条件不满足时重新执行 A/B/C。设计 task 可以先提交 `proposed` artifact 供 review，但 plan 必须包含批准后的状态与索引同步；用户批准后在同一 task 完成同步，不得只为 `proposed` → `approved` 再建 Standard task。
+
+Standard implementation authorization 可以发生在 checkpoint 前：Agent 必须先展示 goal、material scope、风险与 `open_questions`，用户以紧邻消息明确要求实施，且 checkpoint 持久化的 plan 与已展示内容没有材料变化。checkpoint 出现需用户判断的 warning、plan 变化或新增 open question 时必须停下。普通写入请求、未展示 plan 的指令、更早 task 的授权或含糊回复均不能推断为批准。该规则只消除重复确认，不改变每张 Standard implementation task 必须获得 direct approval 的要求。
 
 ## 7. 发布完成标准
 

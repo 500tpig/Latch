@@ -51,9 +51,24 @@ Mechanical lint, typecheck, build, or documentation-index gates do not alone
 trigger C; gate count never selects a profile. If implementation reveals missing
 information, a changed root cause, new product choice, plan change, or scope
 expansion, stop and re-run A/B/C. A stays in grill, B needs a precise delta
-authorization, and C shows short decision highlights plus the task id for
-full-plan review, then waits for reapproval. Core applies structure and revision changes;
-it never classifies from gate count.
+authorization. C shows short decision highlights and normally the created task id
+for full-plan review, then waits for reapproval; only the adjacent authorization
+exception below may bind a pre-checkpoint reply. Core applies structure and
+revision changes; it never classifies from gate count.
+
+A decided-design status sync is a narrow B exception only when the design body is
+frozen, `open_questions` is empty, the user explicitly approved that design, the
+workspace change is limited to artifact status and index metadata, and no product
+choice, public behavior, or scope is added. Continue the open source task when the
+same writer can write and its approved scope covers the sync. Use an atomically
+authorized Light task only when the source task is closed, read-only, or absent.
+An open source task with writer or scope mismatch requires handoff or plan work;
+never create an overlapping shortcut task. If any condition fails, re-run A/B/C.
+
+A design task may submit a `proposed` artifact for review, but its plan must cover
+the post-approval status and index sync. After the user approves the design,
+finish that sync in the same task and reverify; never create a Standard task whose
+only purpose is `proposed` to `approved`.
 
 Task creation or continuation requires an explicit write request and grants no
 group, batch, Git, archive, cancellation, claim, or takeover authority.
@@ -62,39 +77,23 @@ group, batch, Git, archive, cancellation, claim, or takeover authority.
 
 ### Ordinary Light task
 
-Fill the Light scaffold, then create and authorize atomically:
+Use the Light scaffold, then create and authorize atomically:
 
 ```bash
 latch checkpoint --print-plan-template light
 latch checkpoint "Task title" --plan-file plan.json --profile light --authorize-request "User requested this scoped change" --json
 ```
 
-Light fields: `goal`, `workspace_scope`, `scope`, `acceptance`, `approach`,
-`verification_plan`. Omitted `api_assumptions`,
-`permission_assumptions`, `data_assumptions`, `user_flow`, `out_of_scope`, and
-`open_questions` default to `[]`; storage remains a complete `TaskPlan`. The
-scaffold proves schema validity only; it cannot choose A/B/C or authorize work.
-Authorization requires meaningful core fields and a gate. Implement, run every
-named gate, submit to `review`, wait; never auto-complete.
-`--authorize-request` takes its machine scope from `plan.workspace_scope.paths`;
-do not provide a second scope input.
+The scaffold is shape-only; the current runner performs authorizable validation
+and binds machine scope from `plan.workspace_scope.paths`. Implement, run every
+named gate, submit to `review`, and wait; never auto-complete.
 
 ### Standard plan
 
-Complete 12 Standard fields into `--plan-file`. Full plan truth stays in the plan
-file and task store for Latch-Board task detail or the selected runner's
-`context <task-id>`.
-
-Default chat is short decision highlights only, not a plan dump:
-
-- `goal` in one or two sentences
-- material scope, risks, or choices that affect approval
-- blocking `open_questions`, if any
-- task id, and that full plan is in Board/CLI rather than chat
-
-Do not paste the full `plan.json` body, and do not dump all 12 fields by default.
-Expand a field only when the user asks or when that field is the decision point.
-Keep paths, identifiers, keys, and commands in inline code.
+Complete all 12 Standard fields. Chat shows only the goal, material scope or
+risks, blocking `open_questions`, and task id; full plan truth stays in the task
+store for Latch-Board or `context <task-id>`. Do not paste the plan JSON by
+default.
 
 Then create:
 
@@ -109,52 +108,25 @@ After explicit implementation authorization and authorizable validation succeeds
 latch approve <task-id> --expect-revision <n> --reason "User approved the current plan" --json
 ```
 
+Authorization may immediately precede checkpoint only for already displayed,
+materially unchanged plan highlights and an adjacent explicit implementation
+reply. An ordinary write request does not approve; read
+[task lifecycle](references/task-lifecycle.md) for other fail-closed cases.
+
 Implement, run every named gate, submit to `review`, and wait. Creation or
 ownership changes never approve a plan.
 
-### Review closeout fast path
+### Review, recovery, and closeout
 
-Use only when status shows `phase: review`, every gate is `pass`, `stale` and
-`pending` are zero, and the user explicitly requests completion, archive,
-takeover, or Git delivery without renewed review.
-
-1. Read `context <task-id> --json --status` with the current runner. Writer mismatch is fail closed;
-   follow [session actors and handoff](references/session-actors-and-handoff.md)
-   and run takeover only with explicit authorization:
-
-```bash
-latch takeover <task-id> --expect-revision <n> --reason "User authorized takeover" --json
-```
-
-2. Read the bounded brief and reconcile the submission under
-   [task lifecycle](references/task-lifecycle.md). Archive intent alone is not risk
-   acceptance. For schema 5, provide exactly one resolution for each
-   `submission.unverified_items` entry:
-
-```bash
-latch done <task-id> --expect-revision <n> --closeout-file closeout.json --json
-```
-
-Do not rerun an already passed, non-stale full build solely for closeout. Git
-delivery remains separate and needs separate authorization.
-
-### Review proof recovery
-
-For `reopen_review`, writer/blocked recovery stays first. With explicit authorization:
-
-```bash
-latch reopen-review <task-id> --expect-revision <n> --reason "Why the submitted proof is stale" --json
-```
-
-Return to `dev` without feedback or gates/Git; then `verify-all`, `submit`, review,
-and explicit `done` authorization.
+Read [task lifecycle](references/task-lifecycle.md) completely before
+`reopen_review`, feedback, submission reconciliation, or closeout. Writer mismatch
+is fail closed; use [session actors and handoff](references/session-actors-and-handoff.md).
+Archive intent alone is not risk acceptance, and Git delivery remains separate.
 
 ## Invariants
 
-- Structured JSON file options accept `-` for one stdin consumer; multiple `-`
-  values fail before reading. Input is one complete JSON value plus optional trailing
-  whitespace. It has no workspace path or evidence; real files keep their evidence
-  semantics. Record bodies and other non-JSON inputs are excluded.
+- Structured JSON options allow at most one stdin consumer and fail before task
+  mutation on invalid input.
 - Missing canonical actor or writer mismatch is fail closed. Grok and Codex are
   equal hosts; never invent or export `LATCH_ACTOR`.
 - Pass `--expect-revision` to every task mutation. In one uninterrupted mutation
@@ -169,23 +141,11 @@ and explicit `done` authorization.
 - In `dev` or `check`, use `verify-all`, not `approve --feedback`; exact violations
   use `reconcile <task-id> --expect-revision <n> --json` without selectors. Both
   advance proof generation; review uses `reopen-review`.
-- `workspace_scope.paths` must be repo-relative POSIX paths. Files omit `/`;
-  directories end in `/`; missing paths stay valid. `append-scope` adds only
-  non-root, non-glob paths; existing directories without `/` fail. Without
-  `user_delta` or `user_approve` it returns to `plan`, invalidating proof and
-  submission. `update-verification-command` changes only one existing gate
-  `command` after `--`; unknown, diagnostic, empty, same, sentinel, and
-  instruction-only commands fail closed and, without `user_delta` or
-  `user_approve`, return to `plan` while clearing verification/submission and
-  keeping the workspace baseline. Never infer scope or authorization from prose, paths, or titles.
-- `resolve-open-questions` accepts only a `plan` task with non-empty current
-  `open_questions` and one structured `answers` payload that exactly covers every
-  question in order. It records `plan_updated` and ordered `decision_recorded`
-  events atomically, clears verification/submission, keeps the workspace baseline,
-  and returns to `plan` without authorization. Only explicit `user_approve` may
-  bind the new plan revision and enter `dev`; never infer approval from answers,
-  `user_delta`, or `user_request`. The answers and authorization file options may
-  use stdin, but at most one structured JSON option may use `-`.
+- `workspace_scope.paths` must be repo-relative POSIX paths. Files omit `/`,
+  directories end in `/`, existing directories without `/` fail, and missing
+  paths remain valid. Never infer scope or authorization from prose, paths, titles,
+  answers, or artifacts. Plan-delta commands are fail closed and follow the
+  current Handbook contract.
 - New tasks use schema 5 with minimum writer `0.5.0`. Schema 2–4 tasks are
   historical read-only under CLI `0.5.0`. Never migrate during reads, startup,
   build, or verification.

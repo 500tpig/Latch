@@ -6,9 +6,13 @@
 
 - A：目标、成功标准、范围、根因或高风险改法不明确时，停在 grill；
 - B：范围固定、低风险且 `open_questions` 为空时，创建或续接 light task；
-- C：涉及方案确认、多个独立验收面、产品选择、公共契约或高风险面时，创建或续接 standard task；聊天只给可拍板的重点与 task id，完整 plan 在 Latch-Board 或所选 runner 的 `context` 查看，默认不贴完整 plan JSON、不逐字段倾倒。
+- C：涉及方案确认、多个独立验收面、产品选择、公共契约或高风险面时，创建或续接 standard task；聊天只给可拍板的重点，task 已创建时附 task id，完整 plan 在 Latch-Board 或所选 runner 的 `context` 查看，默认不贴完整 plan JSON、不逐字段倾倒。
 
 lint、typecheck、build 或文档索引等机械检查不单独触发 C。Light task 出现 plan change、产品选择或 scope 扩大时重新执行 A/B/C；Core 不根据 gate 数量分类。纯问答、只读探索、无写入意图或明确要求「不用 Latch」时不建 task；创建或续接 task 必须来自明确写入请求。
+
+已决设计的纯状态同步是 B 的窄例外，但必须同时满足：设计正文已冻结、`open_questions` 为空、用户已明确批准当前设计、改动仅包含 artifact 状态与索引元数据，且不新增产品选择、公共行为或 scope。来源设计 task 仍 open、同一 writer 可写且 approved scope 已覆盖时，按原 task lifecycle 继续；来源 task 已关闭、只读或不存在时，创建并原子授权 Light task。来源 task 仍 open 但 writer 或 scope 不满足时，先处理 handoff 或 plan，不得另开重叠 task。任一条件不满足时重新执行 A/B/C，不得把产品决策伪装成状态同步。
+
+设计 task 可以先以 `proposed` artifact 提交 review，但 plan 必须把用户批准后的状态与索引同步列入 scope 和 acceptance。用户批准设计后，在同一 task 内完成该同步并重新验证；不得留下责任未定义的 `proposed` artifact，也不得只为 `proposed` → `approved` 再建 Standard task。
 
 开始时依次执行：
 
@@ -23,7 +27,7 @@ lint、typecheck、build 或文档索引等机械检查不单独触发 C。Light
 
 ## 授权与恢复
 
-- Standard plan 聊天只给重点与 task id；完整 plan 在 Board/CLI。只有明确实施授权后才能 `approve`。
+- Standard plan 聊天只给重点，task 已创建时附 task id；完整 plan 在 Board/CLI。只有明确实施授权后才能 `approve`。通常在 checkpoint 后展示 task id 并等待批准；如果 task 创建前已展示 goal、material scope、风险与 `open_questions`，紧邻的明确「开始实施」可在 checkpoint 后授权同一份未发生材料变化的 plan。checkpoint 出现需用户判断的 warning 或 plan 变化时必须停下。普通写入请求、更早的旧消息或未展示 plan 时不得推断批准。
 - `done` 只接受明确完成或归档授权，`abandon` 只接受明确取消授权。schema 5 必须通过 `--closeout-file` 为每个 `submission.unverified_items` 提供一个结构化 resolution。
 - task 授权不包含 Git add、commit、push、branch、checkout、reset、clean。
 - 常规恢复不得读取其他 Codex 会话。已知 group ID 时先使用 current runner 运行 `list --group <group-id> --include-archive --json --brief`，再按需读取单张 open task status；不得同时展开多张完整 context 或原始 event。

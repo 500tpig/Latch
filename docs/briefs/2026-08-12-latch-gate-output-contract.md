@@ -2,7 +2,7 @@
 
 Source-Task: `20260813033522311-设计-latch-gate-有界输出契约-86cf23`
 
-Document-Status: `proposed`
+Document-Status: `approved`
 
 Date: 2026-08-12
 

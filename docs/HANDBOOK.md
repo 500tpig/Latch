@@ -10,11 +10,22 @@ Latch 记录本地 coding task。每张 task 保存 plan、批准、工作轮次
 
 - A：目标、成功标准、范围、根因或高风险改法不明确时，停在 grill，不实施；
 - B：改法和范围明确、低风险、`open_questions` 为空且不扩 scope 时，创建或续接 light task，`source: user_request` 作为授权；
-- C：需要方案确认、存在多个独立验收面、产品选择、公共契约或高风险面时，创建或续接 standard task，展示 plan 后等待明确 approve。
+- C：需要方案确认、存在多个独立验收面、产品选择、公共契约或高风险面时，创建或续接 standard task，展示 plan 后等待明确 approve；通常先展示已创建的 task id，只有本章定义的紧邻 checkpoint 前授权例外可以直接批准。
 
 多个 lint、typecheck、build、文档索引等机械检查如果共同证明同一个边界明确、低风险的验收面，不单独触发 Standard。多个命令分别证明独立验收面，或任务包含产品选择、公共契约或高风险面时，进入 C。
 
 Light task 出现 plan change、产品选择或 scope 扩大时，立即停止沿用原分类并重新执行 A/B/C。重新满足 B 时可保持 Light，但 plan 变化仍使旧授权与验证失效；命中 A 时停在 grill；命中 C 时升级 Standard，展示更新后的完整 plan 并等待明确 approve。Core 只执行结构化 plan、profile 与 revision 变化，不根据 gate 数量或命令语义自动分类。
+
+已决设计的纯状态同步按 B 处理，但必须同时满足以下条件：
+
+- 设计正文已冻结，`open_questions` 为空；
+- 用户已明确批准当前设计；
+- workspace 改动只包含 artifact 状态与索引元数据；
+- 不新增产品选择、公共行为、API、数据、权限或 scope。
+
+来源设计 task 仍 open、同一 writer 可写且 approved scope 已覆盖时，按原 task lifecycle 继续。来源 task 处于 review 时，设计批准属于完成原 plan 的 implementation feedback：回到 `dev`，同步状态与索引，重新验证并提交。来源 task 已关闭、只读或不存在时，使用 `source: user_request` 创建并原子授权 Light task。来源 task 仍 open 但 writer 或 scope 不满足时，先处理 handoff 或 plan，不得另开重叠 task。任一条件不满足时重新执行 A/B/C，不得把仍需判断的产品决策归为状态同步，也不得只为 `proposed` → `approved` 创建 Standard task。
+
+设计 task 可以先以 `proposed` artifact 提交 review，但 plan 必须把用户批准后的状态与索引同步写入 scope 和 acceptance。用户批准后在同一 task 完成同步，不得把状态责任隐式留给后续实施 task。
 
 纯问答、只读探索和无写入意图的请求不建 task。用户明确要求「不用 Latch」时，本轮也不建 task。
 
@@ -382,6 +393,8 @@ non-implementation feedback 只使用 `--non-implementation-feedback`。不支�
 组合会在读取 task 或 basis 文件前返回 `invalid_arguments`。
 
 首次批准绑定当前 plan revision。review 中的明确实现修正保留 plan approval，增加 `work_revision` 并回到 dev。发现其他活动 task 时，批准仍会成功，并提示共享 worktree 风险。
+
+明确实施授权不要求发生在 `checkpoint` 之后。如果 Agent 在创建 Standard task 前已展示 goal、material scope、风险与 `open_questions`，用户紧邻回复「开始实施」「按这个做」等明确指令，且持久化 plan 与已展示内容没有材料变化，则 checkpoint 成功后可直接用该消息调用 `approve`，不再重复询问。checkpoint 返回需用户判断的 warning、plan 材料变化或新增 open question 时必须停下。普通写入请求、未展示 plan 的指令、更早 task 的授权或含糊回复均不得复用。
 
 `--non-implementation-feedback` 只用于 schema 5 中实现快照未变化的 review 修正。该操作追加 `review_feedback` 事件，但保持 phase、`work_revision`、verification 和 submission 不变；不得用于代码、配置、生成输入或其他可能影响 gate 的改动。
 
