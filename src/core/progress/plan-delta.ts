@@ -4,6 +4,7 @@ import {
   materializeWorkBasisV3,
   readTaskV2,
   updateTaskV4,
+  updateTaskV4WithRequiredEvents,
 } from '../task-store.js'
 import type {
   TaskStoreV2,
@@ -71,6 +72,26 @@ export type UpdateVerificationCommandResult = TaskWriteResultV2 & {
   gateName: string
   previousCommand: string[]
   command: string[]
+  previousPlanRevision: number
+  previousWorkRevision: number
+  authorizationApplied: boolean
+}
+
+export type OpenQuestionResolution = {
+  question: string
+  answer: string
+  decision: string
+}
+
+export type ResolveOpenQuestionsInput = {
+  expectRevision: number
+  actor: string
+  answers: unknown
+  authorization?: ImplementationAuthorizationInput
+}
+
+export type ResolveOpenQuestionsResult = TaskWriteResultV2 & {
+  resolvedQuestions: OpenQuestionResolution[]
   previousPlanRevision: number
   previousWorkRevision: number
   authorizationApplied: boolean
@@ -211,14 +232,18 @@ function materializeAuthorization(
   plan: TaskPlan,
   input: ImplementationAuthorizationInput | undefined,
   commandName: string,
+  allowedSources: readonly ImplementationAuthorizationInput['source'][] = [
+    'user_delta',
+    'user_approve',
+  ],
 ) {
   if (input === undefined) return undefined
   if (
     input?.kind !== 'implementation_authorization' ||
-    (input.source !== 'user_delta' && input.source !== 'user_approve')
+    !allowedSources.includes(input.source)
   )
     invalidArguments(
-      `${commandName} authorization source must be user_delta or user_approve.`,
+      `${commandName} authorization source must be ${allowedSources.join(' or ')}.`,
     )
   if (
     input.source === 'user_delta' &&
@@ -272,21 +297,33 @@ function applyPlanDeltaMutation(
   plan: TaskPlan,
   commandName: string,
   planUpdatedFields: Record<string, unknown>,
-  options: { clearWorkspaceProof: boolean },
+  options: {
+    clearWorkspaceProof: boolean
+    requireEventWrite?: boolean
+    additionalEvents?: Array<{
+      type: 'decision_recorded'
+      fields: Record<string, unknown>
+    }>
+    allowedAuthorizationSources?: readonly ImplementationAuthorizationInput['source'][]
+  },
 ) {
   const basis = materializeAuthorization(
     current,
     plan,
     input.authorization,
     commandName,
+    options.allowedAuthorizationSources,
   )
   const nextPlanRevision = current.plan_revision + 1
   const nextWorkRevision = basis
     ? current.work_revision + 1
     : current.work_revision
 
+  const updateTask = options.requireEventWrite
+    ? updateTaskV4WithRequiredEvents
+    : updateTaskV4
   const result = typedAtomicUpdate(() =>
-    updateTaskV4(store, current.id, {
+    updateTask(store, current.id, {
       expectRevision: input.expectRevision,
       actor: input.actor,
       events: [
@@ -297,6 +334,7 @@ function applyPlanDeltaMutation(
             ...planUpdatedFields,
           },
         },
+        ...(options.additionalEvents ?? []),
         ...(basis
           ? [
               {
@@ -488,6 +526,137 @@ export function updateVerificationCommand(
     gateName: input.name,
     previousCommand,
     command: [...input.command],
+    previousPlanRevision,
+    previousWorkRevision,
+    authorizationApplied: basis !== undefined,
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function exactKeys(value: Record<string, unknown>, keys: string[]) {
+  const allowed = new Set(keys)
+  const actual = Object.keys(value)
+  return actual.length === allowed.size && actual.every((key) => allowed.has(key))
+}
+
+function resolveAnswers(
+  task: TaskV2,
+  payload: unknown,
+): OpenQuestionResolution[] {
+  const questions = task.plan.open_questions
+  if (questions.length === 0)
+    invalidArguments(
+      'resolve-open-questions requires at least one current open question.',
+    )
+  if (new Set(questions).size !== questions.length)
+    invalidArguments(
+      'resolve-open-questions requires unique current open questions.',
+    )
+  if (!isRecord(payload) || !exactKeys(payload, ['answers']))
+    invalidArguments(
+      'resolve-open-questions answers file must contain only the answers property.',
+    )
+  const answers = payload.answers
+  if (!Array.isArray(answers) || answers.length !== questions.length)
+    invalidArguments(
+      `resolve-open-questions answers must contain exactly ${questions.length} item(s).`,
+    )
+
+  return answers.map((value, index) => {
+    if (
+      !isRecord(value) ||
+      !exactKeys(value, ['question', 'answer', 'decision'])
+    )
+      invalidArguments(
+        `resolve-open-questions answer at index ${index} must contain only question, answer, and decision.`,
+      )
+    if (typeof value.question !== 'string')
+      invalidArguments(
+        `resolve-open-questions question at index ${index} must be a string.`,
+      )
+    if (value.question !== questions[index])
+      invalidArguments(
+        `resolve-open-questions question at index ${index} does not exactly match the current open question.`,
+      )
+    if (typeof value.answer !== 'string' || !value.answer.trim())
+      invalidArguments(
+        `resolve-open-questions answer at index ${index} must be non-empty text.`,
+      )
+    if (typeof value.decision !== 'string' || !value.decision.trim())
+      invalidArguments(
+        `resolve-open-questions decision at index ${index} must be non-empty text.`,
+      )
+    return {
+      question: value.question,
+      answer: value.answer,
+      decision: value.decision,
+    }
+  })
+}
+
+function nextOpenQuestionsPlan(task: TaskV2) {
+  const plan: TaskPlan = {
+    ...structuredClone(task.plan),
+    open_questions: [],
+  }
+  try {
+    return normalizeTaskPlanInput(
+      plan,
+      profileOf(task),
+      'resolve-open-questions post-delta plan',
+    )
+  } catch (error) {
+    invalidArguments(error instanceof Error ? error.message : String(error))
+  }
+}
+
+export function resolveOpenQuestions(
+  store: TaskStoreV2,
+  id: string,
+  input: ResolveOpenQuestionsInput,
+): ResolveOpenQuestionsResult {
+  const current = typedTaskRead(store, id)
+  assertWritableDeltaTask(current, input, 'resolve-open-questions')
+  if (current.phase !== 'plan')
+    throw new PlanDeltaError(
+      'phase_mismatch',
+      `resolve-open-questions requires phase plan; task ${current.id} is in phase ${current.phase}.`,
+    )
+  const resolvedQuestions = resolveAnswers(current, input.answers)
+  const plan = nextOpenQuestionsPlan(current)
+  const { result, basis, previousPlanRevision, previousWorkRevision } =
+    applyPlanDeltaMutation(
+      store,
+      current,
+      input,
+      plan,
+      'resolve-open-questions',
+      {
+        change: 'open_questions_resolved',
+        resolved_count: resolvedQuestions.length,
+      },
+      {
+        clearWorkspaceProof: false,
+        requireEventWrite: true,
+        additionalEvents: resolvedQuestions.map((resolved) => ({
+          type: 'decision_recorded' as const,
+          fields: {
+            plan_revision: current.plan_revision + 1,
+            question: resolved.question,
+            answer: resolved.answer,
+            conclusion: resolved.decision,
+          },
+        })),
+        allowedAuthorizationSources: ['user_approve'],
+      },
+    )
+
+  return {
+    ...withWarnings(result, sharedWorktreeWarnings(store, result.task.id)),
+    resolvedQuestions,
     previousPlanRevision,
     previousWorkRevision,
     authorizationApplied: basis !== undefined,

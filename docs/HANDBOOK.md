@@ -168,6 +168,10 @@ latch update-verification-command <task-id> --expect-revision <revision> \
 latch update-verification-command <task-id> --expect-revision <revision> \
   --name project-check --authorization-file authorization.json --json -- \
   pnpm check
+latch resolve-open-questions <task-id> --expect-revision <revision> \
+  --answers-file answers.json
+latch resolve-open-questions <task-id> --expect-revision <revision> \
+  --answers-file answers.json --authorization-file authorization.json --json
 ```
 
 `append-scope` 只向 `workspace_scope.paths` 追加一个或多个路径，并保留既有路径与顺序。
@@ -190,6 +194,22 @@ command，也不采集 evidence。提供 authorization 文件时，只接受 `so
 authorization；两种 source 都必须通过 post-delta authorizable 校验，成功后原子绑定新
 plan revision、增加 `work_revision` 并进入 `dev`。命令名称、路径、argv、task title 或
 调用方意图均不构成授权。
+
+`resolve-open-questions` 只接受处于 `plan` 阶段且仍有当前问题的 task。`--answers-file`
+的唯一 JSON shape 为 `{ "answers": [{ "question": "...", "answer": "...", "decision": "..." }] }`；
+根对象和每个元素都不接受额外字段。answers 必须与 mutation 时的全部
+`plan.open_questions` 等长、同序并逐项精确匹配；`answer` 和 `decision` 只用 trim 判空，
+写入和返回时保留原始文本。缺少、额外、重复、乱序、过期问题或空文本均在 mutation
+前返回 `invalid_arguments`，不使用默认答案，也不解决问题子集。
+
+该命令只把 `plan.open_questions` 改为空数组，不修改其它 plan 字段；一次 mutation 追加
+`plan_updated` 和按输入顺序排列的 `decision_recorded` events，清空 verification 与
+submission，并保留 machine scope 未变化时的 `workspace_proof` baseline。未提供
+`--authorization-file` 时保持 `plan`，只有 `source: user_approve` 且 post-delta plan
+通过 authorizable 校验时才原子增加 `work_revision`、绑定新 work basis 并进入 `dev`。
+`user_delta`、`user_request`、答案内容、task title 和调用方意图都不能替代该授权。
+该命令不运行 gate、不采集 workspace、不创建 evidence；`--answers-file` 与
+`--authorization-file` 最多一个使用 stdin `-`。
 
 无新增参数时，`checkpoint` 创建 standard plan task。`--authorization-file` 只接受
 `source: user_request`，并原子创建 light task、写入 work basis、进入 dev 且将
@@ -314,9 +334,11 @@ latch append-scope <task-id> --expect-revision 8 \
   --path docs/new.md --path src/new/
 latch update-verification-command <task-id> --expect-revision 9 \
   --name project-check -- pnpm check
-latch artifact add <task-id> --expect-revision 10 \
+latch resolve-open-questions <task-id> --expect-revision 10 \
+  --answers-file answers.json
+latch artifact add <task-id> --expect-revision 11 \
   doc:docs/example.md skill:skills/example/SKILL.md
-latch artifact remove <task-id> --expect-revision 11 \
+latch artifact remove <task-id> --expect-revision 12 \
   doc:docs/obsolete.md
 ```
 
@@ -331,6 +353,12 @@ authorization 时同样回到 `plan`，携带合法 authorization 时按新 plan
 gate 的 argv；未携带结构化 authorization 时回到 `plan`，携带合法 authorization 时按新
 plan revision 原子进入 `dev`。新增、删除、rename gate，或把 diagnostic 改成 gate，继续
 使用完整 `save --plan-file`。
+
+`resolve-open-questions` 是唯一的原子问题 resolution delta。它只接受当前 `plan`
+阶段的全部 `open_questions`，要求 answers 与问题逐项精确匹配，并把 `answer` 与
+`decision` 原文按顺序写入 `decision_recorded` events。未携带 authorization 时只清空
+ `open_questions` 并回到 `plan`；只有显式 `user_approve` 通过 post-delta 校验后才进入
+ `dev`。它不修改其它 plan 字段，不增加、编辑或重排问题，也不采集 workspace evidence。
 
 `artifact add` 和 `artifact remove` 一次接受一个或多个 `<kind>:<path>`。两条命令复用 `save --artifact` 和 `save --remove-artifact` 的去重、相对路径校验、`artifact_updated` event 与 revision 语义；`save` 的既有参数保持兼容。
 

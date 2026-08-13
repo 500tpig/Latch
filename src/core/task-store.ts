@@ -41,5 +41,6 @@ export {
   updateTaskV2,
   updateTaskV3,
   updateTaskV4,
+  updateTaskV4WithRequiredEvents,
   upgradeTaskV4,
 } from './task-store/mutation.js'

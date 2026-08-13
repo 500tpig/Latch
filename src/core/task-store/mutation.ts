@@ -2,6 +2,7 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
+  readFileSync,
   renameSync,
   rmSync,
 } from 'node:fs'
@@ -468,11 +469,12 @@ type CommitTaskUpdateOptions = {
   events: (current: TaskV2) => TaskEventInput[]
   authorize: (current: TaskV2) => void
   update: (task: TaskV2) => void
+  requireEventWrite?: boolean
   allowPrimaryWriterChange?: boolean
   allowSchemaUpgrade?: boolean
 }
 
-// task.json 是提交点；event 失败不会把已提交更新伪装成完全失败。
+// task.json 默认是提交点；需要强 event 一致性的 mutation 会在 event 失败时恢复旧 task。
 function commitTaskUpdate(
   store: TaskStoreV2,
   id: string,
@@ -510,7 +512,38 @@ function commitTaskUpdate(
         event,
         join(taskDirectoryV2(store, canonicalId), 'events.jsonl'),
       )
+    const eventsPath = join(
+      taskDirectoryV2(store, canonicalId),
+      'events.jsonl',
+    )
+    const previousEvents = options.requireEventWrite
+      ? readFileSync(eventsPath, 'utf8')
+      : undefined
     writeJsonAtomic(path, next)
+    if (previousEvents !== undefined) {
+      try {
+        writeTextAtomic(
+          eventsPath,
+          `${previousEvents}${events.map((event) => `${JSON.stringify(event)}\n`).join('')}`,
+        )
+      } catch (eventError) {
+        try {
+          writeJsonAtomic(path, current)
+        } catch (rollbackError) {
+          const eventMessage = eventError instanceof Error
+            ? eventError.message
+            : String(eventError)
+          const rollbackMessage = rollbackError instanceof Error
+            ? rollbackError.message
+            : String(rollbackError)
+          throw new Error(
+            `Task event commit failed and task rollback also failed: ${eventMessage}; rollback: ${rollbackMessage}`,
+          )
+        }
+        throw eventError
+      }
+      return { task: next, warnings: [] }
+    }
     const warnings: string[] = []
     for (const event of events) {
       try {
@@ -558,11 +591,29 @@ export function updateTaskV4(
   id: string,
   options: UpdateTaskV3Options,
 ): TaskWriteResultV2 {
+  return updateStructuredTask(store, id, options, false)
+}
+
+export function updateTaskV4WithRequiredEvents(
+  store: TaskStoreV2,
+  id: string,
+  options: UpdateTaskV3Options,
+): TaskWriteResultV2 {
+  return updateStructuredTask(store, id, options, true)
+}
+
+function updateStructuredTask(
+  store: TaskStoreV2,
+  id: string,
+  options: UpdateTaskV3Options,
+  requireEventWrite: boolean,
+): TaskWriteResultV2 {
   for (const event of options.events)
     if (!taskEventTypesV3.has(event.type))
       throw new Error(`Unknown structured task event type: ${event.type}`)
   return commitTaskUpdate(store, id, {
     ...options,
+    requireEventWrite,
     events: () => options.events,
     authorize(task) {
       assertCurrentWriterSchema(task)

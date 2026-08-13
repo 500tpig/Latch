@@ -178,6 +178,14 @@ and explicit `done` authorization.
   instruction-only commands fail closed and, without `user_delta` or
   `user_approve`, return to `plan` while clearing verification/submission and
   keeping the workspace baseline. Never infer scope or authorization from prose, paths, or titles.
+- `resolve-open-questions` accepts only a `plan` task with non-empty current
+  `open_questions` and one structured `answers` payload that exactly covers every
+  question in order. It records `plan_updated` and ordered `decision_recorded`
+  events atomically, clears verification/submission, keeps the workspace baseline,
+  and returns to `plan` without authorization. Only explicit `user_approve` may
+  bind the new plan revision and enter `dev`; never infer approval from answers,
+  `user_delta`, or `user_request`. The answers and authorization file options may
+  use stdin, but at most one structured JSON option may use `-`.
 - New tasks use schema 5 with minimum writer `0.5.0`. Schema 2–4 tasks are
   historical read-only under CLI `0.5.0`. Never migrate during reads, startup,
   build, or verification.

@@ -3,6 +3,7 @@ import { CliV2Error, fail } from './cli-support.js'
 import { runAppendScope } from './commands/append-scope.js'
 import { runBenchmark } from './commands/benchmark.js'
 import { runUpdateVerificationCommand } from './commands/update-verification-command.js'
+import { runResolveOpenQuestions } from './commands/resolve-open-questions.js'
 import { runContext, runContextPack } from './commands/context.js'
 import { runKnowledge } from './commands/knowledge.js'
 import { runRecord, recordJsonEnvelope } from './commands/record.js'
@@ -104,6 +105,8 @@ async function run(argv: string[], cwd: string) {
       return runAppendScope(args, cwd, actor)
     case 'update-verification-command':
       return runUpdateVerificationCommand(args, cwd, actor)
+    case 'resolve-open-questions':
+      return runResolveOpenQuestions(args, cwd, actor)
     case 'approve':
       return runApprove(args, cwd, actor)
     case 'verify':

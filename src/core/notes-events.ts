@@ -109,6 +109,9 @@ function validateTaskEvent(
         value.command.some((candidate) => typeof candidate !== 'string')
       )
         throw new Error(`Invalid verification command update command in ${path}.`)
+    } else if (value.change === 'open_questions_resolved') {
+      if (!Number.isInteger(value.resolved_count) || (value.resolved_count as number) < 1)
+        throw new Error(`Invalid open question resolution count in ${path}.`)
     } else {
       throw new Error(`Invalid plan update change in ${path}.`)
     }

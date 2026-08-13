@@ -199,6 +199,14 @@ test('always-loaded scope safety semantics stay in the canonical skill', () => {
       'verification command delta needs explicit authorization',
       /`update-verification-command`[\s\S]*without `user_delta` or\s+`user_approve`[\s\S]*return to `plan`/,
     ],
+    [
+      'open question resolution stays exact and atomic',
+      /`resolve-open-questions` accepts only a `plan` task[\s\S]*exactly covers every\s+question in order/,
+    ],
+    [
+      'open question resolution needs user approval to enter dev',
+      /Only explicit `user_approve` may[\s\S]*enter `dev`/,
+    ],
   ]
 
   for (const [name, pattern] of semantics) assertTextMatches(skill, pattern, name)
@@ -236,6 +244,24 @@ test('current docs describe the delivered update-verification-command lifecycle 
   assertTextMatches(handbook, /保留既有 baseline/)
   assertTextMatches(design, /保留既有 `workspace_proof` baseline/)
   assertTextMatches(design, /不运行新旧 gate command/)
+})
+
+test('current docs describe the delivered resolve-open-questions lifecycle contract', () => {
+  const handbook = text('docs/HANDBOOK.md')
+  const design = text('docs/DESIGN.md')
+  for (const content of [handbook, design]) {
+    assertTextMatches(content, /`resolve-open-questions`/)
+    assertTextMatches(content, /decision_recorded/)
+    assertTextMatches(content, /workspace_proof/)
+  }
+  assertTextMatches(
+    handbook,
+    /latch resolve-open-questions <task-id> --expect-revision <revision>/,
+  )
+  assertTextMatches(handbook, /等长、同序并逐项精确匹配/)
+  assertTextMatches(handbook, /只有 `source: user_approve`[\s\S]*进入 `dev`/)
+  assertTextMatches(design, /只接受 `plan` 阶段当前全部问题/)
+  assertTextMatches(design, /不采集 workspace[\s\S]*答案文件/)
 })
 
 test('canonical skill has valid minimal frontmatter', () => {
