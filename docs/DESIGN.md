@@ -43,13 +43,15 @@ Latch 是个人 macOS 开发环境中的本地任务状态记录器。它帮助 
 - workspace evidence 覆盖 Git-visible 脏路径、非 ignored untracked 路径，以及 scope 或 artifact 精确引用的 ignored 文件；不递归扫描 ignored 目录。
 - 新 evidence 在既有 dirty `entries` 外保存可选的 `scope_entries` 内容视图；gate 前后仍比较完整 dirty worktree，review live freshness 与 done 只比较 task scope 的 worktree 内容。历史 sidecar 缺少该字段时继续使用旧的 fail-closed 比较，不迁移或重写。
 - schema 5 submission 使用结构化 `unverified_items`，closeout 为每项保存 `resolved`、`accepted_risk` 或 `followup` resolution；不保留自由文本 closeout 双路径。
-- schema 5 Context 在最小 lifecycle 投影之外提供 bounded item、resolution 摘要和 reviewer next action；`tests/fixtures/context-v5-board-reader.json` 是 Board/adopter 的冻结读取契约。
+- schema 5 Context 在最小 lifecycle 投影之外提供 bounded item、resolution 摘要和 reviewer next action；`tests/fixtures/context-v5-board-reader.json` 是 Board/adopter 的冻结读取契约，并随 CLI `0.6.0` / envelope 3 使用 typed `next_action`。
 - `context --json --review` 组合最小 lifecycle、named gate、live proof 与有界的 schema 5 submission/closeout 投影，默认不携带历史，也不复制 task 真源或 verification proof。
-- schema 5 review submission 的 proof stale 时，Context 使用 `reopen_review` 替代 closeout 动作；writer mismatch 仍先返回 `takeover`，并通过 bounded `after_takeover_next_action` 预告接管后的恢复动作。
-- 所有成功 task mutation 的 JSON 复用 `status` 投影的 `next_action` 派生规则，并按 mutation 后的 task、writer 与 live proof 状态返回下一步；已有 proof 时还复用同一 bounded `workspace_proof` 投影，没有 proof 时省略该字段；归档 mutation 返回 `read_only`。
-- status 与成功 mutation JSON 复用 bounded `shared_worktree` 投影，统计其他 open task 及 plan scope overlap；sample 最多返回 8 条确定性排序的 task ID 与相交 path。缺少 historical `workspace_scope` 的 task 只计入 active task，不推断 overlap。
-- CLI error envelope 将明确的生命周期拒绝投影为稳定领域 code：`phase_mismatch`、`proof_stale` 和 `workspace_violation`；Core 通过领域错误类型携带 code，未知异常仍为 `command_failed`。
-- open task 的 `workspace_proof.live_changes` 以 bounded additive view 展示 task scope content、ambient、index content 与 delivery state 计数和最多 8 个样本；该投影不改变 `live_status` 或 lifecycle 门禁。
+- CLI `0.6.0` 的 JSON envelope 统一为 `schema_version: 3`；`next_action` 只允许 typed object（`command` / `await_user` / `stop`），不再返回字符串。CLI `0.5.x` 的 envelope 2 继续冻结为 string shape；reader 与 producer 必须精确版本配对，禁止同一 reader 同时接受 envelope 2 / 3。
+- status / review / brief 有 UTF-8 hard budget（`3072` / `6144` / `8192` bytes），并共享字段上限、集合上限、truncation metadata 与固定 clamp 顺序；unverified / closeout 正文是 review 中最后移除的可选内容。
+- schema 5 review submission 的 proof stale 时，typed `next_action` 返回 `{ "kind": "command", "command": "reopen-review" }`；writer mismatch 仍先返回 await-user takeover，并通过 bounded `after_takeover_next_action` 预告接管后的恢复动作。
+- 所有成功 task mutation 的 JSON 复用 `status` 投影的 `next_action` 派生规则，并按 mutation 后的 task、writer 与 live proof 状态返回下一步；已有 proof 时还复用同一 bounded `workspace_proof` 投影，没有 proof 时省略该字段；归档 mutation 返回 `{ "kind": "stop", "reason": "archived_read_only" }`。
+- status 与成功 mutation JSON 复用 bounded `shared_worktree` 投影，统计其他 open task 及 plan scope overlap；status/review sample 最多 4 条、brief 最多 8 条确定性排序的 task ID 与相交 path。缺少 historical `workspace_scope` 的 task 只计入 active task，不推断 overlap。
+- CLI error envelope 将明确的生命周期拒绝投影为稳定领域 code：`writer_mismatch`、`phase_mismatch`、`proof_stale` 和 `workspace_violation`；Core 通过领域错误类型携带 code，未知异常仍为 `command_failed` 且 `next_action` 为 stop。
+- open task 的 `workspace_proof.live_changes` 以 bounded additive view 展示 task scope content、ambient、index content 与 delivery state 计数和样本；该投影不改变 `live_status` 或 lifecycle 门禁。
 - `docs/INDEX.md` 指向唯一 current 产品契约；既有七个分章与 Record 分章按主题覆盖历史 v2 基线。
 
 ## 关键取舍

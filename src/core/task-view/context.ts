@@ -11,7 +11,8 @@ import {
 } from './list-status.js'
 import type { ContextJsonOptions } from './list-status.js'
 import { reviewTask } from './review.js'
-import { jsonEnvelopeV2 } from './shared.js'
+import { projectBoundedContext } from './budget.js'
+import { jsonEnvelopeV3 } from './shared.js'
 import { timelineEvents } from './timeline.js'
 
 export function contextJsonV2(
@@ -38,7 +39,7 @@ export function contextJsonV2(
   if (options.sinceRevision !== undefined) {
     const deltaEvents = events.filter((event) => event.revision > options.sinceRevision!)
     return {
-      ...jsonEnvelopeV2(),
+      ...jsonEnvelopeV3(),
       ...archivedContextMetadata(context),
       view: 'delta',
       current,
@@ -58,8 +59,8 @@ export function contextJsonV2(
         : {}),
     }
   }
-  return {
-    ...jsonEnvelopeV2(),
+  const output = {
+    ...jsonEnvelopeV3(),
     ...archivedContextMetadata(context),
     view: options.status
       ? 'status'
@@ -102,4 +103,10 @@ export function contextJsonV2(
       : {}),
     ...(!options.status && !options.review && group ? { group } : {}),
   }
+  if (options.status || options.review || options.brief)
+    return projectBoundedContext(
+      output,
+      options.status ? 'status' : options.review ? 'review' : 'brief',
+    )
+  return output
 }

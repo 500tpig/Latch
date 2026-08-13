@@ -462,10 +462,10 @@ test('successful mutation returns dirty baseline and unresolved violation status
 
   const status = run(cwd, ['context', id, '--json', '--status'])
   assert.equal(status.status, 0, status.stderr)
-  assert.deepEqual(
-    mutation.workspace_proof,
-    JSON.parse(status.stdout).task.workspace_proof,
-  )
+  const statusProof = JSON.parse(status.stdout).task.workspace_proof
+  statusProof.live_changes.sample_limit =
+    mutation.workspace_proof.live_changes.sample_limit
+  assert.deepEqual(mutation.workspace_proof, statusProof)
 })
 
 test('out-of-scope mutation creates a violation and submit rejects it', () => {

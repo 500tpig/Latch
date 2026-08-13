@@ -1,0 +1,16 @@
+{
+  "fixture_schema_version": 3,
+  "purpose": "normative maximum bounded Context fixture",
+  "byte_budgets": { "status": 3072, "review": 6144, "brief": 8192 },
+  "truncation_metadata_limit": 16,
+  "collection_limits": {
+    "status": { "shared_worktree": 4, "live_changes": 4, "artifact_delivery": 4, "warnings": 2, "gates": 0 },
+    "review": { "shared_worktree": 4, "live_changes": 4, "artifact_delivery": 8, "warnings": 4, "gates": 8, "closeout": 8 },
+    "brief": { "shared_worktree": 8, "live_changes": 8, "artifact_delivery": 8, "warnings": 4, "gates": 16, "open_questions": 8, "artifacts": 8, "closeout": 8 }
+  },
+  "synthetic_input": {
+    "repeat_count": 24,
+    "long_text": "界限测试文本：UTF-8 byte 前缀、字段上限和总预算 clamp。",
+    "long_id": "fixture-task-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  }
+}

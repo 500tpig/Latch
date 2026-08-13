@@ -1,8 +1,10 @@
 {
-  "fixture_schema_version": 2,
+  "fixture_schema_version": 3,
   "purpose": "Schema 5 reader contract for richer Context views consumed by Board or external readers.",
   "contract_status": "current",
   "external_adopter_status": "pending",
+  "producer_cli_version": "0.6.0",
+  "envelope_schema_version": 3,
   "task_schema_version": 5,
   "min_writer_version": "0.5.0",
   "events_schema_version": 3,
@@ -34,13 +36,15 @@
         "unverified_items": {
           "total": 0,
           "sample_limit": 8,
+          "total_count": 0,
+          "returned_count": 0,
           "sample": [],
           "truncated": false
         },
         "reviewer_next_action": "verify_or_submit"
       },
       "review": {
-        "next_action": "submit"
+        "next_action": { "kind": "command", "command": "submit", "mode": "no_verify" }
       }
     },
     "review_truncated": {
@@ -49,6 +53,8 @@
         "unverified_items": {
           "total": 10,
           "sample_limit": 8,
+          "total_count": 10,
+          "returned_count": 8,
           "sample": [
             { "item_id": "U1", "summary": "Reader item 1" },
             { "item_id": "U2", "summary": "Reader item 2" },
@@ -64,13 +70,15 @@
         "reviewer_next_action": "prepare_closeout"
       },
       "review": {
-        "next_action": "prepare_closeout",
+        "next_action": { "kind": "await_user", "boundary": "closeout", "reason": "unverified_items" },
         "submission": {
           "changes": "reader review fixture",
           "unverified_count": 10,
           "unverified_items_summary": {
             "total": 10,
             "sample_limit": 8,
+            "total_count": 10,
+            "returned_count": 8,
             "sample": [
               { "item_id": "U1", "summary": "Reader item 1" },
               { "item_id": "U2", "summary": "Reader item 2" },
@@ -95,20 +103,20 @@
     "review_stale": {
       "phase": "review",
       "status": {
-        "next_action": "reopen_review",
-        "writer_mismatch_next_action": "takeover",
-        "after_takeover_next_action": "reopen_review"
+        "next_action": { "kind": "command", "command": "reopen-review" },
+        "writer_mismatch_next_action": { "kind": "await_user", "boundary": "approval", "reason": "takeover" },
+        "after_takeover_next_action": { "kind": "command", "command": "reopen-review" }
       },
       "schema5_view": {
         "reviewer_next_action": "reopen_review"
       },
       "review": {
-        "next_action": "reopen_review",
+        "next_action": { "kind": "command", "command": "reopen-review" },
         "live_status": "mismatch",
         "gate_status": "stale",
         "gate_stale_reason": "workspace_baseline_mismatch",
-        "writer_mismatch_next_action": "takeover",
-        "after_takeover_next_action": "reopen_review"
+        "writer_mismatch_next_action": { "kind": "await_user", "boundary": "approval", "reason": "takeover" },
+        "after_takeover_next_action": { "kind": "command", "command": "reopen-review" }
       },
       "timeline": {
         "decision_event_type": "decision_recorded",
@@ -117,7 +125,7 @@
     },
     "review_ready": {
       "review": {
-        "next_action": "review_or_archive"
+        "next_action": { "kind": "await_user", "boundary": "review", "reason": "review_decision" }
       }
     },
     "archived_mixed": {
@@ -126,6 +134,8 @@
         "unverified_items": {
           "total": 3,
           "sample_limit": 8,
+          "total_count": 3,
+          "returned_count": 3,
           "sample": [
             { "item_id": "U1", "summary": "Resolved browser check" },
             { "item_id": "U2", "summary": "Accepted compatibility risk" },
@@ -143,6 +153,8 @@
           "resolutions": {
             "total": 3,
             "sample_limit": 8,
+            "total_count": 3,
+            "returned_count": 3,
             "sample": [
               {
                 "item_id": "U1",
@@ -168,7 +180,7 @@
         }
       },
       "review": {
-        "next_action": "read_only"
+        "next_action": { "kind": "stop", "reason": "archived_read_only" }
       },
       "timeline": {
         "done_title": "完成归档：3 项 closeout",

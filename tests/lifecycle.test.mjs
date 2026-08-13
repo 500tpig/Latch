@@ -316,6 +316,8 @@ test('shared worktree projection reports bounded deterministic scope overlaps', 
   assert.deepEqual(projection, {
     active_task_count: 10,
     overlap_task_count: 9,
+    total_count: 9,
+    returned_count: 8,
     sample_limit: 8,
     sample: expectedSample,
     truncated: true,
@@ -326,7 +328,12 @@ test('shared worktree projection reports bounded deterministic scope overlaps', 
     'context', target.task_id, '--json', '--status',
   ])
   assert.equal(status.status, 0, status.stderr)
-  assert.deepEqual(JSON.parse(status.stdout).task.shared_worktree, projection)
+  assert.deepEqual(JSON.parse(status.stdout).task.shared_worktree, {
+    ...projection,
+    sample_limit: 4,
+    returned_count: 4,
+    sample: projection.sample.slice(0, 4),
+  })
   assert.equal(readTask(cwd, target.task_id).provenance, 'clean')
 })
 

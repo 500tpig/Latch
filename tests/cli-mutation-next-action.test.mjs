@@ -16,6 +16,18 @@ const owner = 'codex:session:mutation-owner'
 const nextWriter = 'codex:session:mutation-next-writer'
 const recoveryWriter = 'codex:session:mutation-recovery-writer'
 
+const command = (name, mode) => ({
+  kind: 'command',
+  command: name,
+  ...(mode ? { mode } : {}),
+})
+const awaitUser = (boundary, reason) => ({
+  kind: 'await_user',
+  boundary,
+  reason,
+})
+const stop = (reason) => ({ kind: 'stop', reason })
+
 test.afterEach(cleanupTemporaryDirectories)
 
 function git(cwd, args) {
@@ -27,7 +39,7 @@ function mutation(cwd, args, actor = owner) {
   const result = run(cwd, [...args, '--json'], { actor })
   assert.equal(result.status, 0, result.stderr)
   const output = JSON.parse(result.stdout)
-  assert.equal(typeof output.next_action, 'string')
+  assert.equal(typeof output.next_action, 'object')
 
   const status = run(
     cwd,
@@ -36,11 +48,15 @@ function mutation(cwd, args, actor = owner) {
   )
   assert.equal(status.status, 0, status.stderr)
   const statusTask = JSON.parse(status.stdout).task
-  assert.equal(
+  assert.deepEqual(
     output.next_action,
     statusTask.next_action,
   )
-  assert.deepEqual(output.workspace_proof, statusTask.workspace_proof)
+  const statusProof = structuredClone(statusTask.workspace_proof)
+  if (statusProof?.live_changes && output.workspace_proof?.live_changes)
+    statusProof.live_changes.sample_limit =
+      output.workspace_proof.live_changes.sample_limit
+  assert.deepEqual(output.workspace_proof, statusProof)
   return output
 }
 
@@ -71,78 +87,78 @@ test('task mutation JSON derives next_action from the post-mutation lifecycle st
     'checkpoint', 'Mutation next action', '--plan-file', planFile,
   ])
   const taskId = output.task_id
-  assert.equal(output.next_action, 'approve')
+  assert.deepEqual(output.next_action, awaitUser('approval', 'implementation_plan'))
   assert.equal('workspace_proof' in output, false)
 
   output = mutation(cwd, [
     'takeover', taskId, '--expect-revision', String(output.revision),
     '--reason', 'transfer fixture writer',
   ], nextWriter)
-  assert.equal(output.next_action, 'approve')
+  assert.deepEqual(output.next_action, awaitUser('approval', 'implementation_plan'))
 
   output = mutation(cwd, [
     'save', taskId, '--expect-revision', String(output.revision),
     '--decision', 'keep one shared next_action derivation',
   ], nextWriter)
-  assert.equal(output.next_action, 'approve')
+  assert.deepEqual(output.next_action, awaitUser('approval', 'implementation_plan'))
 
   output = mutation(cwd, [
     'artifact', 'add', taskId,
     '--expect-revision', String(output.revision),
     'doc:docs/mutation-next-action.md',
   ], nextWriter)
-  assert.equal(output.next_action, 'approve')
+  assert.deepEqual(output.next_action, awaitUser('approval', 'implementation_plan'))
 
   output = mutation(cwd, [
     'approve', taskId, '--expect-revision', String(output.revision),
     '--reason', 'approve fixture plan',
   ], nextWriter)
-  assert.equal(output.next_action, 'verify')
+  assert.deepEqual(output.next_action, command('verify-all'))
   assert.equal('workspace_proof' in output, false)
 
   output = mutation(cwd, [
     'verify', taskId, '--expect-revision', String(output.revision),
     '--name', 'first',
   ], nextWriter)
-  assert.equal(output.next_action, 'verify')
+  assert.deepEqual(output.next_action, command('verify-all'))
   assert.equal(output.workspace_proof.generation, 1)
 
   output = mutation(cwd, [
     'verify-all', taskId, '--expect-revision', String(output.revision),
   ], nextWriter)
-  assert.equal(output.next_action, 'submit')
+  assert.deepEqual(output.next_action, command('submit'))
 
   output = mutation(cwd, [
     'submit', taskId, '--expect-revision', String(output.revision),
     '--changes', 'covered mutation response next actions',
     '--knowledge-impact-none', 'fixture does not change project knowledge',
   ], nextWriter)
-  assert.equal(output.next_action, 'review_or_archive')
+  assert.deepEqual(output.next_action, awaitUser('review', 'review_decision'))
 
   writeFileSync(join(cwd, 'work.txt'), 'changed after submission\n')
   output = mutation(cwd, [
     'takeover', taskId, '--expect-revision', String(output.revision),
     '--reason', 'transfer stale review recovery',
   ], recoveryWriter)
-  assert.equal(output.next_action, 'reopen_review')
+  assert.deepEqual(output.next_action, command('reopen-review'))
 
   output = mutation(cwd, [
     'reopen-review', taskId, '--expect-revision', String(output.revision),
     '--reason', 'submission proof is stale after a scoped change',
   ], recoveryWriter)
-  assert.equal(output.next_action, 'verify')
+  assert.deepEqual(output.next_action, command('verify-all'))
 
   output = mutation(cwd, [
     'verify-all', taskId, '--expect-revision', String(output.revision),
   ], recoveryWriter)
-  assert.equal(output.next_action, 'submit')
+  assert.deepEqual(output.next_action, command('submit'))
 
   output = mutation(cwd, [
     'submit', taskId, '--expect-revision', String(output.revision),
     '--changes', 'reverified mutation response next actions',
     '--knowledge-impact-none', 'fixture has no durable knowledge impact',
   ], recoveryWriter)
-  assert.equal(output.next_action, 'review_or_archive')
+  assert.deepEqual(output.next_action, awaitUser('review', 'review_decision'))
 
   writeFileSync(join(cwd, 'impact.json'), `${JSON.stringify({
     kind: 'none',
@@ -154,12 +170,12 @@ test('task mutation JSON derives next_action from the post-mutation lifecycle st
     '--knowledge-impact-file', 'impact.json',
     '--reason', 'correct the fixture knowledge impact',
   ], recoveryWriter)
-  assert.equal(output.next_action, 'review_or_archive')
+  assert.deepEqual(output.next_action, awaitUser('review', 'review_decision'))
 
   output = mutation(cwd, [
     'done', taskId, '--expect-revision', String(output.revision),
   ], recoveryWriter)
-  assert.equal(output.next_action, 'read_only')
+  assert.deepEqual(output.next_action, stop('archived_read_only'))
 })
 
 test('checkpoint, plan save, and abandon expose plan and archive next actions', () => {
@@ -173,7 +189,7 @@ test('checkpoint, plan save, and abandon expose plan and archive next actions', 
     'checkpoint', 'Plan next action', '--plan-file', unresolvedPlan,
   ])
   const taskId = output.task_id
-  assert.equal(output.next_action, 'resolve_open_questions')
+  assert.deepEqual(output.next_action, awaitUser('plan_input', 'open_questions'))
 
   const resolvedPlan = writePlan(cwd, plan({
     verification_plan: [],
@@ -183,13 +199,13 @@ test('checkpoint, plan save, and abandon expose plan and archive next actions', 
     'save', taskId, '--expect-revision', String(output.revision),
     '--plan-file', resolvedPlan,
   ])
-  assert.equal(output.next_action, 'approve')
+  assert.deepEqual(output.next_action, awaitUser('approval', 'implementation_plan'))
 
   output = mutation(cwd, [
     'abandon', taskId, '--expect-revision', String(output.revision),
     '--reason', 'finish archive response fixture',
   ])
-  assert.equal(output.next_action, 'read_only')
+  assert.deepEqual(output.next_action, stop('archived_read_only'))
 
   const closeoutPlan = writePlan(cwd, plan({
     verification_plan: [],
@@ -202,7 +218,7 @@ test('checkpoint, plan save, and abandon expose plan and archive next actions', 
     'approve', closeoutTaskId, '--expect-revision', String(output.revision),
     '--reason', 'approve closeout fixture',
   ])
-  assert.equal(output.next_action, 'submit')
+  assert.deepEqual(output.next_action, command('submit', 'no_verify'))
   output = mutation(cwd, [
     'submit', closeoutTaskId, '--expect-revision', String(output.revision),
     '--changes', 'exercise unverified closeout action',
@@ -210,5 +226,5 @@ test('checkpoint, plan save, and abandon expose plan and archive next actions', 
     '--knowledge-impact-none', 'fixture has no durable knowledge impact',
     '--no-verify', '--reason', 'fixture plan has no gates',
   ])
-  assert.equal(output.next_action, 'prepare_closeout')
+  assert.deepEqual(output.next_action, awaitUser('closeout', 'unverified_items'))
 })

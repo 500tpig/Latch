@@ -24,6 +24,18 @@ import {
 
 test.afterEach(cleanupTemporaryDirectories)
 
+const command = (name, mode) => ({
+  kind: 'command',
+  command: name,
+  ...(mode ? { mode } : {}),
+})
+const awaitUser = (boundary, reason) => ({
+  kind: 'await_user',
+  boundary,
+  reason,
+})
+const stop = (reason) => ({ kind: 'stop', reason })
+
 test('use resolves a unique prefix, stores canonical ID, and does not append task event', () => {
   const cwd = temporaryDirectory()
   init(cwd)
@@ -50,7 +62,7 @@ test('list and context expose stable full and brief JSON', () => {
   const created = checkpoint(cwd)
 
   const fullList = JSON.parse(run(cwd, ['list', '--json']).stdout)
-  assert.equal(fullList.schema_version, 2)
+  assert.equal(fullList.schema_version, 3)
   assert.equal(fullList.current_task_id, created.task_id)
   assert.equal(fullList.tasks[0].plan_revision, 1)
   assert.equal(fullList.tasks[0].work_revision, 0)
@@ -100,7 +112,7 @@ test('list and context expose stable full and brief JSON', () => {
   assert.equal(statusContext.view, 'status')
   assert.equal(statusContext.task.writer.status, 'primary_writer')
   assert.equal(statusContext.task.authorization.status, 'missing')
-  assert.equal(statusContext.task.next_action, 'approve')
+  assert.deepEqual(statusContext.task.next_action, awaitUser('approval', 'implementation_plan'))
   assert.equal('goal' in statusContext.task, false)
   assert.ok(JSON.stringify(statusContext).length < JSON.stringify(briefContext).length)
 
@@ -221,7 +233,7 @@ test('context 按精确 ID 只读归档 task 并保持 mutation 为 open-only', 
   assert.equal(status.outcome, 'done')
   assert.equal(status.last_open_phase, 'plan')
   assert.equal(status.current, false)
-  assert.equal(status.task.next_action, 'read_only')
+  assert.deepEqual(status.task.next_action, stop('archived_read_only'))
 
   const brief = JSON.parse(run(cwd, [
     'context',
@@ -503,7 +515,7 @@ test('context timelines distinguish blocking gate failures from diagnostic resul
   const diagnosticStatus = JSON.parse(run(cwd, [
     'context', diagnosticCreated.task_id, '--json', '--status',
   ]).stdout)
-  assert.equal(diagnosticStatus.task.next_action, 'submit')
+  assert.deepEqual(diagnosticStatus.task.next_action, command('submit', 'no_verify'))
 
   const defaultDiagnostic = JSON.parse(run(cwd, [
     'context', diagnosticCreated.task_id, '--json',
@@ -607,7 +619,7 @@ test('status keeps task writer state and caller capability independent', () => {
   assert.equal(readOnlyLegacy.writer.task_status, 'legacy_unclaimed')
   assert.equal(readOnlyLegacy.writer.caller_capability, 'read_only')
   assert.equal(readOnlyLegacy.writer.status, 'read_only_actor')
-  assert.equal(readOnlyLegacy.next_action, 'read_only')
+  assert.deepEqual(readOnlyLegacy.next_action, stop('historical_read_only'))
 
   const writableLegacy = statusFor((task) => {
     delete task.primary_writer
@@ -619,7 +631,7 @@ test('status keeps task writer state and caller capability independent', () => {
   })
   assert.equal(writableLegacy.writer.task_status, 'legacy_unclaimed')
   assert.equal(writableLegacy.writer.caller_capability, 'writable')
-  assert.equal(writableLegacy.next_action, 'claim')
+  assert.deepEqual(writableLegacy.next_action, stop('historical_read_only'))
 
   const upgradeRequired = statusFor((task) => {
     task.schema_version = 3
@@ -628,19 +640,19 @@ test('status keeps task writer state and caller capability independent', () => {
   assert.equal(upgradeRequired.task_schema_version, 3)
   assert.equal(upgradeRequired.upgrade_required, true)
   assert.equal(upgradeRequired.writer.task_status, 'schema_upgrade_required')
-  assert.equal(upgradeRequired.next_action, 'upgrade_v4')
+  assert.deepEqual(upgradeRequired.next_action, stop('historical_read_only'))
 
   const mismatch = statusFor((task) => {
     task.blocked = { reason: '等待', waiting_for: '用户', blocked_at: task.updated_at }
   }, 'codex:session:other')
   assert.equal(mismatch.writer.status, 'writer_mismatch')
-  assert.equal(mismatch.next_action, 'takeover')
+  assert.deepEqual(mismatch.next_action, awaitUser('approval', 'takeover'))
 
   const blockedPrimary = statusFor((task) => {
     task.blocked = { reason: '等待', waiting_for: '用户', blocked_at: task.updated_at }
   })
   assert.equal(blockedPrimary.writer.status, 'primary_writer')
-  assert.equal(blockedPrimary.next_action, 'unblock')
+  assert.deepEqual(blockedPrimary.next_action, stop('blocked'))
 })
 
 test('status derives phase, gate, and authorization actions after writer checks', () => {
@@ -656,10 +668,10 @@ test('status derives phase, gate, and authorization actions after writer checks'
     return JSON.parse(result.stdout).task
   }
 
-  assert.equal(statusFor((task) => {
+  assert.deepEqual(statusFor((task) => {
     task.plan.open_questions = ['需要确认']
-  }).next_action, 'resolve_open_questions')
-  assert.equal(statusFor(() => {}).next_action, 'approve')
+  }).next_action, awaitUser('plan_input', 'open_questions'))
+  assert.deepEqual(statusFor(() => {}).next_action, awaitUser('approval', 'implementation_plan'))
 
   const pending = statusFor((task) => {
     task.phase = 'dev'
@@ -671,7 +683,7 @@ test('status derives phase, gate, and authorization actions after writer checks'
     }
   })
   assert.equal(pending.authorization.status, 'valid')
-  assert.equal(pending.next_action, 'verify')
+  assert.deepEqual(pending.next_action, command('verify-all'))
 
   const stale = statusFor((task) => {
     task.phase = 'check'
@@ -684,7 +696,7 @@ test('status derives phase, gate, and authorization actions after writer checks'
     }
   })
   assert.equal(stale.authorization.status, 'stale')
-  assert.equal(stale.next_action, 'verify')
+  assert.deepEqual(stale.next_action, command('verify-all'))
 
   const ready = statusFor((task) => {
     task.phase = 'check'
@@ -699,11 +711,11 @@ test('status derives phase, gate, and authorization actions after writer checks'
     }
   })
   assert.equal(ready.authorization.status, 'missing')
-  assert.equal(ready.next_action, 'submit')
+  assert.deepEqual(ready.next_action, command('submit'))
 
-  assert.equal(statusFor((task) => {
+  assert.deepEqual(statusFor((task) => {
     task.phase = 'review'
-  }).next_action, 'review_or_archive')
+  }).next_action, stop('invalid_review_state'))
 })
 
 test('context reports artifact Git delivery without treating ignored files as local knowledge', () => {
@@ -838,7 +850,7 @@ test('brief context summarizes planned verification states', () => {
   const briefContext = JSON.parse(
     run(cwd, ['context', created.task_id, '--json', '--brief']).stdout,
   )
-  assert.equal(briefContext.schema_version, 2)
+  assert.equal(briefContext.schema_version, 3)
   assert.equal(briefContext.view, 'brief')
   assert.deepEqual(briefContext.task.verification_plan, [
     {

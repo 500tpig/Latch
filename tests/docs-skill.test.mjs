@@ -335,7 +335,7 @@ test('current release surfaces consistently expose schema 5 and keep adopters pe
   const adopter = text('docs/ADOPTER_SYNC.md')
   const fixture = JSON.parse(text('tests/fixtures/context-v5-board-reader.json'))
 
-  assert.equal(packageJson.version, '0.5.0')
+  assert.equal(packageJson.version, '0.6.0')
   for (const content of [index, handBook, design, install, contract]) {
     assertTextMatches(content, /schema 5/)
     assert.doesNotMatch(content, /current (?:task )?writer[^\n]*schema 4/i)
@@ -350,26 +350,34 @@ test('current release surfaces consistently expose schema 5 and keep adopters pe
   assert.equal(fixture.min_writer_version, '0.5.0')
   assert.equal(fixture.contract_status, 'current')
   assert.equal(fixture.external_adopter_status, 'pending')
-  assert.equal(fixture.views.review_stale.status.next_action, 'reopen_review')
-  assert.equal(
-    fixture.views.review_stale.status.after_takeover_next_action,
-    'reopen_review',
-  )
+  assert.deepEqual(fixture.views.review_stale.status.next_action, {
+    kind: 'command',
+    command: 'reopen-review',
+  })
+  assert.deepEqual(fixture.views.review_stale.status.after_takeover_next_action, {
+    kind: 'command',
+    command: 'reopen-review',
+  })
 })
 
 test('review stale recovery is consistent across current docs and canonical skill', () => {
   const skill = text('skills/latch/SKILL.md')
   assertTextMatches(skill, /`reopen_review`[\s\S]*task lifecycle/)
+  assertTextMatches(text(lifecycleReference), /reopen-review/)
+  assertTextMatches(text(lifecycleReference), /reopen_review/)
   for (const content of [
     text(lifecycleReference),
     text('docs/HANDBOOK.md'),
     text('docs/DESIGN.md'),
   ]) {
     assertTextMatches(content, /reopen-review/)
-    assertTextMatches(content, /reopen_review/)
     assertTextMatches(content, /verify-all/)
     assertTextMatches(content, /submission/)
   }
+  // envelope 3 machine routing uses typed reopen-review; Board summary may still
+  // expose schema5_view.reviewer_next_action string reopen_review.
+  assertTextMatches(text('docs/HANDBOOK.md'), /reviewer_next_action/)
+  assertTextMatches(text('docs/DESIGN.md'), /after_takeover_next_action/)
 })
 
 test('docs index relative markdown links resolve', () => {

@@ -165,14 +165,18 @@ test('resolve-open-questions resolves one question atomically and preserves raw 
 
   assert.equal(result.status, 0, result.stderr)
   const output = JSON.parse(result.stdout)
-  assert.equal(output.schema_version, 2)
+  assert.equal(output.schema_version, 3)
   assert.equal(output.previous_revision, 1)
   assert.equal(output.revision, 2)
   assert.equal(output.phase, 'plan')
   assert.equal(output.plan_revision, 2)
   assert.equal(output.work_revision, 0)
   assert.equal(output.authorization_applied, false)
-  assert.equal(output.next_action, 'approve')
+  assert.deepEqual(output.next_action, {
+    kind: 'await_user',
+    boundary: 'approval',
+    reason: 'implementation_plan',
+  })
   assert.deepEqual(output.resolved_questions, payload.answers)
 
   const after = readTask(cwd, created.task_id)
@@ -449,7 +453,10 @@ test('resolve-open-questions applies only explicit user_approve atomically and p
   assert.equal(output.plan_revision, 2)
   assert.equal(output.work_revision, 1)
   assert.equal(output.authorization_applied, true)
-  assert.equal(output.next_action, 'verify')
+  assert.deepEqual(output.next_action, {
+    kind: 'command',
+    command: 'verify-all',
+  })
   assert.equal('workspace_proof' in output, true)
   const after = readTask(cwd, created.task_id)
   assert.equal(after.phase, 'dev')

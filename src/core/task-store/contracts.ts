@@ -49,6 +49,8 @@ export type SharedWorktreeProjection = {
   active_task_count: number
   overlap_task_count: number
   sample_limit: number
+  total_count: number
+  returned_count: number
   sample: Array<{
     task_id: string
     current_path: string

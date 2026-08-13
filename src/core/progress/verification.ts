@@ -289,7 +289,7 @@ export function reconcileWorkspaceViolations(
   )
   if (current.schema_version !== 5)
     throw new Error(
-      `Candidate CLI 0.5.0 only reconciles schema_version 5 tasks; task ${current.id} is historical read-only.`,
+      `Latch CLI 0.6.0 only reconciles schema_version 5 tasks; task ${current.id} is historical read-only.`,
     )
   if (current.phase !== 'dev' && current.phase !== 'check')
     throw new LatchDomainError(
@@ -399,12 +399,12 @@ export async function verifyTaskV2(
     input.actor,
     input.expectRevision,
   )
-  assertReadyForWork(current)
   if (current.phase !== 'dev' && current.phase !== 'check')
     throw new LatchDomainError(
       'phase_mismatch',
       `Cannot verify task in phase ${current.phase}.`,
     )
+  assertReadyForWork(current)
   const name = requireText(input.name, '--name is required.')
   const planned = current.plan.verification_plan.find((item) => item.name === name)
   let kind: 'gate' | 'diagnostic'
@@ -783,12 +783,12 @@ export async function verifyAllTasksV2(
     input.actor,
     input.expectRevision,
   )
-  assertReadyForWork(current)
   if (current.phase !== 'dev' && current.phase !== 'check')
     throw new LatchDomainError(
       'phase_mismatch',
       `Cannot verify task in phase ${current.phase}.`,
     )
+  assertReadyForWork(current)
 
   let revision = input.expectRevision
   let task = current

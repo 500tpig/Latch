@@ -74,10 +74,12 @@ test('schema 5 CLI completes lifecycle with structured closeout projections', ()
     const approved = json(run(cwd, [
       'approve', id, '--expect-revision', '1', '--reason', 'approved', '--json',
     ]))
-    assert.deepEqual(approved.shared_worktree, {
-      active_task_count: 0,
-      overlap_task_count: 0,
-      sample_limit: 8,
+  assert.deepEqual(approved.shared_worktree, {
+    active_task_count: 0,
+    overlap_task_count: 0,
+    total_count: 0,
+    returned_count: 0,
+    sample_limit: 8,
       sample: [],
       truncated: false,
     })
@@ -99,8 +101,11 @@ test('schema 5 CLI completes lifecycle with structured closeout projections', ()
     assert.equal(status.min_writer_version, contract.min_writer_version)
     assert.equal(status.unverified_count, contract.review.unverified_count)
     assert.equal(status.resolution_pending_count, contract.review.resolution_pending_count)
-    assert.equal(status.next_action, contract.review.next_action)
-    assert.deepEqual(status.shared_worktree, approved.shared_worktree)
+    assert.deepEqual(status.next_action, contract.review.next_action)
+    assert.deepEqual(status.shared_worktree, {
+      ...approved.shared_worktree,
+      sample_limit: 4,
+    })
 
     const full = json(run(cwd, ['context', id, '--json'])).task
     assert.deepEqual(
@@ -114,7 +119,11 @@ test('schema 5 CLI completes lifecycle with structured closeout projections', ()
       contract.review.unverified_count,
     )
     assert.equal(brief.submission.unverified_items_summary.sample_limit, 8)
-    assert.equal(brief.submission.unverified_items_summary.truncated, false)
+    assert.equal(
+      brief.submission.unverified_items_summary.truncated,
+      false,
+      JSON.stringify(brief.submission.unverified_items_summary),
+    )
     assert.equal(brief.schema5_view.reviewer_next_action, 'prepare_closeout')
     assert.equal('unverified_items' in brief.submission, false)
     const reviewHuman = run(cwd, ['context', id]).stdout
@@ -252,7 +261,7 @@ test('schema 5 Board reader fixture matches richer bounded Context projections',
       'context', open.task_id, '--json', '--review',
     ]))
     assert.equal(openReview.view, contract.review_view.view)
-    assert.equal(openReview.task.next_action, contract.views.open.review.next_action)
+    assert.deepEqual(openReview.task.next_action, contract.views.open.review.next_action)
     assert.deepEqual(
       openReview.task.schema5_view,
       contract.views.open.schema5_view,
@@ -269,7 +278,11 @@ test('schema 5 Board reader fixture matches richer bounded Context projections',
       ['context', open.task_id, '--json', '--review'],
       'codex:session:review-reader',
     ))
-    assert.equal(takeoverReview.task.next_action, 'takeover')
+    assert.deepEqual(takeoverReview.task.next_action, {
+      kind: 'await_user',
+      boundary: 'approval',
+      reason: 'takeover',
+    })
 
     const unverifiedArgs = Array.from(
       { length: contract.views.review_truncated.schema5_view.unverified_items.total },
@@ -297,7 +310,7 @@ test('schema 5 Board reader fixture matches richer bounded Context projections',
     const compactReview = json(run(cwd, [
       'context', open.task_id, '--json', '--review',
     ]))
-    assert.equal(
+    assert.deepEqual(
       compactReview.task.next_action,
       contract.views.review_truncated.review.next_action,
     )
@@ -376,7 +389,7 @@ test('schema 5 Board reader fixture matches richer bounded Context projections',
     const staleReview = json(run(cwd, [
       'context', stale.task_id, '--json', '--review',
     ]))
-    assert.equal(
+    assert.deepEqual(
       staleReview.task.next_action,
       contract.views.review_stale.review.next_action,
     )
@@ -397,11 +410,11 @@ test('schema 5 Board reader fixture matches richer bounded Context projections',
       ['context', stale.task_id, '--json', '--review'],
       'codex:session:review-reader',
     ))
-    assert.equal(
+    assert.deepEqual(
       staleTakeover.task.next_action,
       contract.views.review_stale.review.writer_mismatch_next_action,
     )
-    assert.equal(
+    assert.deepEqual(
       staleTakeover.task.after_takeover_next_action,
       contract.views.review_stale.review.after_takeover_next_action,
     )
@@ -425,7 +438,7 @@ test('schema 5 Board reader fixture matches richer bounded Context projections',
     const readyReview = json(run(cwd, [
       'context', reviewReady.task_id, '--json', '--review',
     ]))
-    assert.equal(
+    assert.deepEqual(
       readyReview.task.next_action,
       contract.views.review_ready.review.next_action,
     )
@@ -475,10 +488,17 @@ test('schema 5 Board reader fixture matches richer bounded Context projections',
       '--closeout-file', '.latch/mixed-closeout.json',
       '--json',
     ]))
+    const fullArchivedSchema5View = structuredClone(
+      contract.views.archived_mixed.schema5_view,
+    )
+    delete fullArchivedSchema5View.unverified_items.total_count
+    delete fullArchivedSchema5View.unverified_items.returned_count
+    delete fullArchivedSchema5View.closeout.resolutions.total_count
+    delete fullArchivedSchema5View.closeout.resolutions.returned_count
     const mixedArchive = json(run(cwd, ['context', mixed.task_id, '--json']))
     assert.deepEqual(
       mixedArchive.task.schema5_view,
-      contract.views.archived_mixed.schema5_view,
+      fullArchivedSchema5View,
     )
     const mixedDone = mixedArchive.timeline.findLast((event) => event.event_type === 'done')
     assert.equal(mixedDone.title, contract.views.archived_mixed.timeline.done_title)
@@ -490,7 +510,7 @@ test('schema 5 Board reader fixture matches richer bounded Context projections',
       'context', mixed.task_id, '--json', '--review',
     ]))
     assert.equal(mixedArchiveReview.archived, true)
-    assert.equal(
+    assert.deepEqual(
       mixedArchiveReview.task.next_action,
       contract.views.archived_mixed.review.next_action,
     )

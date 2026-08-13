@@ -210,7 +210,7 @@ test('verify-all skips current passes, stops on failure, and preserves per-gate 
   ])
   assert.notEqual(failed.status, 0)
   const failedEnvelope = JSON.parse(failed.stdout)
-  assert.equal(failedEnvelope.schema_version, 2)
+  assert.equal(failedEnvelope.schema_version, 3)
   assert.equal('envelope_schema_version' in failedEnvelope, false)
   assert.equal(failedEnvelope.executed.length, 1)
   assert.equal(failedEnvelope.executed[0].name, 'second')
@@ -276,7 +276,7 @@ test('verify JSON keeps gate stdout and stderr out of the JSON protocol stream',
   const verified = verify(verifyRoot, verifyId, 'noisy')
   assert.equal(verified.status, 0, verified.stderr)
   const verifiedEnvelope = JSON.parse(verified.stdout)
-  assert.equal(verifiedEnvelope.schema_version, 2)
+  assert.equal(verifiedEnvelope.schema_version, 3)
   assert.equal('envelope_schema_version' in verifiedEnvelope, false)
   assert.equal(verifiedEnvelope.verification.status, 'pass')
   assert.equal(verifiedEnvelope.verification.stdout.bytes, 22000)
@@ -759,7 +759,11 @@ test('stale review exposes reopen recovery and starts a new auditable work revis
   const currentStatus = JSON.parse(
     run(cwd, ['context', id, '--json', '--status']).stdout,
   ).task
-  assert.equal(currentStatus.next_action, 'prepare_closeout')
+  assert.deepEqual(currentStatus.next_action, {
+    kind: 'await_user',
+    boundary: 'closeout',
+    reason: 'unverified_items',
+  })
 
   writeFileSync(join(cwd, 'outside.txt'), 'ambient after submit\n')
   const ambientStatus = JSON.parse(
@@ -768,7 +772,7 @@ test('stale review exposes reopen recovery and starts a new auditable work revis
   assert.equal(ambientStatus.workspace_proof.live_status, 'match')
   assert.equal(ambientStatus.workspace_proof.live_changes.ambient, 1)
   assert.equal(ambientStatus.workspace_proof.live_changes.task_scope_content, 0)
-  assert.equal(ambientStatus.next_action, 'prepare_closeout')
+  assert.deepEqual(ambientStatus.next_action, currentStatus.next_action)
 
   spawnSync('git', ['add', 'src/cli.ts'], { cwd, encoding: 'utf8' })
   const delivered = spawnSync(
@@ -787,14 +791,17 @@ test('stale review exposes reopen recovery and starts a new auditable work revis
   assert.equal(deliveryStatus.workspace_proof.live_status, 'match')
   assert.equal(deliveryStatus.workspace_proof.live_changes.ambient, 1)
   assert.equal(deliveryStatus.workspace_proof.live_changes.delivery_state, 1)
-  assert.equal(deliveryStatus.next_action, 'prepare_closeout')
+  assert.deepEqual(deliveryStatus.next_action, currentStatus.next_action)
 
   writeFileSync(join(cwd, 'src', 'cli.ts'), 'changed after submit\n')
   const staleStatus = JSON.parse(
     run(cwd, ['context', id, '--json', '--status']).stdout,
   ).task
   assert.equal(staleStatus.workspace_proof.live_status, 'mismatch')
-  assert.equal(staleStatus.next_action, 'reopen_review')
+  assert.deepEqual(staleStatus.next_action, {
+    kind: 'command',
+    command: 'reopen-review',
+  })
 
   const handoffStatus = JSON.parse(
     run(
@@ -803,12 +810,19 @@ test('stale review exposes reopen recovery and starts a new auditable work revis
       'codex:session:replacement',
     ).stdout,
   ).task
-  assert.equal(handoffStatus.next_action, 'takeover')
-  assert.equal(handoffStatus.after_takeover_next_action, 'reopen_review')
+  assert.deepEqual(handoffStatus.next_action, {
+    kind: 'await_user',
+    boundary: 'approval',
+    reason: 'takeover',
+  })
+  assert.deepEqual(handoffStatus.after_takeover_next_action, {
+    kind: 'command',
+    command: 'reopen-review',
+  })
 
-  const brief = JSON.parse(
-    run(cwd, ['context', id, '--json', '--brief']).stdout,
-  ).task
+  const briefResult = run(cwd, ['context', id, '--json', '--brief'])
+  assert.equal(briefResult.status, 0, briefResult.stderr)
+  const brief = JSON.parse(briefResult.stdout).task
   assert.equal(brief.schema5_view.reviewer_next_action, 'reopen_review')
   const human = run(cwd, ['context', id])
   assert.equal(human.status, 0, human.stderr)

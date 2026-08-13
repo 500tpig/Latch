@@ -191,14 +191,18 @@ test('update-verification-command updates one gate argv and preserves every othe
 
   assert.equal(result.status, 0, result.stderr)
   const output = JSON.parse(result.stdout)
-  assert.equal(output.schema_version, 2)
+  assert.equal(output.schema_version, 3)
   assert.equal(output.previous_revision, 1)
   assert.equal(output.revision, 2)
   assert.equal(output.phase, 'plan')
   assert.equal(output.plan_revision, 2)
   assert.equal(output.work_revision, 0)
   assert.equal(output.authorization_applied, false)
-  assert.equal(output.next_action, 'approve')
+  assert.deepEqual(output.next_action, {
+    kind: 'await_user',
+    boundary: 'approval',
+    reason: 'implementation_plan',
+  })
   assert.deepEqual(output.verification, {
     name: 'tests',
     kind: 'gate',
@@ -392,7 +396,10 @@ test('update-verification-command applies explicit user_approve and valid user_d
   assert.equal(output.phase, 'dev')
   assert.equal(output.plan_revision, 2)
   assert.equal(output.work_revision, 1)
-  assert.equal(output.next_action, 'verify')
+  assert.deepEqual(output.next_action, {
+    kind: 'command',
+    command: 'verify-all',
+  })
   let task = readTask(cwd, approved.task_id)
   assert.equal(task.work_basis.source, 'user_approve')
   assert.equal(task.work_basis.plan_revision, 2)

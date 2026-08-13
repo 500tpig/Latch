@@ -9,6 +9,7 @@ import {
 import { randomBytes } from 'node:crypto'
 import { join, relative, sep } from 'node:path'
 import { assertWritableActor, isWritableActor } from '../actor.js'
+import { LatchDomainError } from '../errors.js'
 import { downgradeTaskEvents, downgradeTaskValue } from '../migration.js'
 import {
   appendTaskEventV2,
@@ -423,7 +424,8 @@ function assertPrimaryWriter(task: TaskV2, actor: string) {
         'Claim this task after an explicit user continue/handle request for this task id.',
     )
   if (task.primary_writer !== actor)
-    throw new Error(
+    throw new LatchDomainError(
+      'writer_mismatch',
       `Writer mismatch: primary_writer is ${task.primary_writer}, caller is ${actor}.\n` +
         'Continue read-only, or takeover with explicit user handoff / confirmed transfer.',
     )

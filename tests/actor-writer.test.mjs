@@ -375,7 +375,7 @@ test('default checkpoint creates schema 5 and candidate CLI leaves legacy v2 to 
     '--block-reason', 'waiting', '--waiting-for', 'user',
   ])
   assert.notEqual(denied.status, 0)
-  assert.match(denied.stderr, /Candidate CLI 0\.5\.0 only mutates schema_version 5/)
+  assert.match(denied.stderr, /Latch CLI 0\.6\.0 only mutates schema_version 5/)
   assert.equal(readFileSync(taskPath(cwd, legacy.id), 'utf8'), beforeTask)
   assert.equal(readFileSync(eventsPath, 'utf8'), beforeEvents)
 

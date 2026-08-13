@@ -11,7 +11,7 @@ import {
   type KnowledgeCheckResult,
 } from '../core/knowledge.js'
 import { discoverWorkspaceRoot } from '../core/paths.js'
-import { jsonEnvelopeV2 } from '../core/task-view.js'
+import { jsonEnvelopeV3 } from '../core/task-view.js'
 import { openTaskStoreV2, readTaskV2 } from '../core/task-store.js'
 
 export const knowledgeUsage =
@@ -52,7 +52,7 @@ export function runKnowledge(args: string[], cwd: string) {
     const workspaceRoot = discoverWorkspaceRoot(cwd, { forInit: true })
     const result = fingerprintKnowledgeDocument(workspaceRoot, parsed.values.path)
     if (parsed.values.json)
-      return json({ ...jsonEnvelopeV2(), knowledge: result })
+      return json({ ...jsonEnvelopeV3(), knowledge: result })
     process.stdout.write([
       `Knowledge: ${result.path}`,
       `Algorithm: ${result.algorithm}`,
@@ -69,7 +69,7 @@ export function runKnowledge(args: string[], cwd: string) {
     const workspaceRoot = discoverWorkspaceRoot(cwd, { forInit: true })
     const result = checkKnowledgeDocument(workspaceRoot, parsed.values.path)
     if (parsed.values.json)
-      return json({ ...jsonEnvelopeV2(), knowledge: result })
+      return json({ ...jsonEnvelopeV3(), knowledge: result })
     process.stdout.write(`${knowledgeCheckHuman(result)}\n`)
     return
   }
@@ -78,7 +78,7 @@ export function runKnowledge(args: string[], cwd: string) {
   const task = readTaskV2(store, parsed.values.task!)
   const result = checkTaskKnowledgeDocuments(store.paths.workspaceRoot, task)
   if (parsed.values.json)
-    return json({ ...jsonEnvelopeV2(), ...result })
+    return json({ ...jsonEnvelopeV3(), ...result })
   process.stdout.write([
     `Task: ${result.task_id}`,
     ...result.documents.map(knowledgeCheckHuman),

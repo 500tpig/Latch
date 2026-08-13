@@ -16,7 +16,7 @@ import {
   showProjectRecordV1,
 } from '../core/record-store.js'
 import {
-  jsonEnvelopeV2,
+  jsonEnvelopeV3,
   listHumanV2,
   listJsonV2,
 } from '../core/task-view.js'
@@ -46,7 +46,7 @@ export function runInit(args: string[], cwd: string) {
   if (parsed.values.help) return process.stdout.write(`${commandUsage.init}\n`)
   const store = initTaskStoreV2(cwd)
   if (parsed.values.json)
-    return json({ ...jsonEnvelopeV2(), workspace_root: store.paths.workspaceRoot })
+    return json({ ...jsonEnvelopeV3(), workspace_root: store.paths.workspaceRoot })
   process.stdout.write(`Initialized Latch v2 at ${store.paths.workspaceRoot}\n`)
 }
 
@@ -272,7 +272,7 @@ export function runUse(args: string[], cwd: string, actor: string) {
   const store = openTaskStoreV2(cwd)
   const taskId = selectCurrentTaskV2(store, actor, parsed.positionals[0])
   if (parsed.values.json)
-    return json({ ...jsonEnvelopeV2(), task_id: taskId, warnings: [] })
+    return json({ ...jsonEnvelopeV3(), task_id: taskId, warnings: [] })
   process.stdout.write(`Current task: ${taskId}\n`)
 }
 

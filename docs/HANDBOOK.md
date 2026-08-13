@@ -55,14 +55,15 @@ template、不准备 plan、不调用 `checkpoint`，也不自动执行 `latch i
 
 ### JSON 错误码
 
-CLI JSON error envelope 为可恢复的高频领域拒绝提供稳定 `error.code`：phase
-不匹配使用 `phase_mismatch`，plan、work revision 或 gate proof 失效使用
-`proof_stale`，live workspace mismatch 或 unresolved scope violation 使用
-`workspace_violation`。可读 `error.message` 保留具体原因，但 Agent 应按 code 选择恢复动作，
-不得解析英文 message。
+CLI `0.6.0` 的 JSON error envelope 使用 `schema_version: 3`，并为可恢复的高频领域拒绝提供稳定
+`error.code`：writer 不匹配使用 `writer_mismatch`，phase 不匹配使用 `phase_mismatch`，plan、
+work revision 或 gate proof 失效使用 `proof_stale`，live workspace mismatch 或 unresolved scope
+violation 使用 `workspace_violation`。可读 `error.message` 保留具体原因，但 Agent 应按 code 与
+typed `next_action` 选择恢复动作，不得解析英文 message。
 
 `invalid_arguments`、`not_initialized` 和 `writer_version_mismatch` 的既有语义不变；
-未分类的真实异常继续返回 `command_failed`。
+未分类的真实异常继续返回 `command_failed`，其 `next_action` 为
+`{ "kind": "stop", "reason": "invalid_task_state" }`。
 
 ### 结构化 JSON stdin
 
@@ -89,10 +90,12 @@ latch --version --json
 latch --json --version
 ```
 
-Human 输出只包含当前 CLI 包的版本号和换行。JSON 输出保留
-`schema_version: 2` envelope，并包含 `cli_version`、
+Human 输出只包含当前 CLI 包的版本号和换行。JSON 输出使用 `schema_version: 3`
+envelope，并独立报告 `cli_version`、`envelope_schema_version: 3`、
 `current_task_schema_version: 5` 和
-`historical_readable_task_schema_versions: [2, 3, 4]`。
+`historical_readable_task_schema_versions: [2, 3, 4]`。CLI `0.6.0` 的所有
+`--json` 成功、error、list、context、mutation 与 Record envelope 统一为
+`schema_version: 3`；task 存储仍为 schema 5，event 仍为 `events_schema_version: 3`。
 
 `--version` 只能与一个可选的 `--json` 组合。与 command、未知参数或多余
 positional 组合时，CLI 返回 `invalid_arguments`。版本查询从当前 CLI 包自身的
@@ -246,8 +249,11 @@ backup 或 archive。
 `failure_reason`；完整命令、时间戳、workspace effect 与 proof 只在 full Context 中返回。
 
 `context --json --status` 是最小状态入口，返回 phase、revision、授权、writer、
-blocked、gate 计数、workspace proof 摘要、`shared_worktree` 和 `next_action`。存在 proof baseline 时，
-摘要包含 `generation`、`baseline_dirty`、`baseline_in_scope`、`baseline_out_of_scope`、
+blocked、gate 计数、workspace proof 摘要、`shared_worktree` 和 typed `next_action`。
+status / review / brief 分别有 UTF-8 hard budget：`3072` / `6144` / `8192` bytes（按默认
+pretty-print JSON 加最终换行计）。超限时先按字段与集合上限截断，再按固定顺序 clamp
+可选内容；`truncation` metadata 说明是否截断。存在 proof baseline 时，摘要包含
+`generation`、`baseline_dirty`、`baseline_in_scope`、`baseline_out_of_scope`、
 `unresolved_violations` 和 `live_status`；
 `workspace_proof.live_status` 为 `match`、`mismatch` 或 `unknown`；该值只读计算，
 不会推进 generation 或写 evidence。`context --json --since-revision <revision>`
@@ -255,23 +261,31 @@ blocked、gate 计数、workspace proof 摘要、`shared_worktree` 和 `next_act
 delta 不能替代完整 context。
 
 `shared_worktree` 统计当前 task 之外的 open task，并返回 `active_task_count`、
-`overlap_task_count`、`sample_limit`、`sample` 和 `truncated`。每条 sample 包含
-`task_id`、`current_path` 和 `other_path`；结果按 task ID 与 scope path 确定性排序，
-最多返回 8 条。精确文件相同、目录前缀包含文件或目录前缀互相包含均视为 overlap。
-历史 task 缺少 `workspace_scope` 时仍计入 `active_task_count`，但不推断 overlap。
-该投影只描述 plan scope 相交，不声明文件归属，也不修改 provenance 或 lifecycle gate。
+`overlap_task_count`、`sample_limit`、`total_count`、`returned_count`、`sample` 和
+`truncated`。每条 sample 包含 `task_id`、`current_path` 和 `other_path`；结果按 task ID
+与 scope path 确定性排序。status / review 最多返回 4 条，brief 最多 8 条。精确文件相同、
+目录前缀包含文件或目录前缀互相包含均视为 overlap。历史 task 缺少 `workspace_scope` 时
+仍计入 `active_task_count`，但不推断 overlap。该投影只描述 plan scope 相交，不声明文件
+归属，也不修改 provenance 或 lifecycle gate。
 
-所有成功 task mutation 的 JSON 顶层也返回 `next_action`。该字段与
+envelope 3 的 `next_action` 是单一判别联合，不再返回字符串：
+
+- `{ "kind": "command", "command": "verify-all" | "submit" | "reopen-review", ... }`
+- `{ "kind": "await_user", "boundary": "plan_input" | "approval" | "review" | "closeout", "reason": "..." }`
+- `{ "kind": "stop", "reason": "..." }`
+
+所有成功 task mutation 的 JSON 顶层也返回同一 typed `next_action`。该字段与
 `context --json --status` 共用派生规则，以 mutation 完成后的 phase、writer、gate 和
 live workspace proof 为准；`shared_worktree` 与 status 使用同一投影规则。已有 proof 时，
 mutation JSON 还返回同一 bounded `workspace_proof` 投影；没有 proof 时省略该字段。
-`done` 与
-`abandon` 返回 `read_only`。human 输出保持不变。
+`done` 与 `abandon` 返回 `{ "kind": "stop", "reason": "archived_read_only" }`。human
+输出保持不变。`schema5_view.reviewer_next_action` 仍是 Board 侧摘要字符串，不是机器
+路由字段；机器恢复只读 typed `next_action`。
 
 `context --json --review` 是 review 与 closeout 的紧凑入口。它保留 `goal`、
 `scope`、`acceptance`、writer、lifecycle、named gate 状态、live workspace proof、
-有界的 submission、unverified item 与 closeout 摘要，可独立判断 `takeover`、
-`reopen_review`、`review_or_archive` 和 `prepare_closeout`。该视图不返回完整 plan、
+有界的 submission、unverified item 与 closeout 摘要，以及 typed `next_action`，可独立
+判断 takeover 授权边界、`reopen-review`、review 决策与 closeout。该视图不返回完整 plan、
 完整 verification 结果或 group，默认也不返回 timeline 和 raw event。显式增加
 `--history` 时，仍按所选 history view 返回最多 5 个最近 event。`--brief`、`--review`、
 `--status` 和 `--since-revision` 互斥。
@@ -285,7 +299,8 @@ mutation JSON 还返回同一 bounded `workspace_proof` 投影；没有 proof �
 对应 event。JSON 顶层增加 `archived: true`、`outcome` 和 `last_open_phase`；
 `last_open_phase` 是归档时保留的 `task.phase`，不会把 `done` 或 `abandoned`
 加入 phase 枚举。human 输出会显示相同归档事实，status 的 `next_action` 固定为
-`read_only`。open Context 不增加 `archived: false`，保持既有响应 shape。
+`{ "kind": "stop", "reason": "archived_read_only" }`。open Context 不增加
+`archived: false`，保持既有响应 shape。
 
 context 的 `current` 只表示当前 actor 的 state 指针是否指向该 task。`task.writer.primary_writer` 是 task 主写方，`task.writer.task_status` 区分 current `assigned` 与 historical read-only 状态，`task.writer.caller_capability` 表示调用方是否可写；兼容字段 `task.writer.status` 继续给出调用方相对 task 的汇总状态。`task.authorization` 统一投影历史 `implementation_approval` 与 schema 5 的 `work_basis`，但不改写 task 真源。
 
@@ -482,9 +497,10 @@ evidence，不运行 gate，也不调用 `verify-all`。只有当前 entry 与 v
 
 一次成功调用清除全部精确恢复项，推进一次 proof generation，使旧 gate proof stale，
 删除失效 submission，并返回 `resolved_count`、`remaining_count`、最多 8 个稳定排序的
-resolved/remaining ID 样本及统一 mutation `workspace_proof`。`next_action` 为 `verify`，
-后续显式执行 `verify-all`。没有可恢复项、capture 不完整或任何 writer、schema、phase、
-revision 检查失败时，不修改 task、revision、event 或 evidence；revision conflict 不自动重试。
+resolved/remaining ID 样本及统一 mutation `workspace_proof`。typed `next_action` 为
+`{ "kind": "command", "command": "verify-all" }`，后续显式执行 `verify-all`。没有可恢复项、
+capture 不完整或任何 writer、schema、phase、revision 检查失败时，不修改 task、revision、
+event 或 evidence；revision conflict 不自动重试。
 
 `verify-all` 按 plan 顺序动态选择当前 generation 中第一个非 current gate，不执行
 diagnostic。command failure、evidence error、workspace mutation、scope violation 或
@@ -537,8 +553,8 @@ generation 并使旧 proof stale，再拒绝 submit；ambient-only 或 delivery-
 ### 恢复 stale review
 
 review 中已有 submission，但 work revision、plan revision、proof generation、gate
-结果或 live workspace baseline 已失效时，Context 返回 `reopen_review`，不再返回
-`prepare_closeout` 或 `review_or_archive`：
+结果或 live workspace baseline 已失效时，typed `next_action` 返回
+`{ "kind": "command", "command": "reopen-review" }`，不再用伪命令字符串表达 closeout：
 
 ```bash
 latch reopen-review <task-id> --expect-revision 11 \
@@ -554,9 +570,10 @@ provenance、artifact、verification 与 workspace proof 历史保持不变。
 `review_feedback`。后续必须依次执行 `verify-all`、重新 `submit`、review 和明确授权后的
 `done`。proof 仍 current 时继续既有 closeout 流程，不调用 `reopen-review`。
 
-writer mismatch 与 stale proof 同时存在时，`next_action` 仍为 `takeover`；status JSON
-通过 `after_takeover_next_action: "reopen_review"` 提供接管后的下一步。blocked 状态仍先
-执行 `unblock`。
+writer mismatch 与 stale proof 同时存在时，`next_action` 为
+`{ "kind": "await_user", "boundary": "approval", "reason": "takeover" }`；status JSON
+通过 `after_takeover_next_action: { "kind": "command", "command": "reopen-review" }`
+提供接管后的下一步。blocked 状态仍先执行 `unblock`。
 
 context 会在 `artifact_delivery` 中标记 task 已声明 artifact 的 Git 状态：`tracked`、`untracked`、`ignored`、`missing` 或 `unknown`。submit 对非 `tracked` artifact 继续逐项返回非阻断 warning。worktree 中的 untracked 文件默认合并为一条 warning，包含 in-scope/ambient 计数、稳定排序后的最多 8 个样本及其分类；`submit --verbose-warnings` 返回完整逐文件分类。gate 的 dirty baseline warning 同样直接显示 in-scope 与 ambient 计数。两种形式都不自动推断文件归属或迁移原因。Git 状态不把 ignored 文件自动解释为「本地知识」，也不增加 submit 或 done 门禁。
 

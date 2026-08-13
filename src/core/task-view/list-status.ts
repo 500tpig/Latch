@@ -2,6 +2,7 @@ import { isWritableActor } from '../actor.js'
 import {
   currentWorkspaceLiveAssessment,
   sharedWorktreeProjection,
+  profileOf,
   submissionProofStatus,
   type WorkspaceLiveStatus,
 } from '../progress/shared.js'
@@ -9,7 +10,11 @@ import type { ContextTaskReadV2, TaskStoreV2 } from '../task-store.js'
 import { currentTaskIdV2, listGroupTasksV3, listTasksV2 } from '../task-store.js'
 import type { TaskV2 } from '../types.js'
 import { briefClosure, briefSubmission, schema5DetailView, schema5UnverifiedItems } from './closeout.js'
-import { jsonEnvelopeV2 } from './shared.js'
+import {
+  jsonEnvelopeV3,
+  NEXT_ACTIONS,
+  type NextAction,
+} from './shared.js'
 import type { ContextHistoryView } from './timeline.js'
 
 function taskSummary(task: TaskV2, brief: boolean, grouped = false) {
@@ -95,7 +100,7 @@ export function listJsonV2(
       left.created_at.localeCompare(right.created_at),
     )
     return {
-      ...jsonEnvelopeV2(),
+      ...jsonEnvelopeV3(),
       ...(currentTaskId ? { current_task_id: currentTaskId } : {}),
       tasks: tasks.map((task) => taskSummary(task, brief, true)),
       group: {
@@ -114,7 +119,7 @@ export function listJsonV2(
     }
   }
   return {
-    ...jsonEnvelopeV2(),
+    ...jsonEnvelopeV3(),
     ...(currentTaskId ? { current_task_id: currentTaskId } : {}),
     tasks: listTasksV2(store).map((task) => taskSummary(task, brief)),
   }
@@ -281,21 +286,35 @@ function gateSummary(
   }
 }
 
-function ownedNextAction(task: TaskV2, liveStatus?: WorkspaceLiveStatus) {
-  if (task.blocked) return 'unblock'
+function ownedNextAction(
+  task: TaskV2,
+  liveStatus?: WorkspaceLiveStatus,
+): NextAction {
+  if (task.blocked) return NEXT_ACTIONS.blocked
   if (task.phase === 'plan')
     return task.plan.open_questions.length > 0
-      ? 'resolve_open_questions'
-      : 'approve'
+      ? NEXT_ACTIONS.openQuestions
+      : NEXT_ACTIONS.implementationPlan
   if (task.phase === 'review') {
+    if (!task.submission) return NEXT_ACTIONS.invalidReviewState
     if (submissionProofStatus(task, liveStatus) === 'stale')
-      return 'reopen_review'
+      return NEXT_ACTIONS.reopenReview
     return schema5UnverifiedItems(task).length > 0
-      ? 'prepare_closeout'
-      : 'review_or_archive'
+      ? NEXT_ACTIONS.unverifiedItems
+      : NEXT_ACTIONS.reviewDecision
   }
+  if (task.phase !== 'dev' && task.phase !== 'check')
+    return NEXT_ACTIONS.invalidTaskState
   const gates = gateSummary(task, liveStatus)
-  return gates.total > 0 && gates.pass !== gates.total ? 'verify' : 'submit'
+  if (gates.fail > 0 || (task.workspace_proof?.unresolved_violations.length ?? 0) > 0)
+    return NEXT_ACTIONS.implementationDiagnosis
+  if (gates.total === 0)
+    return profileOf(task) === 'light'
+      ? NEXT_ACTIONS.invalidTaskState
+      : NEXT_ACTIONS.submitNoVerify
+  if (gates.pending > 0 || gates.stale > 0) return NEXT_ACTIONS.verifyAll
+  if (gates.pass === gates.total) return NEXT_ACTIONS.submit
+  return NEXT_ACTIONS.invalidTaskState
 }
 
 export function nextAction(
@@ -304,13 +323,12 @@ export function nextAction(
   liveStatus?: WorkspaceLiveStatus,
   archived = false,
 ) {
-  if (archived) return 'read_only'
+  if (archived) return NEXT_ACTIONS.archivedReadOnly
   const writer = writerState(task, actor)
-  if (writer.caller_capability === 'read_only') return 'read_only'
-  if (writer.task_status === 'legacy_unclaimed') return 'claim'
-  if (writer.task_status === 'schema_upgrade_required')
-    return writer.status === 'primary_writer' ? 'upgrade_v4' : 'read_only'
-  if (writer.status === 'writer_mismatch') return 'takeover'
+  if (task.schema_version !== 5) return NEXT_ACTIONS.historicalReadOnly
+  if (writer.caller_capability === 'read_only') return NEXT_ACTIONS.callerReadOnly
+  if (writer.task_status === 'legacy_unclaimed') return NEXT_ACTIONS.historicalReadOnly
+  if (writer.status === 'writer_mismatch') return NEXT_ACTIONS.takeover
   return ownedNextAction(task, liveStatus)
 }
 
@@ -364,7 +382,7 @@ export function statusTask(
     task.phase === 'review' &&
     submissionProofStatus(task, workspaceProof?.live_status) === 'stale'
       ? {
-          after_takeover_next_action: 'reopen_review',
+          after_takeover_next_action: NEXT_ACTIONS.reopenReview,
         }
       : {}),
     updated_at: task.updated_at,

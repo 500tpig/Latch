@@ -141,12 +141,12 @@ test('version reports package metadata in human and JSON modes without side effe
       args: ['--version', '--json'],
       assertOutput(result) {
         const data = JSON.parse(result.stdout)
-        assert.equal(data.schema_version, 2)
+        assert.equal(data.schema_version, 3)
         assert.equal(typeof data.generated_at, 'string')
         assert.equal(data.cli_version, packageVersion)
         assert.equal(data.current_task_schema_version, 5)
         assert.deepEqual(data.historical_readable_task_schema_versions, [2, 3, 4])
-        assert.equal('envelope_schema_version' in data, false)
+        assert.equal(data.envelope_schema_version, 3)
       },
     },
     {
@@ -195,7 +195,7 @@ test('version rejects every argument except one optional --json without side eff
     assert.equal(result.stdout, '')
     if (args.includes('--json') && args.indexOf('--json') < (args.indexOf('--') === -1 ? args.length : args.indexOf('--'))) {
       const data = JSON.parse(result.stderr)
-      assert.equal(data.schema_version, 2)
+      assert.equal(data.schema_version, 3)
       assert.equal(data.error.code, 'invalid_arguments')
       assert.match(data.error.message, /Usage: latch --version \[--json\]/)
     } else {
@@ -313,7 +313,7 @@ test('JSON errors use the stable envelope', () => {
 
   assert.notEqual(result.status, 0)
   const data = JSON.parse(result.stderr)
-  assert.equal(data.schema_version, 2)
+  assert.equal(data.schema_version, 3)
   assert.equal(typeof data.generated_at, 'string')
   assert.equal(data.error.code, 'invalid_arguments')
   assert.match(data.error.message, /Unknown option/)
@@ -336,7 +336,8 @@ test('uninitialized list returns a typed JSON error without side effects', () =>
 
     assert.notEqual(result.status, 0, kind)
     const data = JSON.parse(result.stderr)
-    assert.equal(data.schema_version, 2)
+    assert.equal(data.schema_version, 3)
+    assert.deepEqual(data.next_action, { kind: 'stop', reason: 'invalid_task_state' })
     assert.equal(data.error.code, 'not_initialized')
     assert.match(data.error.message, /Latch is not initialized from/)
     assert.deepEqual(readdirSync(root).sort(), entriesBefore)
@@ -354,7 +355,7 @@ test('init creates schema v2 and returns workspace JSON', () => {
 
   assert.equal(result.status, 0, result.stderr)
   const data = JSON.parse(result.stdout)
-  assert.equal(data.schema_version, 2)
+  assert.equal(data.schema_version, 3)
   assert.equal(typeof data.generated_at, 'string')
   assert.equal(data.workspace_root, realpathSync(cwd))
   assert.deepEqual(

@@ -198,7 +198,10 @@ test('reconcile restores tracked, untracked, delete, rename, and bounded IDs in 
   })
   assert.equal(output.workspace_proof.generation, before.workspace_proof.generation + 1)
   assert.equal(output.workspace_proof.unresolved_violations, 0)
-  assert.equal(output.next_action, 'verify')
+  assert.deepEqual(output.next_action, {
+    kind: 'command',
+    command: 'verify-all',
+  })
 
   const after = readTask(cwd, id)
   assert.equal(after.workspace_proof.generation, before.workspace_proof.generation + 1)
@@ -216,7 +219,10 @@ test('reconcile restores tracked, untracked, delete, rename, and bounded IDs in 
   assert.equal(status.status, 0, status.stderr)
   const statusTask = JSON.parse(status.stdout).task
   assert.equal(statusTask.gates.stale, 2)
-  assert.deepEqual(output.workspace_proof, statusTask.workspace_proof)
+  const statusProof = statusTask.workspace_proof
+  statusProof.live_changes.sample_limit =
+    output.workspace_proof.live_changes.sample_limit
+  assert.deepEqual(output.workspace_proof, statusProof)
 })
 
 test('reconcile keeps approximate content, different Git state, and unrestored entries fail closed', () => {

@@ -3,7 +3,7 @@ import { isAbsolute, normalize, resolve, sep } from 'node:path'
 import { fail, readInputFile } from '../cli-support.js'
 import { discoverWorkspaceRoot } from '../core/paths.js'
 import { normalizeTaskPlanInput } from '../core/plan-schema.js'
-import { jsonEnvelopeV2 } from '../core/task-view.js'
+import { jsonEnvelopeV3 } from '../core/task-view.js'
 import {
   nextAction,
   workspaceProofView,
@@ -147,7 +147,7 @@ export function mutationJson(
 ) {
   const workspaceProof = workspaceProofView(store, task, archived)
   return {
-    ...jsonEnvelopeV2(),
+    ...jsonEnvelopeV3(),
     task_id: task.id,
     ...(previousRevision !== undefined ? { previous_revision: previousRevision } : {}),
     revision: task.revision,
@@ -172,7 +172,7 @@ export function currentWritableTask(
   if (task.schema_version !== 5)
     fail(
       'writer_version_mismatch',
-      `Candidate CLI 0.5.0 only mutates schema_version 5 tasks; the current Latch runner treats task ${task.id} as historical read-only and requires its matching runner for schema_version ${task.schema_version}.`,
+      `Latch CLI 0.6.0 only mutates schema_version 5 tasks; the current runner treats task ${task.id} as historical read-only and requires its matching runner for schema_version ${task.schema_version}.`,
     )
   return task
 }

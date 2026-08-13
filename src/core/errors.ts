@@ -1,4 +1,5 @@
 export type LatchDomainErrorCode =
+  | 'writer_mismatch'
   | 'phase_mismatch'
   | 'proof_stale'
   | 'workspace_violation'

@@ -220,7 +220,7 @@ test('save rejects an existing directory path without mutating task, event, or s
 
   assert.notEqual(result.status, 0)
   const envelope = JSON.parse(result.stderr)
-  assert.equal(envelope.schema_version, 2)
+  assert.equal(envelope.schema_version, 3)
   assert.match(envelope.error.message, /src\/features\/ui is an existing directory/)
   assert.equal(readFileSync(taskFile, 'utf8'), before.task)
   assert.equal(readFileSync(eventsFile, 'utf8'), before.events)

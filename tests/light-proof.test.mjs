@@ -640,7 +640,8 @@ test('work and plan revisions invalidate proof and basis independently', () => {
 
   const stale = verify(cwd, task.id)
   assert.notEqual(stale.status, 0)
-  assert.match(stale.stderr, /valid work_basis/)
+  // plan phase rejects before work_basis checks; envelope 3 returns phase_mismatch.
+  assert.match(stale.stderr, /phase_mismatch|valid work_basis|Cannot verify task in phase plan/)
   const reauthorized = approve(cwd, task.id, authorization('user_approve'))
   assert.equal(reauthorized.status, 0, reauthorized.stderr)
   assert.equal(readTask(cwd, task.id).work_revision, 3)

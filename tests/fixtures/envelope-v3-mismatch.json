@@ -1,0 +1,35 @@
+{
+  "fixture_schema_version": 3,
+  "purpose": "Normative producer-side envelope 3 mismatch and phase-legality fixture.",
+  "producer_cli_version": "0.6.0",
+  "envelope_schema_version": 3,
+  "current_task_schema_version": 5,
+  "writer_mismatch": {
+    "error_code": "writer_mismatch",
+    "next_action": {
+      "kind": "await_user",
+      "boundary": "approval",
+      "reason": "takeover"
+    }
+  },
+  "phase_mismatch": {
+    "error_code": "phase_mismatch",
+    "next_action": {
+      "kind": "await_user",
+      "boundary": "approval",
+      "reason": "implementation_plan"
+    }
+  },
+  "proof_stale": {
+    "error_code": "proof_stale"
+  },
+  "workspace_violation": {
+    "error_code": "workspace_violation"
+  },
+  "phase_legal_commands": {
+    "verify_all": { "kind": "command", "command": "verify-all" },
+    "submit": { "kind": "command", "command": "submit" },
+    "submit_no_verify": { "kind": "command", "command": "submit", "mode": "no_verify" },
+    "reopen_review": { "kind": "command", "command": "reopen-review" }
+  }
+}

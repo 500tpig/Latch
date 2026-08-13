@@ -11,7 +11,7 @@ import {
   parseContextBenchCase,
   parseContextBenchRun,
 } from '../core/context-benchmark.js'
-import { jsonEnvelopeV2 } from '../core/task-view.js'
+import { jsonEnvelopeV3 } from '../core/task-view.js'
 
 export const benchmarkUsage =
   'Usage: latch benchmark context --case-file <path|-> --run-file <path|-> [--baseline-run-file <path|->] [--json]'
@@ -54,7 +54,7 @@ export function runBenchmark(args: string[], cwd: string) {
     : undefined
   const result = evaluateContextBenchmark(benchmarkCase, run, baseline)
   if (parsed.values.json)
-    return json({ ...jsonEnvelopeV2(), benchmark: result })
+    return json({ ...jsonEnvelopeV3(), benchmark: result })
   process.stdout.write([
     `Benchmark: ${result.case_id}`,
     `Main: ${result.pass_main ? 'pass' : 'fail'}`,

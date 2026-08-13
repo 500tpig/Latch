@@ -4,7 +4,11 @@
   "review": {
     "unverified_count": 3,
     "resolution_pending_count": 3,
-    "next_action": "prepare_closeout",
+    "next_action": {
+      "kind": "await_user",
+      "boundary": "closeout",
+      "reason": "unverified_items"
+    },
     "item_ids": ["U1", "U2", "U3"]
   },
   "archive": {

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { fail, json } from '../cli-support.js'
-import { jsonEnvelopeV2 } from '../core/task-view.js'
+import { jsonEnvelopeV3 } from '../core/task-view.js'
 
 const versionUsage = 'Usage: latch --version [--json]'
 
@@ -36,8 +36,9 @@ export function runVersion(argv: string[]) {
     return
   }
   json({
-    ...jsonEnvelopeV2(),
+    ...jsonEnvelopeV3(),
     cli_version: version,
+    envelope_schema_version: 3,
     current_task_schema_version: 5,
     historical_readable_task_schema_versions: [2, 3, 4],
   })

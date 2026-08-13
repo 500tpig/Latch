@@ -85,6 +85,8 @@ export function sharedWorktreeProjection(
     active_task_count: activeTasks.length,
     overlap_task_count: overlaps.length,
     sample_limit: sampleLimit,
+    total_count: overlaps.length,
+    returned_count: Math.min(overlaps.length, sampleLimit),
     sample: overlaps.slice(0, sampleLimit),
     truncated: overlaps.length > sampleLimit,
   }
@@ -160,6 +162,8 @@ export type WorkspaceLiveAssessment = {
     index_content: number
     delivery_state: number
     sample_limit: number
+    total_count: number
+    returned_count: number
     sample: Array<{
       path: string
       scope: 'in_scope' | 'out_of_scope'
@@ -179,6 +183,8 @@ function unknownWorkspaceLiveAssessment(): WorkspaceLiveAssessment {
       index_content: 0,
       delivery_state: 0,
       sample_limit: 8,
+      total_count: 0,
+      returned_count: 0,
       sample: [],
       truncated: false,
     },
@@ -256,6 +262,8 @@ export function currentWorkspaceLiveAssessment(
             change.scope === 'in_scope' && change.category === 'delivery_state',
         ).length,
         sample_limit: sampleLimit,
+        total_count: projectedChanges.length,
+        returned_count: Math.min(projectedChanges.length, sampleLimit),
         sample: projectedChanges.slice(0, sampleLimit).map((change) => ({
           path: change.path,
           scope: change.scope,

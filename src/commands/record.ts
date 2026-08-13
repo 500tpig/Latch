@@ -22,14 +22,14 @@ import {
   type ProjectRecordEntryV1,
   type ProjectRecordWithBodyV1,
 } from '../core/record-store.js'
-import { jsonEnvelopeV2 } from '../core/task-view.js'
+import { jsonEnvelopeV3 } from '../core/task-view.js'
 
 export const recordUsage =
   'Usage: latch record create --title <title> (--body <text> | --body-file <path>) [--tag <tag>...] [--task <id>...] [--group <id>...] [--json]\n       latch record list [--status <active|archived|all>] [--query <text>] [--tag <tag>...] [--task <id>] [--group <id>] [--limit <1..5>] [--json]\n       latch record show <record-id> [--json]\n       latch record edit <record-id> --expect-revision <revision> [--title <title>] [--body <text> | --body-file <path>] [--tag <tag>... | --clear-tags] [--task <id>... | --clear-tasks] [--group <id>... | --clear-groups] [--json]\n       latch record archive <record-id> --expect-revision <revision> [--json]\n       latch record restore <record-id> --expect-revision <revision> [--json]\n       latch record delete <record-id> --expect-revision <revision> --confirm-delete [--confirm-linked] [--json]'
 
 export function recordJsonEnvelope() {
   return {
-    ...jsonEnvelopeV2(),
+    ...jsonEnvelopeV3(),
     record_store_schema_version: RECORD_STORE_SCHEMA_VERSION,
   }
 }

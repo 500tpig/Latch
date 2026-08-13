@@ -38,7 +38,20 @@ import {
 import { actorId, assertWritableActor } from './core/actor.js'
 import { LatchDomainError } from './core/errors.js'
 import { NotInitializedError } from './core/paths.js'
-import { jsonEnvelopeV2 } from './core/task-view.js'
+import {
+  NEXT_ACTIONS,
+  type NextAction,
+  jsonEnvelopeV3,
+} from './core/task-view.js'
+import {
+  nextAction,
+  workspaceProofView,
+} from './core/task-view/list-status.js'
+import {
+  currentTaskIdV2,
+  openTaskStoreV2,
+  readContextTaskV2,
+} from './core/task-store.js'
 import { DowngradeTaskV2Error } from './core/task-store.js'
 import { injectHostActor } from './host-adapter.js'
 
@@ -47,6 +60,58 @@ import { injectHostActor } from './host-adapter.js'
 function cliOptionArgv(argv: string[]) {
   const separator = argv.indexOf('--')
   return separator === -1 ? argv : argv.slice(0, separator)
+}
+
+const taskIdCommands = new Set([
+  'abandon',
+  'append-scope',
+  'approve',
+  'artifact',
+  'done',
+  'patch-submission-knowledge-impact',
+  'reconcile',
+  'reopen-review',
+  'resolve-open-questions',
+  'save',
+  'submit',
+  'takeover',
+  'update-verification-command',
+  'upgrade-v4',
+  'verify',
+  'verify-all',
+  'downgrade-v2',
+])
+
+function explicitTaskId(argv: string[]) {
+  const command = argv[0]
+  if (command === 'artifact') return argv[2]
+  if (!command || !taskIdCommands.has(command)) return undefined
+  return argv.slice(1).find((argument) => !argument.startsWith('-'))
+}
+
+function errorNextAction(
+  argv: string[],
+  cwd: string,
+  actor: string,
+): NextAction {
+  const command = argv[0]
+  if (command !== 'context' && !taskIdCommands.has(command ?? ''))
+    return NEXT_ACTIONS.invalidTaskState
+  try {
+    const store = openTaskStoreV2(cwd)
+    const taskId = explicitTaskId(argv) ?? currentTaskIdV2(store, actor)
+    if (!taskId) return NEXT_ACTIONS.invalidTaskState
+    const context = readContextTaskV2(store, taskId)
+    const proof = workspaceProofView(store, context.task, context.archived)
+    return nextAction(
+      context.task,
+      actor,
+      proof?.live_status,
+      context.archived,
+    )
+  } catch {
+    return NEXT_ACTIONS.invalidTaskState
+  }
 }
 
 async function run(argv: string[], cwd: string) {
@@ -139,8 +204,9 @@ async function run(argv: string[], cwd: string) {
 async function main() {
   const argv = process.argv.slice(2)
   const optionArgv = cliOptionArgv(argv)
+  const cwd = process.cwd()
   try {
-    await run(argv, process.cwd())
+    await run(argv, cwd)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     const code =
@@ -153,8 +219,18 @@ async function main() {
       process.stderr.write(
         `${JSON.stringify({
           ...(optionArgv.includes('--version') || argv[0] !== 'record'
-            ? jsonEnvelopeV2()
+            ? jsonEnvelopeV3()
             : recordJsonEnvelope()),
+          next_action: new Set([
+            'writer_mismatch',
+            'phase_mismatch',
+            'proof_stale',
+            'workspace_violation',
+            'task_blocked',
+            'writer_version_mismatch',
+          ]).has(code)
+            ? errorNextAction(argv, cwd, actorId())
+            : NEXT_ACTIONS.invalidTaskState,
           ...(error instanceof DowngradeTaskV2Error
             ? {
                 backup_path: error.backupPath,
