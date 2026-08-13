@@ -2,7 +2,7 @@
 
 Source-Task: `20260812100351819-设计轻量-lifecycle-delta-最小稳定-cli-契约-ee1a38`
 
-Document-Status: proposed contract
+Document-Status: approved
 
 Date: 2026-08-12
 
@@ -537,7 +537,7 @@ answer 或 proof 事实。
 ## 9. 发布门禁
 
 每张 implementation task 都必须使用 schema 5 Standard 或经 A/B/C 重新判定后的明确
-profile，获得独立实施授权，并运行其 named gates。三项全部交付前，current HANDBOOK 和
-Skill 不得把未实现命令写成可用行为；可先将本文件保留为 proposed contract。任何实现
-若需要改变本文件冻结的 command、payload、lifecycle、event、output 或 typed error，
-必须先回到 design task 更新 plan 并重新批准。
+profile，获得独立实施授权，并运行其 named gates。本文件作为 approved contract 独立于
+三项命令的实施状态；三项全部交付前，current HANDBOOK 和 Skill 不得把未实现命令写成
+可用行为。任何实现若需要改变本文件冻结的 command、payload、lifecycle、event、output
+或 typed error，必须先通过独立 design task 更新契约并重新批准。

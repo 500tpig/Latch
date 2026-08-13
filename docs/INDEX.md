@@ -61,7 +61,7 @@ v2 / Schema 5 观察期的 archive 定量样本分离。
 
 ### [轻量 lifecycle delta CLI 契约](briefs/2026-08-12-latch-lifecycle-delta-contract.md)
 
-- 状态：`proposed contract`；
+- 状态：`approved`；
 - Source-Task：`20260812100351819-设计轻量-lifecycle-delta-最小稳定-cli-契约-ee1a38`；
 - 用途：冻结 `append-scope`、`update-verification-command`、
   `resolve-open-questions` 三项独立 plan delta CLI，并引用已交付的 `reconcile` 契约；
