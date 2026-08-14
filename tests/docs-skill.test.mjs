@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const lifecycleReference = 'skills/latch/references/task-lifecycle.md'
+const recoveryReference = 'skills/latch/references/recovery.md'
 const actorReference = 'skills/latch/references/session-actors-and-handoff.md'
 const groupsReference = 'skills/latch/references/groups.md'
 const knowledgeReference = 'skills/latch/references/knowledge-and-context.md'
@@ -13,6 +14,7 @@ const migrationReference = 'skills/latch/references/migration.md'
 const recordsReference = 'skills/latch/references/records.md'
 const skillReferences = [
   lifecycleReference,
+  recoveryReference,
   actorReference,
   groupsReference,
   knowledgeReference,
@@ -174,11 +176,21 @@ test('high-frequency instruction growth requires a reviewed aggregate baseline',
   }
 })
 
+test('always-loaded Agent instructions stay within the frozen UTF-8 byte budget', () => {
+  const paths = ['AGENTS.md', 'skills/latch/SKILL.md']
+  const bytes = paths.reduce(
+    (total, path) => total + Buffer.byteLength(text(path), 'utf8'),
+    0,
+  )
+
+  assert.ok(bytes <= 10_240, `always-loaded instructions use ${bytes} UTF-8 bytes`)
+})
+
 test('always-loaded scope safety semantics stay in the canonical skill', () => {
   const skill = text('skills/latch/SKILL.md')
   const semantics = [
-    ['repo-relative POSIX scope paths', /`workspace_scope\.paths` must be repo-relative POSIX paths/],
-    ['exact files omit slash', /Files omit `\//],
+    ['repo-relative POSIX scope paths', /`workspace_scope\.paths` uses repo-relative POSIX paths/],
+    ['exact files omit slash', /files omit `\//i],
     ['directory prefixes include slash', /directories end in `\/`/],
     [
       'existing directories without slash fail before mutation',
@@ -187,9 +199,9 @@ test('always-loaded scope safety semantics stay in the canonical skill', () => {
     ['missing paths remain valid', /missing\s+paths remain valid/],
     [
       'scope is not inferred from prose authorization or artifacts',
-      /Never infer scope or authorization from prose, paths, (?:or )?titles/,
+      /Never infer scope or authorization from prose, paths,\s+(?:or )?titles/,
     ],
-    ['plan delta commands stay fail closed', /Plan-delta commands are fail closed/],
+    ['plan delta commands stay fail closed', /Plan-delta commands remain fail closed/],
   ]
 
   for (const [name, pattern] of semantics) assertTextMatches(skill, pattern, name)
@@ -262,8 +274,6 @@ test('canonical skill has valid minimal frontmatter', () => {
 
 test('canonical skill routes every low-frequency reference without hiding core safety', () => {
   const skill = text('skills/latch/SKILL.md')
-  const testSource = text('tests/docs-skill.test.mjs')
-  assert.equal(testSource.includes(['Buffer', 'byteLength'].join('.')), false)
   for (const path of skillReferences) {
     assert.equal(existsSync(join(root, path)), true, path)
     assert.equal(skill.includes(path.replace('skills/latch/', '')), true, path)
@@ -278,6 +288,10 @@ test('canonical skill routes every low-frequency reference without hiding core s
     /Do not paste full plan JSON or dump fields by default/,
   )
   assertTextMatches(text(lifecycleReference), /approve --feedback/)
+  assertTextMatches(text(recoveryReference), /writer_mismatch/)
+  assertTextMatches(text(recoveryReference), /proof_stale/)
+  assertTextMatches(text(recoveryReference), /workspace_violation/)
+  assertTextMatches(text(recoveryReference), /phase_mismatch/)
   assertTextMatches(text(actorReference), /LATCH_ACTOR/)
   assertTextMatches(text(actorReference), /handoff prompt/)
   assertTextMatches(text(actorReference), /Grok and Codex are equal writable hosts/)
@@ -287,7 +301,7 @@ test('canonical skill routes every low-frequency reference without hiding core s
   assertTextMatches(text(groupsReference), /group_id/)
   assertTextMatches(text(knowledgeReference), /knowledge fingerprint/)
   assertTextMatches(text(knowledgeReference), /context pack/i)
-  assertTextMatches(text(migrationReference), /CLI `0\.5\.0` is the current runner[\s\S]*minimum writer for schema 5/)
+  assertTextMatches(text(migrationReference), /CLI `0\.6\.0` is the current runner[\s\S]*minimum writer for schema 5/)
   assertTextMatches(text(migrationReference), /Schema 2–4 are historical read-only/)
   assertTextMatches(text(migrationReference), /rejects every schema 2–4 task mutation/)
   assert.doesNotMatch(text(migrationReference), /upgrade-v4|downgrade-v2/)
@@ -362,7 +376,8 @@ test('current release surfaces consistently expose schema 5 and keep adopters pe
 
 test('review stale recovery is consistent across current docs and canonical skill', () => {
   const skill = text('skills/latch/SKILL.md')
-  assertTextMatches(skill, /`reopen_review`[\s\S]*task lifecycle/)
+  assertTextMatches(skill, /recovery router/)
+  assertTextMatches(text(recoveryReference), /proof_stale[\s\S]*reopen-review/)
   assertTextMatches(text(lifecycleReference), /reopen-review/)
   assertTextMatches(text(lifecycleReference), /reopen_review/)
   for (const content of [
@@ -405,15 +420,13 @@ test('current contract and instruction surface use the final A/B/C rules', () =>
 })
 
 test('decided design status sync stays Light and adjacent Standard approval fails closed', () => {
-  const surfaces = [
+  const currentContracts = [
     text('docs/prd/2026-07-15-latch-final-product-contract.md'),
     text('docs/HANDBOOK.md'),
     text('docs/DESIGN.md'),
-    text('AGENTS.md'),
-    text('skills/latch/SKILL.md'),
   ]
 
-  for (const content of surfaces) {
+  for (const content of currentContracts) {
     assertTextMatches(content, /frozen|已冻结/)
     assertTextMatches(content, /`open_questions`/)
     assertTextMatches(content, /explicitly approved|明确批准/)
@@ -429,6 +442,21 @@ test('decided design status sync stays Light and adjacent Standard approval fail
     assertTextMatches(content, /warning/)
     assertTextMatches(content, /ordinary write request|普通写入请求/)
   }
+
+  const instructionRoute = `${text('AGENTS.md')}\n${text('skills/latch/SKILL.md')}\n${text(lifecycleReference)}`
+  for (const pattern of [
+    /frozen|已冻结/,
+    /`open_questions`/,
+    /explicitly approved|明确批准/,
+    /artifact status|artifact 状态/,
+    /index metadata|索引元数据/,
+    /Light/,
+    /product choice|产品选择/,
+    /source task|来源 task/i,
+    /writer/,
+    /scope/,
+    /reverify|重新验证/,
+  ]) assertTextMatches(instructionRoute, pattern)
 
   const routed = `${text('skills/latch/SKILL.md')}\n${text('docs/HANDBOOK.md')}`
   assertTextMatches(routed, /`proposed`[\s\S]*`approved`[\s\S]*Standard/)
@@ -478,10 +506,10 @@ test('A/B/C profile classification follows acceptance semantics instead of gate 
   assertTextMatches(skill, /B needs a precise delta\s+authorization/)
   assertTextMatches(
     skill,
-    /C shows short decision highlights[\s\S]*normally the created task id[\s\S]*reapproval/,
+    /C shows short decision highlights[\s\S]*task ID[\s\S]*reapproval/,
   )
-  assertTextMatches(skill, /Core applies structure and\s+revision changes/)
-  assertTextMatches(skill, /never classifies from gate count/)
+  assertTextMatches(skill, /Core validates structure and revision/)
+  assertTextMatches(skill, /gate count never selects a profile/)
   assert.doesNotMatch(skill, /disputed\/multiple gates/)
 })
 
@@ -490,77 +518,68 @@ test('canonical skill routes lifecycle safety without weakening it', () => {
   const lifecycle = text(lifecycleReference)
   const routed = `${skill}\n${lifecycle}`
   assertTextMatches(skill, /pure Q&A/i)
-  assertTextMatches(skill, /Chat shows only the goal[\s\S]*material scope/)
-  assertTextMatches(skill, /After explicit implementation authorization/)
-  assertTextMatches(skill, /Do not paste the plan JSON by\s+default/)
+  assertTextMatches(skill, /show goal, material scope/)
+  assertTextMatches(skill, /After explicit\s+approval run `approve`/)
+  assertTextMatches(skill, /Do not paste plan JSON by\s+default/)
   assertTextMatches(
     routed,
     /implementation reveals missing[\s\S]*changed root cause[\s\S]*new product choice[\s\S]*scope\s+expansion[\s\S]*stop/,
   )
   assertTextMatches(
     skill,
-    /C shows short decision highlights[\s\S]*normally the created task id[\s\S]*reapproval/,
+    /C shows short decision highlights[\s\S]*task ID[\s\S]*reapproval/,
   )
-  assertTextMatches(skill, /writer mismatch is fail closed/)
-  assertTextMatches(skill, /Takeover transfers writer ownership only, never implementation approval/)
+  assertTextMatches(skill, /writer mismatch is fail closed/i)
+  assertTextMatches(skill, /Takeover changes writer only, never plan approval/)
   assertTextMatches(lifecycle, /implementation correction/)
   assertTextMatches(lifecycle, /non-implementation-feedback/)
   assertTextMatches(skill, /every named gate/)
-  assertTextMatches(skill, /Run `done` only after explicit completion\/archive authorization/)
-  assertTextMatches(skill, /`abandon`[\s\S]*only after explicit cancellation authorization/)
-  assertTextMatches(skill, /Never perform Git add, commit, push, branch, reset, checkout, or clean/)
+  assertTextMatches(skill, /`done` needs explicit completion\/archive authorization/)
+  assertTextMatches(skill, /`abandon` needs explicit cancellation/)
+  assertTextMatches(skill, /Git add, commit, push, branch, checkout, reset,\s+clean/)
 })
 
 test('canonical skill keeps execution paths and routes low-frequency closeout', () => {
   const skill = text('skills/latch/SKILL.md')
   const lifecycle = text(lifecycleReference)
   const actor = text(actorReference)
-  assertTextMatches(skill, /### Ordinary Light task/)
-  assertTextMatches(skill, /checkpoint[\s\S]*--profile light[\s\S]*--authorize-request/)
-  assertTextMatches(skill, /### Standard plan/)
-  assertTextMatches(skill, /Chat shows only the goal/)
-  assertTextMatches(skill, /Latch-Board or `context <task-id>`/)
-  assertTextMatches(skill, /approve <task-id> --expect-revision <n>/)
-  assertTextMatches(skill, /### Review, recovery, and closeout/)
+  assertTextMatches(skill, /## Happy path/)
+  assertTextMatches(skill, /Light:[\s\S]*checkpoint --profile light --authorize-request/)
+  assertTextMatches(skill, /Standard:[\s\S]*task ID/)
+  assertTextMatches(skill, /After explicit[\s\S]*run `approve`/)
+  assertTextMatches(skill, /## Load recovery only when signaled/)
   assertTextMatches(skill, /task lifecycle/)
   assertTextMatches(actor, /takeover <task-id> --expect-revision <revision>/)
   assertTextMatches(lifecycle, /Before `done`[\s\S]*submission\.unverified_items/)
   assertTextMatches(lifecycle, /--closeout-file <path>/)
-  assertTextMatches(skill, /Takeover transfers writer ownership only, never implementation approval/)
-  assertTextMatches(skill, /Run `done` only after explicit completion\/archive authorization/)
-  assertTextMatches(skill, /Git\s+delivery remains separate/)
+  assertTextMatches(skill, /Takeover changes writer only, never plan approval/)
+  assertTextMatches(skill, /`done` needs explicit completion\/archive authorization/)
+  assertTextMatches(skill, /Task authorization never grants Git/)
   assertTextMatches(lifecycle, /exactly one resolution[\s\S]*for every item ID/)
 })
 
 test('canonical skill bounds large command output without creating a new workflow', () => {
   const skill = text('skills/latch/SKILL.md')
   const lifecycle = text(lifecycleReference)
-  assertTextMatches(skill, /above 50 (?:worktree )?entries/i)
-  assertTextMatches(skill, /totals, status counts, and at most eight paths/)
-  assertTextMatches(skill, /unless the full list is requested/)
-  assertTextMatches(skill, /Avoid a full `git diff` unless review or exact\s+patch evidence/)
-  assertTextMatches(skill, /never join high-output commands with `;`/)
+  assertTextMatches(skill, /Bound large worktree output and full diffs/)
+  assertTextMatches(text('AGENTS.md'), /有界读取/)
   assertTextMatches(lifecycle, /Do not rerun an already passed, non-stale full build/)
 })
 
 test('canonical skill keeps high-frequency scope and isolation rules in the main file', () => {
   const skill = text('skills/latch/SKILL.md')
   assertTextMatches(skill, /do not read other Codex conversations/i)
-  assertTextMatches(
-    skill,
-    /Do not read or write\s+Records during startup, task recovery, or ordinary discussion without explicit\s+Record intent/,
-  )
+  assertTextMatches(skill, /Do not read other Codex conversations or Records during startup/)
   assertTextMatches(skill, /every task mutation/)
-  assertTextMatches(skill, /one uninterrupted mutation\s+flow/)
-  assertTextMatches(skill, /successful JSON response's `revision`/)
-  assertTextMatches(skill, /Refresh status after a revision conflict/)
-  assertTextMatches(skill, /`verify-all` for pending gates/)
-  assertTextMatches(skill, /`artifact add\|remove` for artifact-only changes/)
+  assertTextMatches(skill, /every successful JSON `revision`/)
+  assertTextMatches(skill, /Refresh status only\s+after a revision conflict/)
+  assertTextMatches(skill, /`verify-all` for pending\/stale gates/)
+  assertTextMatches(text(recoveryReference), /`artifact add\|remove` only for artifact-only repair/)
 })
 
 test('dev and check corrections use verify-all instead of review feedback', () => {
   const contents = [
-    text('skills/latch/SKILL.md'),
+    text(recoveryReference),
     text(lifecycleReference),
     text('docs/HANDBOOK.md'),
   ]
@@ -594,7 +613,7 @@ test('descriptive commands cannot stand in for automatic or manual gate evidence
     assertTextMatches(content, /submission\.unverified/)
   }
 
-  assertTextMatches(skill, /instruction-only commands[\s\S]*are not evidence/)
+  assertTextMatches(skill, /instruction-only[\s\S]*commands are not evidence/i)
   assertTextMatches(lifecycle, /zero exit code[\s\S]*does not prove that a manual step occurred/)
   assertTextMatches(lifecycle, /diagnostic success never verifies the manual action/)
   assertTextMatches(handBook, /只输出操作说明的命令不得配置为 gate/)
@@ -603,7 +622,7 @@ test('descriptive commands cannot stand in for automatic or manual gate evidence
 })
 
 test('current docs describe compact verification, artifact, and warning commands', () => {
-  const skill = text('skills/latch/SKILL.md')
+  const skill = `${text('skills/latch/SKILL.md')}\n${text(recoveryReference)}`
   const handBook = text('docs/HANDBOOK.md')
   const contract = text('docs/prd/2026-07-15-latch-final-product-contract.md')
   for (const content of [skill, handBook, contract]) {
@@ -621,15 +640,15 @@ test('current docs and canonical skill describe the bounded gate output contract
   const handBook = text('docs/HANDBOOK.md')
   const design = text('docs/DESIGN.md')
   for (const content of [skill, handBook, design]) {
-    assertTextMatches(content, /bounded|有界|固定容量/)
+    assertTextMatches(content, /bound|bounded|有界|固定容量/i)
     assertTextMatches(content, /--verbose/)
-    assertTextMatches(content, /JSON document/)
+    assertTextMatches(content, /JSON (?:mode keeps one )?document/)
     assertTextMatches(content, /log_ref/)
   }
   assertTextMatches(handBook, /4096 bytes[\s\S]*2048-byte[\s\S]*head[\s\S]*2048-byte[\s\S]*tail/)
   assertTextMatches(handBook, /16384 bytes[\s\S]*4096-byte[\s\S]*head[\s\S]*12288-byte[\s\S]*tail/)
   assertTextMatches(handBook, /--timeout-ms <milliseconds>[\s\S]*1\.\.86400000/)
-  assertTextMatches(skill, /truncation is not failure/)
+  assertTextMatches(skill, /truncation is not failure/i)
   assertTextMatches(design, /不经过 shell/)
 })
 
@@ -693,7 +712,7 @@ test('Light plan template entry stays consistent across CLI-facing instructions'
   const install = text('docs/AI_INSTALL.md')
   const handBook = text('docs/HANDBOOK.md')
 
-  assertTextMatches(skill, /latch checkpoint --print-plan-template light/)
+  assertTextMatches(skill, /print the Light scaffold/)
   for (const content of [install, handBook])
     assertTextMatches(content, /latch checkpoint --print-plan-template light/)
   assertTextMatches(routed, /[Ss]caffold[\s\S]*(?:shape-only|schema validity)/)
@@ -710,7 +729,7 @@ test('Light plan template entry stays consistent across CLI-facing instructions'
   )
   assertTextMatches(handBook, /完整 `TaskPlan`/)
   assertTextMatches(routed, /authorizable validation/)
-  assertTextMatches(skill, /12 Standard fields/)
+  assertTextMatches(skill, /all 12 fields/)
   assertTextMatches(handBook, /Standard scaffold 继续包含完整\s+12 字段/)
 })
 
@@ -729,7 +748,7 @@ test('startup reads context and project docs only when conditions require them',
   assertTextMatches(handBook, /不含 `current_task_id`[\s\S]*不得调用/)
   assertTextMatches(
     skill,
-    /only when the task affects product contracts|only when[\s\S]{0,80}affects product contracts/,
+    /Use 1–3 `docs\/INDEX\.md` documents only for product contracts/,
   )
   assertTextMatches(agents, /仅在产品契约/)
   assertTextMatches(handBook, /简单且证据充分的改动不固定读取项目文档/)
@@ -738,10 +757,10 @@ test('startup reads context and project docs only when conditions require them',
 test('canonical skill stops immediately when Latch is not initialized', () => {
   const skill = text('skills/latch/SKILL.md')
 
-  assertTextMatches(skill, /`not_initialized`: stop/)
-  assertTextMatches(skill, /no template\/plan\/`checkpoint`\/`init`/)
-  assertTextMatches(skill, /Explicit\s+one-off\/no-Latch proceeds/)
-  assertTextMatches(skill, /await init choice/)
+  assertTextMatches(skill, /On `not_initialized`, stop/)
+  assertTextMatches(skill, /do not scaffold, plan, checkpoint, or init/)
+  assertTextMatches(skill, /explicit\s+one-off\/no-Latch request may proceed/)
+  assertTextMatches(skill, /user's choice/)
 })
 
 test('continuous mutation flows reuse returned revision without redundant context reads', () => {
@@ -760,12 +779,12 @@ test('continuous mutation flows reuse returned revision without redundant contex
     assertTextMatches(content, /--expect-revision/)
     assertTextMatches(content, /`next_action`/)
     assertTextMatches(content, /revision conflict/)
-    assertTextMatches(content, /user input\s+boundary|用户输入\s*边界/)
+    assertTextMatches(content, /user[- ]input\s+boundary|用户输入\s*边界/)
     assertTextMatches(content, /(?:warning[\s\S]{0,40}判断|判断[\s\S]{0,40}warning|judgment[\s\S]{0,40}warning)/)
     assertTextMatches(content, /task (?:meaning|语义) change|task 语义变化/)
     assertTextMatches(
       content,
-      /do not reread context only for `revision` or\s+`next_action`|不得(?:只)?为 `revision` 或\s*`next_action` 重读 context/,
+      /(?:do not|never) reread context only for `revision` or\s+`next_action`|不得(?:只)?为 `revision` 或\s*`next_action` 重读 context/i,
     )
     assertTextMatches(content, /never auto-retry a revision\s+conflict|不(?:得)?自动重试 (?:revision )?conflict/)
   }
@@ -782,21 +801,16 @@ test('cross-session planning recovery stays artifact-first and bounded', () => {
   const handoff = text(actorReference)
   const groups = text(groupsReference)
 
-  assertTextMatches(agents, /常规恢复不得读取其他 Codex 会话/)
-  for (const content of [agents, groups]) {
-    assertTextMatches(
-      content,
-      /list --group <(?:group-)?id> --include-archive --json --brief/,
-    )
-    assertTextMatches(content, /context <task-id> --json --status/)
-  }
-  assertTextMatches(agents, /不得同时展开多张完整 context 或原始 event/)
+  assertTextMatches(agents, /常规恢复不读取其他 Codex 会话/)
+  assertTextMatches(groups, /list --group <id> --include-archive --json --brief/)
+  assertTextMatches(groups, /context <task-id> --json --status/)
+  assertTextMatches(agents, /不(?:得)?同时展开多张完整 context 或原始 event/)
   assertTextMatches(handoff, /Read-only orientation does not authorize claim, takeover/)
   assertTextMatches(handoff, /Starting a different task.*is not a takeover/)
   assertTextMatches(groups, /Do not create a planning or anchor task solely/)
-  assertTextMatches(agents, /不得只为(?:保存)?聊天连续性创建 planning 或 anchor task/)
+  assertTextMatches(agents, /不为聊天连续性创建 task/)
   assertTextMatches(lifecycle, /exactly one resolution[\s\S]*for every item ID/)
-  assertTextMatches(agents, /schema 5 必须通过 `--closeout-file`/)
+  assertTextMatches(agents, /schema 5[\s\S]{0,80}`--closeout-file`/)
   assertTextMatches(groups, /Group membership does not encode task order/)
   assertTextMatches(groups, /do not generate an automatic group-level next task/)
 })
@@ -810,7 +824,7 @@ test('review closeout reconciles unverified evidence before archive', () => {
   assertTextMatches(lifecycle, /submission\.unverified_items/)
   assertTextMatches(handBook, /submission\.unverified_items/)
 
-  assertTextMatches(skill, /archive intent alone[\s\S]{0,30}is not risk[\s\S]{0,20}acceptance/i)
+  assertTextMatches(text(recoveryReference), /Archive\s+intent alone is not risk acceptance/i)
   assertTextMatches(lifecycle, /latest explicit review[\s\S]*acceptance/)
   assertTextMatches(lifecycle, /followup\.owner\.account_uri/)
   assertTextMatches(lifecycle, /absolute credential-free `https:` URL/)
@@ -833,7 +847,7 @@ test('cross-session handoff requires takeover separate from implementation appro
     assertTextMatches(content, /implementation approval|implementation approval|实施批准/)
     assertTextMatches(content, /provenance.*clean|`provenance: clean`/)
   }
-  assertTextMatches(skill, /Takeover transfers writer ownership only, never implementation approval/)
+  assertTextMatches(skill, /Takeover changes writer only, never plan approval/)
   assertTextMatches(skill, /references\/session-actors-and-handoff\.md/)
   assertTextMatches(handoff, /task-id/)
   assertTextMatches(handoff, /phase\/revision/)

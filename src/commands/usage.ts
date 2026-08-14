@@ -55,31 +55,41 @@ export const commandUsage: Record<string, string> = {
     'Usage: latch abandon <task-id> --expect-revision <revision> --reason <text> [--json]',
 }
 
-const topLevelCommands = [
-  'init',
-  'checkpoint',
-  'use',
-  'list',
-  'context',
-  'context-pack',
-  'record',
-  'knowledge',
-  'benchmark',
-  'takeover',
-  'save',
-  'append-scope',
-  'update-verification-command',
-  'resolve-open-questions',
-  'approve',
-  'verify',
-  'verify-all',
-  'reconcile',
-  'reopen-review',
-  'artifact',
-  'submit',
-  'patch-submission-knowledge-impact',
-  'done',
-  'abandon',
+const commandGroups = [
+  {
+    title: 'Frequent workflow',
+    commands: ['list', 'context', 'checkpoint', 'approve', 'verify-all', 'submit', 'done'],
+  },
+  {
+    title: 'Recovery',
+    commands: [
+      'takeover',
+      'save',
+      'append-scope',
+      'update-verification-command',
+      'resolve-open-questions',
+      'reconcile',
+      'reopen-review',
+      'artifact',
+    ],
+  },
+  {
+    title: 'Specialized',
+    commands: ['init', 'use', 'record', 'knowledge', 'abandon'],
+  },
+  {
+    title: 'Diagnostics',
+    commands: [
+      'context-pack',
+      'benchmark',
+      'verify',
+      'patch-submission-knowledge-impact',
+    ],
+  },
+  {
+    title: 'Historical migration (explicit only)',
+    commands: ['claim', 'upgrade-v4', 'downgrade-v2'],
+  },
 ] as const
 
 function topLevelCommandUsage(command: string) {
@@ -97,8 +107,11 @@ export const usage = `Usage: latch <command> [options]
        latch --version [--json]
 
 Commands:
-${topLevelCommands
-  .map((command) => topLevelCommandUsage(command))
+${commandGroups
+  .map(
+    ({ title, commands }) =>
+      `${title}:\n${commands.map((command) => topLevelCommandUsage(command)).join('\n')}`,
+  )
   .join('\n')}`
 
 export const actorRequiredCommands = new Set([

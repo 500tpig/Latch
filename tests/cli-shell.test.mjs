@@ -110,7 +110,24 @@ test('top-level and command help have no side effects', () => {
     topHelp,
     /\[--reason <text> \| --authorization-file <path> \| --retrospective-file <path>\] \[--feedback <text>/,
   )
-  assert.doesNotMatch(topHelp, /upgrade-v4|downgrade-v2|claim <task-id>/)
+  const groupHeadings = [
+    'Frequent workflow:',
+    'Recovery:',
+    'Specialized:',
+    'Diagnostics:',
+    'Historical migration (explicit only):',
+  ]
+  let previousHeading = -1
+  for (const heading of groupHeadings) {
+    const headingIndex = topHelp.indexOf(heading)
+    assert.ok(headingIndex > previousHeading, heading)
+    previousHeading = headingIndex
+  }
+  assert.match(topHelp, /Frequent workflow:[\s\S]*list[\s\S]*checkpoint[\s\S]*verify-all[\s\S]*submit[\s\S]*done/)
+  assert.match(topHelp, /Recovery:[\s\S]*takeover[\s\S]*append-scope[\s\S]*reconcile[\s\S]*reopen-review/)
+  assert.match(topHelp, /Specialized:[\s\S]*init[\s\S]*record[\s\S]*knowledge[\s\S]*abandon/)
+  assert.match(topHelp, /Diagnostics:[\s\S]*context pack[\s\S]*benchmark context[\s\S]*verify <task-id>/)
+  assert.match(topHelp, /Historical migration \(explicit only\):[\s\S]*claim <task-id>[\s\S]*upgrade-v4[\s\S]*downgrade-v2/)
   assert.match(topHelp, /latch --version \[--json\]/)
 })
 
@@ -128,8 +145,8 @@ test('version reports package metadata in human and JSON modes without side effe
   assert.doesNotMatch(cliSource, /function (?:cliVersion|runVersion)/)
   assert.doesNotMatch(cliSource, /readFileSync/)
   assert.match(versionSource, /\.\.\/\.\.\/package\.json/)
-  assert.match(agentsSource, /禁止在 `src\/cli\.ts` 实现 command/)
-  assert.match(agentsSource, /独立参数、I\/O 与成功输出放 `src\/commands\/`/)
+  assert.match(agentsSource, /`src\/cli\.ts` 只负责启动、分流、分派和报错/)
+  assert.match(agentsSource, /命令逻辑放在 `src\/commands\/`/)
   const invocations = [
     {
       args: ['--version'],

@@ -2,10 +2,10 @@
 
 Read this reference for task-schema routing, minimum writer versions, and historical task boundaries.
 
-- CLI `0.5.0` is the current runner and the minimum writer for schema 5. New
+- CLI `0.6.0` is the current runner; `0.5.0` remains the minimum writer for schema 5. New
   `checkpoint` tasks use schema 5, default to the Standard profile, and bind the
   current canonical session actor as `primary_writer`.
-- CLI `0.5.0` may read schema 2–5. It rejects every schema 2–4 task mutation with
+- CLI `0.6.0` may read schema 2–5. It rejects every schema 2–4 task mutation with
   `writer_version_mismatch` before task, event, evidence, backup, or archive
   writes.
 - Schema 2–4 are historical read-only formats. The current workflow does not

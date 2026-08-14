@@ -5,169 +5,111 @@ description: Track Latch tasks for repository writes and behavior changes, and h
 
 # Latch
 
-Use for repo writes or behavior changes. Pure Q&A, read-only, no-write, and explicit
-no-Latch do not create tasks.
+Use for repository writes or observable behavior changes. Pure Q&A, read-only work,
+and explicit no-Latch requests do not create tasks. Record work requires explicit
+project-local save, recall, or CRUD intent.
 
-## Select the task runner first
+## Select and inspect
 
-- Runner: CLI `0.5.0`; use `node dist/cli.js` here and verified `latch@0.5.0` in adopters.
-- New tasks: schema 5, minimum writer `0.5.0`.
-- Read `task_schema_version` before mutation. Schema 2–4 tasks are read-only; never
-  claim, upgrade, downgrade, take over, or mutate them.
-- Stop when the task schema or runner cannot be determined.
-
-## Start with bounded state
-
-1. Run `git status --short`, then use the current runner for `list --json --brief`. On
-   `not_initialized`: stop; no template/plan/`checkpoint`/`init`. Explicit
-   one-off/no-Latch proceeds; else report/await init choice.
-2. task ID/`current_task_id`: run
-   the current runner for `context <task-id> --json --status`. If neither exists,
-   do not call context.
-3. Read artifacts first; use 1–3 `docs/INDEX.md` docs only when
-   task affects product contracts, architecture/install/docs, or evidence is insufficient.
-
-Above 50 worktree entries, report totals, status counts, and at most eight paths
-unless the full list is requested. Avoid a full `git diff` unless review or exact
-patch evidence requires it; never join high-output commands with `;`.
-
-Do not read other Codex conversations for routine recovery. Do not read or write
-Records during startup, task recovery, or ordinary discussion without explicit
-Record intent.
+- Here use `node dist/cli.js`: CLI `0.6.0`, envelope `3`, new-task schema 5.
+  Schema 2–4 are read-only. Stop if any version is unknown.
+- Run `git status --short`, then `list --json --brief`. On `not_initialized`, stop:
+  do not scaffold, plan, checkpoint, or init without the user's choice. An explicit
+  one-off/no-Latch request may proceed without Latch.
+- Read `context <task-id> --json --status` only for a known ID or returned
+  `current_task_id`; if neither exists, do not call context. Read task artifacts
+  first. Use 1–3 `docs/INDEX.md` documents only for product contracts,
+  architecture, install, documentation behavior, or missing evidence.
+- Do not read other Codex conversations or Records during startup, recovery, or
+  ordinary discussion. Bound large worktree output and full diffs.
 
 ## Classify before writing
 
 - A: unclear goal, acceptance, scope, root cause, or high-risk method stays in
-  `plan` for grill; do not implement.
-- B: fixed, low-risk scope with empty `open_questions` uses Light and the concrete
-  request as `source: user_request`.
-- C: plan confirmation, independent acceptance surfaces, a product choice, public
-  contract, migration, authentication, destructive data handling, or comparable
-  risk uses Standard and waits for explicit approval.
+  grill.
+- B: fixed, low-risk scope with empty `open_questions` uses Light.
+- C: plan confirmation, independent acceptance surfaces, a product choice,
+  public contract, migration, authentication, destructive data handling, or
+  comparable risk uses Standard and waits for explicit approval.
 
 Mechanical lint, typecheck, build, or documentation-index gates do not alone
 trigger C; gate count never selects a profile. If implementation reveals missing
-information, a changed root cause, new product choice, plan change, or scope
+information, a changed root cause, a new product choice, plan change, or scope
 expansion, stop and re-run A/B/C. A stays in grill, B needs a precise delta
-authorization. C shows short decision highlights and normally the created task id
-for full-plan review, then waits for reapproval; only the adjacent authorization
-exception below may bind a pre-checkpoint reply. Core applies structure and
-revision changes; it never classifies from gate count.
+authorization, and C shows short decision highlights plus the task ID and waits
+for reapproval. Core validates structure and revision; it does not classify.
 
-A decided-design status sync is a narrow B exception only when the design body is
-frozen, `open_questions` is empty, the user explicitly approved that design, the
-workspace change is limited to artifact status and index metadata, and no product
-choice, public behavior, or scope is added. Continue the open source task when the
-same writer can write and its approved scope covers the sync. Use an atomically
-authorized Light task only when the source task is closed, read-only, or absent.
-An open source task with writer or scope mismatch requires handoff or plan work;
-never create an overlapping shortcut task. If any condition fails, re-run A/B/C.
+For decided-design status sync or a `proposed` artifact, read
+[task lifecycle](references/task-lifecycle.md); never bypass writer, scope,
+approval, or revalidation.
 
-A design task may submit a `proposed` artifact for review, but its plan must cover
-the post-approval status and index sync. After the user approves the design,
-finish that sync in the same task and reverify; never create a Standard task whose
-only purpose is `proposed` to `approved`.
+## Happy path
 
-Task creation or continuation requires an explicit write request and grants no
-group, batch, Git, archive, cancellation, claim, or takeover authority.
+Use this single route:
 
-## Execute
-
-### Ordinary Light task
-
-Use the Light scaffold, then create and authorize atomically:
-
-```bash
-latch checkpoint --print-plan-template light
-latch checkpoint "Task title" --plan-file plan.json --profile light --authorize-request "User requested this scoped change" --json
+```text
+list/status → checkpoint/approve → verify-all → submit/review → done
 ```
 
-The scaffold is shape-only; the current runner performs authorizable validation
-and binds machine scope from `plan.workspace_scope.paths`. Implement, run every
-named gate, submit to `review`, and wait; never auto-complete.
+Slashes are profile/state alternatives. Reuse every successful JSON `revision` as
+the next `--expect-revision` and follow typed `next_action`. Refresh status only
+after a revision conflict, user-input boundary, judgment-requiring warning, or
+task meaning change. Never reread context only for `revision` or `next_action`,
+and never auto-retry a revision conflict.
 
-### Standard plan
+- Light: print the Light scaffold, then atomically create and authorize with
+  `checkpoint --profile light --authorize-request`. Implement, `verify-all`,
+  `submit`, and wait for review; run `done` only after explicit completion or
+  archive authorization. Budget: at most 7 CLI calls and 2 required user turns.
+- Standard: complete all 12 fields, `checkpoint`, show goal, material scope,
+  risks, blocking `open_questions`, and task ID, then wait. After explicit
+  approval run `approve`, implement, `verify-all`, `submit`, and wait for review.
+  Budget: at most 9 CLI calls and 3 required user turns. Do not paste plan JSON by
+  default.
 
-Complete all 12 Standard fields. Chat shows only the goal, material scope or
-risks, blocking `open_questions`, and task id; full plan truth stays in the task
-store for Latch-Board or `context <task-id>`. Do not paste the plan JSON by
-default.
+Scaffolds are shape-only; authorizable validation binds scope from
+`plan.workspace_scope.paths`. Submit enters review; never auto-complete.
 
-Then create:
+## Always-on safety
 
-```bash
-latch checkpoint --print-plan-template standard
-latch checkpoint "Task title" --plan-file plan.json --json
-```
-
-After explicit implementation authorization and authorizable validation succeeds:
-
-```bash
-latch approve <task-id> --expect-revision <n> --reason "User approved the current plan" --json
-```
-
-Authorization may immediately precede checkpoint only for already displayed,
-materially unchanged plan highlights and an adjacent explicit implementation
-reply. An ordinary write request does not approve; read
-[task lifecycle](references/task-lifecycle.md) for other fail-closed cases.
-
-Implement, run every named gate, submit to `review`, and wait. Creation or
-ownership changes never approve a plan.
-
-### Review, recovery, and closeout
-
-Read [task lifecycle](references/task-lifecycle.md) completely before
-`reopen_review`, feedback, submission reconciliation, or closeout. Writer mismatch
-is fail closed; use [session actors and handoff](references/session-actors-and-handoff.md).
-Archive intent alone is not risk acceptance, and Git delivery remains separate.
-
-## Invariants
-
-- Structured JSON options allow at most one stdin consumer and fail before task
-  mutation on invalid input.
-- Missing canonical actor or writer mismatch is fail closed. Grok and Codex are
-  equal hosts; never invent or export `LATCH_ACTOR`.
-- Pass `--expect-revision` to every task mutation. In one uninterrupted mutation
-  flow, use the successful JSON response's `revision` next and follow
-  `next_action`; do not reread context only for `revision` or
-  `next_action`. Refresh status after a revision conflict, user input boundary,
-  judgment-requiring warning, or task meaning change; never auto-retry a revision
-  conflict.
-- Takeover transfers writer ownership only, never implementation approval.
-- Run every gate; prefer `verify-all` for pending gates; instruction-only commands
-  `echo`/`printf`/`true` are not evidence. Output is bounded; `--verbose` streams it;
-  `--json` keeps one JSON document and streams to stderr; truncation is not failure;
-  `--timeout-ms` per gate; no `log_ref`.
-- In `dev` or `check`, use `verify-all`, not `approve --feedback`; exact violations
-  use `reconcile <task-id> --expect-revision <n> --json` without selectors. Both
-  advance proof generation; review uses `reopen-review`.
-- `workspace_scope.paths` must be repo-relative POSIX paths. Files omit `/`,
+- Pass `--expect-revision` to every task mutation. Missing canonical actor or
+  writer mismatch is fail closed. Grok and Codex are equal hosts; never invent or
+  export `LATCH_ACTOR`. Takeover changes writer only, never plan approval.
+- Structured JSON accepts at most one stdin consumer and fails before mutation.
+- `workspace_scope.paths` uses repo-relative POSIX paths: files omit `/`,
   directories end in `/`, existing directories without `/` fail, and missing
-  paths remain valid. Never infer scope or authorization from prose, paths, titles,
-  answers, or artifacts. Plan-delta commands are fail closed and follow the
-  current Handbook contract.
-- New tasks use schema 5 with minimum writer `0.5.0`. Schema 2–4 tasks are
-  historical read-only under CLI `0.5.0`. Never migrate during reads, startup,
-  build, or verification.
-- A gate pass requires successful command outcome, complete evidence, no covered
-  mutation, current proof generation, and no unresolved violation. Preserve
-  mutations for inspection; never reset, clean, stash, or auto-widen scope.
-- Use `artifact add|remove` for artifact-only changes and
-  `submit --verbose-warnings` when the full untracked list is needed.
-- Preserve task facts, gate semantics, submission evidence, and knowledge impact.
-- Run `done` only after explicit completion/archive authorization and `abandon`
-  only after explicit cancellation authorization; never auto-complete review.
-- Never perform Git add, commit, push, branch, reset, checkout, or clean without
-  separate explicit authorization.
+  paths remain valid. Never infer scope or authorization from prose, paths,
+  titles, answers, or artifacts. Plan-delta commands remain fail closed.
+- Run every named gate. Use `verify-all` for pending/stale gates and for in-scope
+  corrections in `dev` or `check`; do not use review feedback there.
+  Instruction-only `echo`/`printf`/`true` commands are not evidence. A pass needs
+  successful execution, complete evidence, an unchanged covered workspace,
+  current proof generation, and no unresolved violation.
+- Preserve unexpected mutations. Never reset, clean, stash, widen scope, or skip
+  proof. Truncation is not failure; JSON mode keeps one document, `--verbose`
+  streams details, and there is no `log_ref`.
+- Schema 2–4 tasks remain historical read-only; never migrate during reads,
+  startup, build, or verification. Preserve task facts, events, evidence,
+  submission facts, and knowledge impact.
+- `done` needs explicit completion/archive authorization and structured
+  resolution of every unverified item. `abandon` needs explicit cancellation.
+  Task authorization never grants Git add, commit, push, branch, checkout, reset,
+  clean, or external-repository writes.
 
-## Read one-level references on demand
+## Load recovery only when signaled
 
-Read a selected reference completely:
+On a stable `error.code`, typed `next_action`, blocked state, or explicit reviewer
+decision, read [recovery router](references/recovery.md) completely. Do not parse
+English messages, try fallback commands, or pre-load every recovery branch.
 
-- [task lifecycle](references/task-lifecycle.md): plan, gates, submission, closeout.
+Read one other reference completely only when its subject is active:
+
+- [task lifecycle](references/task-lifecycle.md): plan, authorization, gates,
+  submission, closeout.
 - [session actors and handoff](references/session-actors-and-handoff.md): actor,
-  takeover, handoff.
-- [groups](references/groups.md): `group_id`.
-- [knowledge and context](references/knowledge-and-context.md): Context packs.
-- [migration](references/migration.md): schema migration.
-- [records](references/records.md): Record.
+  writer mismatch, takeover, provenance.
+- [groups](references/groups.md): exact `group_id` operations.
+- [knowledge and context](references/knowledge-and-context.md): knowledge impact,
+  Context packs, benchmarks.
+- [schema routing](references/migration.md): writer versions and historical data.
+- [records](references/records.md): explicit Record operations.
