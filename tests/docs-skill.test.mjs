@@ -1,6 +1,18 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, lstatSync, readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -763,6 +775,21 @@ test('canonical skill stops immediately when Latch is not initialized', () => {
   assertTextMatches(skill, /user's choice/)
 })
 
+test('canonical skill requires a Latch activation signal before startup', () => {
+  const skill = text('skills/latch/SKILL.md')
+
+  assertTextMatches(skill, /description: Use Latch only for project opt-in/)
+  assertTextMatches(skill, /existing `\.latch`/)
+  assertTextMatches(skill, /known task continuation/)
+  assertTextMatches(skill, /explicit requests/)
+  assertTextMatches(skill, /never for write intent alone/)
+  assertTextMatches(skill, /Require a listed signal/)
+  assertTextMatches(skill, /run no Latch command/)
+  assertTextMatches(skill, /init question/)
+  assertTextMatches(skill, /inspect\s+`\.latch`, never `list`/)
+  assertTextMatches(skill, /After activation, run `git status --short`/)
+})
+
 test('continuous mutation flows reuse returned revision without redundant context reads', () => {
   const skill = text('skills/latch/SKILL.md')
   const agents = text('AGENTS.md')
@@ -864,9 +891,37 @@ test('skill scripts manage links without copied docs snapshots', () => {
   const link = text('scripts/link-latch-skill.sh')
   const check = text('scripts/check-latch-skill.sh')
   assertTextMatches(link, /ln -s/)
+  assertTextMatches(link, /TARGET="\$\{HOME\}\/\.agents\/skills\/latch"/)
+  assertTextMatches(link, /LEGACY_TARGET="\$\{HOME\}\/\.codex\/skills\/latch"/)
+  assertTextMatches(link, /readlink "\$\{LEGACY_TARGET\}"/)
+  assertTextMatches(check, /Legacy Latch link is still installed/)
   assert.doesNotMatch(link, /\bcp\b/)
   assert.doesNotMatch(link, /rm -rf/)
   assertTextMatches(link, /Refusing to replace non-symlink path/)
   assertTextMatches(check, /-L/)
   assert.equal(lstatSync(join(root, 'skills/latch')).isDirectory(), true)
+})
+
+test('skill link migration removes only the canonical legacy symlink', (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'latch-skill-link-'))
+  const source = join(root, 'skills/latch')
+  const target = join(home, '.agents/skills/latch')
+  const legacyTarget = join(home, '.codex/skills/latch')
+  const unmanagedSource = join(home, 'unmanaged-latch')
+  const env = { ...process.env, HOME: home }
+  t.after(() => rmSync(home, { recursive: true, force: true }))
+
+  mkdirSync(dirname(legacyTarget), { recursive: true })
+  symlinkSync(source, legacyTarget)
+  execFileSync('bash', [join(root, 'scripts/link-latch-skill.sh')], { env })
+
+  assert.equal(realpathSync(target), realpathSync(source))
+  assert.equal(existsSync(legacyTarget), false)
+
+  mkdirSync(unmanagedSource)
+  symlinkSync(unmanagedSource, legacyTarget)
+  execFileSync('bash', [join(root, 'scripts/link-latch-skill.sh')], { env })
+  execFileSync('bash', [join(root, 'scripts/check-latch-skill.sh')], { env })
+
+  assert.equal(readlinkSync(legacyTarget), unmanagedSource)
 })

@@ -69,19 +69,29 @@ pnpm skill:check
 pnpm skill:link
 ```
 
-目标为：
+canonical 目标为：
 
 ```text
-~/.codex/skills/latch
 ~/.agents/skills/latch
 ```
 
-链接脚本只管理符号链接，不复制文档快照。源码更新不证明外部 adopter 已完成 CLI
-安装或行为验收。
+`~/.codex/skills` 由 cc-switch 等 Codex 专属 skill manager 管理，Latch 不再向该目录
+安装自己的链接。链接脚本会删除仍精确指向本仓 canonical source 的旧
+`~/.codex/skills/latch`；不同 target 的 symlink、普通文件或目录均视为其他管理器所有，
+必须保留。
+
+用户级可发现不等于对所有 repo 自动生效。canonical Skill 只在项目 `AGENTS.md`
+明确接入、repo root 已存在 `.latch`、对话正在继续已知 Latch task，或用户显式请求
+Latch 时激活。普通仓库仅因请求会写文件或改变行为，不运行 Latch startup，也不询问
+是否初始化。
+
+链接脚本只管理上述符号链接，不复制文档快照，不修改 cc-switch 数据库或
+`~/.cc-switch/skills`。源码更新不证明外部 adopter 已完成 CLI 安装或行为验收。
 
 ## 初始化项目
 
-初始化是显式操作。未初始化目录中的 `latch list --json --brief` 返回
+初始化是显式操作。Latch 已被有效激活后，未初始化目录中的
+`latch list --json --brief` 返回
 `error.code: "not_initialized"`，不会创建 `.latch` 或其他项目文件。canonical
 Skill 收到该错误后停止，不打印 template、不准备 plan、不调用 `checkpoint`，也不
 自动执行 `latch init`。

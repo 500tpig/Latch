@@ -8,13 +8,18 @@ Latch 是个人 macOS 开发环境中的本地任务状态记录器。它帮助 
 
 ## 触发规则
 
-对会导致仓库写入或明确改变可观察行为的请求，先使用触发章 A/B/C 判定表：A 停在 grill；B 创建或续接 light task 并以请求授权；C 创建或续接 standard task，展示 plan 后等待明确 approve，通常先展示已创建的 task id。纯问答、只读探索、无写入意图或明确要求「不用 Latch」的请求不建 task。
+用户级 canonical Skill 可以跨 repo 被发现，但只有项目 `AGENTS.md` 明确接入、repo root
+已存在 `.latch`、对话正在继续已知 Latch task，或用户显式请求 Latch 时才激活。普通
+repo 仅因请求会写文件、修 bug 或改变可观察行为，不运行 Latch startup，不探测
+`list`，也不询问是否初始化。
+
+Latch 激活后，对会导致仓库写入或明确改变可观察行为的请求，先使用触发章 A/B/C 判定表：A 停在 grill；B 创建或续接 light task 并以请求授权；C 创建或续接 standard task，展示 plan 后等待明确 approve，通常先展示已创建的 task id。纯问答、只读探索、无写入意图或明确要求「不用 Latch」的请求不建 task。
 
 已决设计的纯状态同步是 B 的窄例外：设计正文必须已冻结、`open_questions` 为空、用户已明确批准当前设计，改动只涉及 artifact 状态与索引元数据，且不新增产品选择、公共行为或 scope。可写且 approved scope 已覆盖的 open 来源 task 继续原 lifecycle；关闭、只读或不存在来源 task 时才创建并原子授权 Light task。open 来源 task 存在 writer 或 scope 问题时先处理 handoff 或 plan。任一条件不满足时重新执行 A/B/C。
 
 设计 task 可以用 `proposed` artifact 进入 review，但 plan 必须包含批准后的状态与索引同步。用户批准设计后复用同一 task 完成同步和验证，不为状态迁移单独创建 Standard task。Standard plan 的明确授权可以紧邻发生在 checkpoint 前，但仅限 Agent 已展示 material plan 且持久化内容未发生材料变化；需判断 warning、plan 变化、普通写入请求或旧消息均不能授权。
 
-启动时，`latch list --json --brief` 在未初始化目录中返回稳定的
+有效激活后的启动阶段，`latch list --json --brief` 在未初始化目录中返回稳定的
 `error.code: "not_initialized"`。canonical Skill 收到该错误后立即停止 Latch
 流程，不生成 template 或 plan，不调用 `checkpoint`，也不自动执行 `latch init`。
 该只读探测不创建项目文件。

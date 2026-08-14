@@ -8,7 +8,7 @@ Document-Status: current product contract
 
 Date: 2026-07-15
 
-Revision: 8
+Revision: 9
 
 Released: 2026-07-16 — C1–C8 已交付；本文件是唯一 current 产品契约入口。
 
@@ -23,6 +23,8 @@ Updated: 2026-07-28 — 修订 A/B/C 的多 gate 判定，按独立验收面与�
 Updated: 2026-08-03 — schema 5、CLI `0.5.0`、structured closeout 与 richer event/view 进入 Latch repo current；外部 adopter 保持 pending。
 
 Updated: 2026-08-13 — 区分已决设计状态记录与产品决策，并允许紧邻 checkpoint 的明确 Standard 实施授权复用。
+
+Updated: 2026-08-14 — 将用户级 canonical Skill 的自动激活收窄到已接入 repo、已有 `.latch`、已知 task 或显式请求；普通 repo 写入不再触发初始化询问。Source-Task: `20260814031650489-收窄-latch-全局-skill-触发并兼容-cc-switch-管理-4ea1d4`。
 
 ## 0. 地位
 
@@ -94,6 +96,11 @@ task（唯一可写生命周期）、events、primary_writer、group_id、模块
 27. Latch repo current 与外部 adopter rollout 分开记录；外部 repo 未完成独立验收前必须保持 `pending`。
 
 ## 6. 触发与授权
+
+用户级 canonical Skill 的可发现范围不等于产品触发范围。只有项目 `AGENTS.md` 明确
+接入、repo root 已存在 `.latch`、对话正在继续已知 Latch task，或用户显式请求 Latch
+时，才进入触发章。普通 repo 仅因请求会写文件、修 bug 或改变可观察行为，不运行
+Latch startup，不调用 `list`，也不询问是否初始化。
 
 触发章的判定表是权威定义：A 命中不明确或高风险改法不清时停在 grill；B 在范围明确、低风险且无未决问题时创建或续接 light task，并以请求作为授权，多个 lint、typecheck、build、文档索引等机械检查本身不触发 Standard；C 在需要方案确认、存在多个独立验收面、产品选择、公共契约或高风险面时创建或续接 standard task，展示 plan 后等待明确 approve，通常先展示已创建的 task id。Light task 出现 plan change、产品选择或 scope 扩大时，必须重新执行 A/B/C 判断，并按结果保持 Light、停在 grill 或升级 Standard。
 

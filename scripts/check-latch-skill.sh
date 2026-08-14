@@ -3,17 +3,21 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE="${ROOT}/skills/latch"
-TARGETS=("${HOME}/.codex/skills/latch" "${HOME}/.agents/skills/latch")
+TARGET="${HOME}/.agents/skills/latch"
+LEGACY_TARGET="${HOME}/.codex/skills/latch"
 
-for target in "${TARGETS[@]}"; do
-  if [[ ! -L "${target}" ]]; then
-    echo "Not a symbolic link: ${target}" >&2
-    exit 1
-  fi
-  if [[ "$(cd "$(dirname "${target}")" && realpath "${target}")" != "$(realpath "${SOURCE}")" ]]; then
-    echo "Wrong link target: ${target}" >&2
-    exit 1
-  fi
-done
+if [[ ! -L "${TARGET}" ]]; then
+  echo "Not a symbolic link: ${TARGET}" >&2
+  exit 1
+fi
+if [[ "$(cd "$(dirname "${TARGET}")" && realpath "${TARGET}")" != "$(realpath "${SOURCE}")" ]]; then
+  echo "Wrong link target: ${TARGET}" >&2
+  exit 1
+fi
 
-echo "Latch skill links are valid."
+if [[ -L "${LEGACY_TARGET}" && "$(readlink "${LEGACY_TARGET}")" == "${SOURCE}" ]]; then
+  echo "Legacy Latch link is still installed: ${LEGACY_TARGET}" >&2
+  exit 1
+fi
+
+echo "Latch skill link is valid."

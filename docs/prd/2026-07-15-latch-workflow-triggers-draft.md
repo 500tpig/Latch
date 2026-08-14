@@ -8,13 +8,15 @@ Document-Status: current component of `2026-07-15-latch-final-product-contract.m
 
 Date: 2026-07-15
 
-Revision: 5
+Revision: 6
 
 Released: 2026-07-16 — 全面 current 发布。
 
 Updated: 2026-07-28 — 修订多 gate 判定与 Light 中途重新分类规则。
 
 Updated: 2026-08-03 — current task writer 更新为 schema 5。
+
+Updated: 2026-08-14 — 增加 canonical Skill 激活前提，区分用户级可发现与 repo 采用；普通 repo 写入不再单独触发 Latch。Source-Task: `20260814031650489-收窄-latch-全局-skill-触发并兼容-cc-switch-管理-4ea1d4`。
 
 **定位：** 承接 handoff 用户流程中尚未落入分章的可执行规则；Light 章「判定表 B」、Group 章「batch 委托」以本节为准，不重开 Actor/Light/Group 已定产品取舍。
 
@@ -36,11 +38,24 @@ Updated: 2026-08-03 — current task writer 更新为 schema 5。
 
 ## 2. 任务触发（Skill + 用户）
 
-### 2.1 默认建 light
+### 2.1 Skill 激活前提
+
+用户级 canonical Skill 只有命中以下至少一项时才激活：
+
+- 项目 `AGENTS.md` 明确接入 Latch；
+- repo root 已存在 `.latch`；
+- 对话正在继续已知 Latch task；
+- 用户显式请求 Latch 或 project-local Record 操作。
+
+普通 repo 仅因请求会写文件、修 bug 或改变可观察行为，不运行 Latch startup，不调用
+`list`，也不询问是否初始化。若唯一未知项是 `.latch` 是否存在，只读检查该路径；不得
+用 `list` 作为激活探针。
+
+### 2.2 激活后默认建 light
 
 出现**将导致仓库写入**或**明确修 bug / 改可观察行为**的请求时，Skill **应**创建或续接 Latch task（默认 `profile: light`，条件不足则 plan 或 standard）。
 
-### 2.2 不建
+### 2.3 不建
 
 | 情况 | 行为 |
 |---|---|
@@ -48,11 +63,12 @@ Updated: 2026-08-03 — current task writer 更新为 schema 5。
 | 纯问答、只读探索、无写入意图 | 不建 |
 | 用户只要看状态 | `list` / `context`，不建 |
 
-### 2.3 与显式 Latch 请求
+### 2.4 与显式 Latch 请求
 
-最终契约取代 v2、`AGENTS.md` 和 Skill 中「只有用户说出 Latch 才建 task」的规则。显式 Latch 请求仍直接进入本章的 A/B/C 判定，不是唯一入口。
+显式 Latch 请求直接进入本章的 A/B/C 判定，但不是唯一入口；项目接入、已有 `.latch`
+或已知 task 同样可以激活。没有这些激活信号时，普通写入请求不进入本章。
 
-### 2.4 信息不足
+### 2.5 信息不足
 
 先 grill / 写 `open_questions`，**不实施**；可先建 task 记录已知/未知（Light 章）。
 

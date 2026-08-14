@@ -1,19 +1,18 @@
 ---
 name: latch
-description: Track Latch tasks for repository writes and behavior changes, and handle explicit project-local Record save, recall, and conversion requests.
+description: Use Latch only for project opt-in, existing `.latch`, known task continuation, explicit requests, or explicit project-local Record operations; never for write intent alone.
 ---
 
 # Latch
 
-Use for repository writes or observable behavior changes. Pure Q&A, read-only work,
-and explicit no-Latch requests do not create tasks. Record work requires explicit
-project-local save, recall, or CRUD intent.
+Require a listed signal. Otherwise run no Latch command or init question; inspect
+`.latch`, never `list`. Pure Q&A and explicit no-Latch requests create no task.
 
 ## Select and inspect
 
 - Here use `node dist/cli.js`: CLI `0.6.0`, envelope `3`, new-task schema 5.
   Schema 2–4 are read-only. Stop if any version is unknown.
-- Run `git status --short`, then `list --json --brief`. On `not_initialized`, stop:
+- After activation, run `git status --short`, then `list --json --brief`. On `not_initialized`, stop:
   do not scaffold, plan, checkpoint, or init without the user's choice. An explicit
   one-off/no-Latch request may proceed without Latch.
 - Read `context <task-id> --json --status` only for a known ID or returned
