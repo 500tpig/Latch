@@ -19,7 +19,7 @@ schema 5 current writer、historical read-only、phase、验证、review 和结�
 
 ### [本机安装](AI_INSTALL.md)
 
-个人 macOS 环境的 CLI `0.5.0`、canonical Skill、项目初始化、备份和安装回退边界。
+个人 macOS 环境的 current runner、canonical Skill、项目初始化、备份和安装回退边界。
 
 ### [文档分层](ARTIFACTS.md)
 
@@ -57,28 +57,28 @@ v2 / Schema 5 观察期的 archive 定量样本分离。
 - 边界：不修改 current 产品契约，不直接授权 CLI、Core、Skill 或外部 repo 变更；
   不替代 schema 5 观察期评估（schema 5 满 10 张后另建评估 task）。
 
-## 已批准待实现设计
+## 已实现设计
 
 ### [Latch 0.5 流程与指令面收口契约](briefs/2026-08-13-latch-consolidation-contract.md)
 
-- 状态：`approved`；
+- 状态：`implemented`；文件内设计状态保留为实施前的 `approved`；
 - Source-Task：`20260813080446817-设计-latch-0-5-流程与指令面收口-73a486`；
 - 用途：冻结 Latch `0.5.0` / schema 5 的默认 Agent happy path、Recovery router、命令分层、
   信息归属、bounded Token budget，以及 CLI `0.6.0` / envelope 3 的 typed `next_action` 切换边界；
-- 边界：当前 CLI、Core、schema、proof 与命令行为尚未改变；不设计万能 `advance`，不合并原子
-  primitive，不增加 fallback 或双路径，也不创建后续 implementation task；M1 / A1 仅限 Latch
-  repo，外部 reader 与安装 rollout 继续按 `ADOPTER_SYNC.md` 独立授权。
+- 实现：CLI `0.6.0`、envelope 3 与 typed `next_action` 由 commit `0c94c8c` 交付；Agent
+  常驻指令、Recovery router 与 CLI 分层帮助收口由 commit `c754150` 交付；
+- 边界：不设计万能 `advance`，不合并原子 primitive，不增加 fallback 或双路径；外部
+  reader 与安装 rollout 继续按 `ADOPTER_SYNC.md` 独立授权。
 
 ### [Gate stdout/stderr 有界输出契约](briefs/2026-08-12-latch-gate-output-contract.md)
 
-- 状态：`approved`；
+- 状态：`implemented`；文件内设计状态保留为实施前的 `approved`；
 - Source-Task：`20260813033522311-设计-latch-gate-有界输出契约-86cf23`；
 - 用途：冻结 `verify`、`verify-all` 与共享 command runner 的默认有界摘要、显式 verbose、
   JSON stream 隔离、timeout、signal、UTF-8、超大输出和 formatter 复用契约；
-- 边界：current CLI/Core 行为尚未改变；首版不持久化普通 gate 日志，不提供 `log_ref`，
-  不把日志或摘要伪装为 workspace proof，也不依赖聊天保存日志。
-
-## 已实现设计
+- 实现：上述 current CLI / Core 行为由 commit `502a489` 交付；
+- 边界：首版不持久化普通 gate 日志，不提供 `log_ref`，不把日志或摘要伪装为
+  workspace proof，也不依赖聊天保存日志。
 
 ### [轻量 lifecycle delta CLI 契约](briefs/2026-08-12-latch-lifecycle-delta-contract.md)
 
