@@ -11,14 +11,15 @@ rollout，monitoring 与 appearance-sec 仍保持 `pending`。
 | 项目 | 状态 | 当前证据 | 独立后续 |
 |---|---|---|---|
 | Latch | CLI `0.6.0` / envelope 3 / schema 5 current | envelope 3 producer commit `0c94c8c`；gate bounded output commit `502a489`；Agent 常驻指令与 CLI 帮助收口 commit `c754150`（当前 HEAD） | 本仓 current 不证明全局 `latch` 链接或 canonical Skill 已传播到其它 repo |
-| Latch-Board | reader-v3 rollout 已完成 | 独立 task `20260814023156010-将-latch-board-一次性切换到-envelope-3-reader-v-5fb1b3` 已在 revision 15 以 `done` 归档；Git commit `b6d2476` | 107 项测试、生产构建和真实 reader-v3 流程已通过；未启动浏览器或 dev server，Browser UI 验收未执行 |
+| Latch-Board | reader-v3 rollout 已完成 | 独立 task `20260814023156010-将-latch-board-一次性切换到-envelope-3-reader-v-5fb1b3` 已在 revision 15 以 `done` 归档；reader-v3 rollout commit `b6d2476`；README 修复 commit `dc6486890e70ebbc65a3d01b0acfedffe0078fa8`（将 CLI envelope 说明更正为 `schema_version: 3`） | 107 项测试、生产构建和真实 reader-v3 流程已通过；未启动浏览器或 dev server，Browser UI 验收未执行 |
 | monitoring | pending | 本次未读取或修改该 repo，也未迁移其 historical task | 独立 Standard task 核对 CLI/Skill 安装、schema 5 新 task 与 historical read-only 展示 |
 | appearance-sec | pending | 本次未读取或修改该 repo，也未创建 adopter task | 独立 Standard task 核对 CLI/Skill 安装、schema 5 新 task 与空状态流程 |
 
 本矩阵不表示全局 CLI 已重新链接、canonical Skill 已完成安装传播、Board Browser UI
-已验收或全面 rollout 已完成。只读核验还发现，Board commit `b6d2476` 的 `README.md`
-顶部仍有一处将 CLI envelope 写为 `schema_version: 2`；该残留文案与已交付的
-reader-v3 实现、测试及同文件后文不一致，本次不修改 Board repo。
+已验收或全面 rollout 已完成。Board `README.md` 已在 commit
+`dc6486890e70ebbc65a3d01b0acfedffe0078fa8` 将 current CLI envelope 说明更正为
+`schema_version: 3`；该文案修复不改变 Browser UI 未验收、monitoring / appearance-sec
+pending、安装传播未核验和全面 rollout 未完成等边界。
 
 ## Current schema 边界
 
