@@ -100,8 +100,74 @@ export type ResolveOpenQuestionsResult = TaskWriteResultV2 & {
 const verificationCommandSentinel = 'replace-with-real-command'
 const instructionOnlyGateCommands = new Set(['echo', 'printf', 'true'])
 
+function implementationAuthorizationExample(
+  source: ImplementationAuthorizationInput['source'],
+) {
+  return {
+    kind: 'implementation_authorization' as const,
+    source,
+    reason: 'Describe the authorized plan delta.',
+    scope: { summary: 'Describe the current post-delta plan.' },
+  }
+}
+
 function invalidArguments(message: string): never {
   throw new PlanDeltaError('invalid_arguments', message)
+}
+
+function assertImplementationAuthorizationInput(
+  input: ImplementationAuthorizationInput,
+  commandName: string,
+  allowedSources: readonly ImplementationAuthorizationInput['source'][],
+) {
+  const example = JSON.stringify(
+    implementationAuthorizationExample(allowedSources[0] ?? 'user_delta'),
+  )
+  if (!isRecord(input))
+    invalidArguments(
+      `${commandName} authorization must be implementation_authorization JSON. Example: ${example}`,
+    )
+  if (input.kind !== 'implementation_authorization')
+    invalidArguments(
+      `${commandName} authorization kind must be implementation_authorization. Example: ${example}`,
+    )
+  if (
+    typeof input.source !== 'string' ||
+    !allowedSources.includes(input.source)
+  )
+    invalidArguments(
+      `${commandName} authorization source must be ${allowedSources.join(' or ')}. Example: ${example}`,
+    )
+  if (typeof input.reason !== 'string' || input.reason.trim() === '')
+    invalidArguments(
+      `${commandName} authorization reason must be a non-empty string. Example: ${example}`,
+    )
+  if (!isRecord(input.scope))
+    invalidArguments(
+      `${commandName} authorization scope must be an object with scope.summary. Example: ${example}`,
+    )
+  if (
+    typeof input.scope.summary !== 'string' ||
+    input.scope.summary.trim() === ''
+  )
+    invalidArguments(
+      `${commandName} authorization scope.summary must be a non-empty string. Example: ${example}`,
+    )
+  if (
+    input.scope.paths !== undefined &&
+    (!Array.isArray(input.scope.paths) ||
+      input.scope.paths.some((entry) => typeof entry !== 'string'))
+  )
+    invalidArguments(
+      `${commandName} authorization scope.paths must be a string array. Example: ${example}`,
+    )
+  if (
+    input.scope.notes !== undefined &&
+    (typeof input.scope.notes !== 'string' || input.scope.notes.trim() === '')
+  )
+    invalidArguments(
+      `${commandName} authorization scope.notes must be a non-empty string. Example: ${example}`,
+    )
 }
 
 function typedTaskRead(store: TaskStoreV2, id: string) {
@@ -238,13 +304,7 @@ function materializeAuthorization(
   ],
 ) {
   if (input === undefined) return undefined
-  if (
-    input?.kind !== 'implementation_authorization' ||
-    !allowedSources.includes(input.source)
-  )
-    invalidArguments(
-      `${commandName} authorization source must be ${allowedSources.join(' or ')}.`,
-    )
+  assertImplementationAuthorizationInput(input, commandName, allowedSources)
   if (
     input.source === 'user_delta' &&
     !hasValidImplementationAuthorization(task)

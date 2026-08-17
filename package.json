@@ -9,7 +9,8 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "pnpm build && node --test tests/*.test.mjs",
-    "check": "pnpm typecheck && pnpm test",
+    "check:instruction-budget": "node --test --test-name-pattern=\"high-frequency instruction growth requires a reviewed aggregate baseline\" tests/docs-skill.test.mjs",
+    "check": "pnpm check:instruction-budget && pnpm typecheck && pnpm test",
     "latch": "pnpm build && node dist/cli.js",
     "skill:link": "bash scripts/link-latch-skill.sh",
     "skill:check": "bash scripts/check-latch-skill.sh"

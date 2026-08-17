@@ -36,12 +36,12 @@ Latch 激活后，对会导致仓库写入或明确改变可观察行为的请�
 - schema 5 新 task 写入根 `provenance: clean`；历史 task 缺失该字段时按 `clean` 读取，只有明确的重叠并行或隔离恢复才显式修改。
 - light request 与 retrospective task 可在 `checkpoint` 时原子写入 work basis，不需要创建后再拼接生命周期状态。
 - plan validation 分为历史可读 shape、schema 5 writable 和 authorizable 三层；只有第三层在创建或更新 work basis 前要求执行字段完整，并按 profile 检查 Light gate。
-- Light 与 Standard scaffold 共用 `TaskPlan` shape，只证明结构合法，不能直接获得 work basis。
+- Light 与 Standard scaffold 共用 `TaskPlan` shape，只证明结构合法，不能直接获得 work basis。Light 模板同样给出 `name`、`command: string[]`、`kind: gate` 的最小示例，并保留 `replace-with-real-command` sentinel。
 - 新 plan 使用 `workspace_scope.paths` 保存机器范围；自然语言 `plan.scope`、授权摘要和 artifact 不替代该字段，获得 work basis 前 paths 必须非空。
 - `append-scope` 是独立的 scope-only plan delta：只追加 normalized path，拒绝 repo root、glob、删除、替换、缩小和 no-op。未提供结构化 authorization 时回到 `plan`；只有显式 `user_delta` 或 `user_approve` 通过 post-delta 校验后，才原子绑定新 plan revision 并进入 `dev`。
 - `update-verification-command` 是独立的 gate-command-only plan delta：只按 exact name 更新唯一现有 `kind: gate` 的 argv，拒绝未知 name、重复 name、diagnostic、空 argv、相同 argv、sentinel 与 instruction-only command。未提供结构化 authorization 时回到 `plan`；只有显式 `user_delta` 或 `user_approve` 通过 post-delta 校验后，才原子绑定新 plan revision 并进入 `dev`。
 - `resolve-open-questions` 是独立的原子 open-question plan delta：只接受 `plan` 阶段当前全部问题的结构化 exact resolution，清空 `plan.open_questions`，并按输入顺序记录 `plan_updated` 与 `decision_recorded` events。未提供 authorization 时回到 `plan`；只有显式 `user_approve` 通过 post-delta 校验后，才原子绑定新 plan revision 并进入 `dev`。
-- named gate 保存 command outcome、before/after workspace evidence、workspace effect 和 proof generation；只有当前 generation 上的完整无 mutation proof 才能参与 submit。
+- named gate 保存 command outcome、before/after workspace evidence、workspace effect 和 proof generation；只有当前 generation 上的完整无 mutation proof 才能参与 submit。`--fix`、`--write` 或等价自动修复不得作为 gate；修复在 `dev` 阶段运行，gate 使用只检查命令。
 - `verify`、diagnostic 和 `verify-all` 共用不经过 shell 的 streaming command runner；stdout 与 stderr 分别使用固定容量 head/tail、原始 byte count 和 monotonic duration，输出超过摘要配额只标记截断，不改变 command outcome。
 - gate 的 ephemeral output projection 不写入 task、event 或 workspace evidence。默认 human 与 JSON 响应只返回有界摘要；显式 `--verbose` 实时转发本次完整输出，`--json --verbose` 仍保证 stdout 只有一个 JSON document，完整 gate stream 只写 stderr。
 - gate output 首版不持久化，不提供 `log_ref`、日志目录或隐式 cache；workspace evidence ref 只证明 workspace snapshot 与 delta，不引用普通 gate 日志。
@@ -52,6 +52,7 @@ Latch 激活后，对会导致仓库写入或明确改变可观察行为的请�
 - `context --json --review` 组合最小 lifecycle、named gate、live proof 与有界的 schema 5 submission/closeout 投影，默认不携带历史，也不复制 task 真源或 verification proof。
 - CLI `0.6.0` 的 JSON envelope 统一为 `schema_version: 3`；`next_action` 只允许 typed object（`command` / `await_user` / `stop`），不再返回字符串。CLI `0.5.x` 的 envelope 2 继续冻结为 string shape；reader 与 producer 必须精确版本配对，禁止同一 reader 同时接受 envelope 2 / 3。
 - status / review / brief 有 UTF-8 hard budget（`3072` / `6144` / `8192` bytes），并共享字段上限、集合上限、truncation metadata 与固定 clamp 顺序；unverified / closeout 正文是 review 中最后移除的可选内容。
+- always-loaded Agent 指令预算由 `tests/fixtures/instruction-budget-v1.json` 的 reviewed ratchet 管理：estimate-unit hard cap 保持不变；byte 侧使用 `reviewed_baseline_bytes`、`hard_cap_bytes: 12288`、`min_headroom_bytes: 1024` 和独立 review reason。当前 surface 不得超过 reviewed baseline，baseline 与 hard cap 至少保留 1024 bytes；超过 hard cap 时必须 redesign 或 split，不得只提高 `hard_cap_bytes`。`pnpm check` 在其它检查前运行 instruction-budget 预检。
 - schema 5 review submission 的 proof stale 时，typed `next_action` 返回 `{ "kind": "command", "command": "reopen-review" }`；writer mismatch 仍先返回 await-user takeover，并通过 bounded `after_takeover_next_action` 预告接管后的恢复动作。
 - 所有成功 task mutation 的 JSON 复用 `status` 投影的 `next_action` 派生规则，并按 mutation 后的 task、writer 与 live proof 状态返回下一步；已有 proof 时还复用同一 bounded `workspace_proof` 投影，没有 proof 时省略该字段；归档 mutation 返回 `{ "kind": "stop", "reason": "archived_read_only" }`。
 - status 与成功 mutation JSON 复用 bounded `shared_worktree` 投影，统计其他 open task 及 plan scope overlap；status/review sample 最多 4 条、brief 最多 8 条确定性排序的 task ID 与相交 path。缺少 historical `workspace_scope` 的 task 只计入 active task，不推断 overlap。

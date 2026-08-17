@@ -32,15 +32,14 @@ const lightPlanDefaultFields = [
   'open_questions',
 ] as const satisfies ReadonlyArray<keyof TaskPlan>
 
-const standardVerificationPlanScaffold: TaskPlan['verification_plan'] = [
+const verificationCommandSentinel = 'replace-with-real-command'
+const verificationPlanScaffold: TaskPlan['verification_plan'] = [
   {
     name: 'check',
-    command: ['replace-with-real-command'],
+    command: [verificationCommandSentinel],
     kind: 'gate',
   },
 ]
-
-const verificationCommandSentinel = 'replace-with-real-command'
 
 type LightPlanCoreField = (typeof lightPlanCoreFields)[number]
 type LightPlanDefaultField = (typeof lightPlanDefaultFields)[number]
@@ -73,6 +72,20 @@ function actualType(value: unknown): string {
   return typeof value
 }
 
+function invalidFieldMessage(
+  field: string,
+  expected: string,
+  value: unknown,
+  minimumLegalValue: unknown,
+  path: string,
+) {
+  return (
+    `Invalid ${field} in ${path}: expected ${expected}, got ${actualType(value)}. ` +
+    `Minimal legal value: ${JSON.stringify(minimumLegalValue)}. ` +
+    planTemplateHelp
+  )
+}
+
 function invalidField(
   field: string,
   expected: string,
@@ -81,9 +94,7 @@ function invalidField(
   path: string,
 ): never {
   throw new Error(
-    `Invalid ${field} in ${path}: expected ${expected}, got ${actualType(value)}. ` +
-      `Minimal legal value: ${JSON.stringify(minimumLegalValue)}. ` +
-      planTemplateHelp,
+    invalidFieldMessage(field, expected, value, minimumLegalValue, path),
   )
 }
 
@@ -162,52 +173,69 @@ function validateVerificationPlan(value: unknown, path: string) {
       path,
     )
 
+  const errors: string[] = []
   const verificationNames = new Set<string>()
+  const exampleItem = verificationPlanScaffold[0]
   for (const verification of value) {
-    if (!isRecord(verification))
-      invalidField(
-        'plan.verification_plan[]',
-        'object',
-        verification,
-        {
-          name: 'check',
-          command: ['replace-with-real-command'],
-          kind: 'gate',
-        },
-        path,
+    if (!isRecord(verification)) {
+      errors.push(
+        invalidFieldMessage(
+          'plan.verification_plan[]',
+          'object',
+          verification,
+          exampleItem,
+          path,
+        ),
       )
-    requireString(
-      verification.name,
-      'verification_plan.name',
-      path,
-      'check',
-    )
-    requireStringArray(
-      verification.command,
-      'verification_plan.command',
-      path,
-      ['replace-with-real-command'],
-    )
-    if (verification.command.length === 0)
-      throw new Error(
-        `Invalid empty verification_plan.command in ${path}: expected non-empty string[], got empty array. ` +
-          'Minimal legal value: ["replace-with-real-command"]. ' +
-          planTemplateHelp,
+      continue
+    }
+    if (typeof verification.name !== 'string' || verification.name.trim() === '')
+      errors.push(
+        invalidFieldMessage(
+          'verification_plan.name',
+          'non-empty string',
+          verification.name,
+          'check',
+          path,
+        ),
       )
-    if (verificationNames.has(verification.name))
-      throw new Error(
+    else if (verificationNames.has(verification.name))
+      errors.push(
         `Duplicate verification_plan.name in ${path}: ${verification.name}.`,
       )
-    verificationNames.add(verification.name)
+    else verificationNames.add(verification.name)
+    if (
+      !Array.isArray(verification.command) ||
+      verification.command.some((entry) => typeof entry !== 'string')
+    )
+      errors.push(
+        invalidFieldMessage(
+          'verification_plan.command',
+          'string[]',
+          verification.command,
+          [verificationCommandSentinel],
+          path,
+        ),
+      )
+    else if (verification.command.length === 0)
+      errors.push(
+        `Invalid empty verification_plan.command in ${path}: expected non-empty string[], got empty array. ` +
+          `Minimal legal value: ${JSON.stringify([verificationCommandSentinel])}. ` +
+          planTemplateHelp,
+      )
     if (verification.kind !== 'gate' && verification.kind !== 'diagnostic')
-      invalidField(
-        'verification_plan.kind',
-        '"gate" | "diagnostic"',
-        verification.kind,
-        'gate',
-        path,
+      errors.push(
+        invalidFieldMessage(
+          'verification_plan.kind',
+          '"gate" | "diagnostic"',
+          verification.kind,
+          'gate',
+          path,
+        ),
       )
   }
+  if (errors.length === 1) throw new Error(errors[0])
+  if (errors.length > 1) throw new Error(errors.join('; '))
 }
 
 function stringArraySpec(
@@ -268,7 +296,7 @@ const planFieldSpecs = {
   user_flow: stringArraySpec('user_flow'),
   out_of_scope: stringArraySpec('out_of_scope'),
   verification_plan: {
-    scaffold: [],
+    scaffold: verificationPlanScaffold,
     shapeRequired: true,
     writableRequired: false,
     summary:
@@ -325,11 +353,7 @@ export function planTemplate(
       return Object.fromEntries(
         planFieldEntries.map(([field, spec]) => [
           field,
-          structuredClone(
-            field === 'verification_plan'
-              ? standardVerificationPlanScaffold
-              : spec.scaffold,
-          ),
+          structuredClone(spec.scaffold),
         ]),
       ) as TaskPlan
   }

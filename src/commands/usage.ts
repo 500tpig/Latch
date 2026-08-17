@@ -3,6 +3,17 @@ import { contextPackUsage, contextUsage } from './context.js'
 import { knowledgeUsage } from './knowledge.js'
 import { recordUsage } from './record.js'
 
+function implementationAuthorizationFileHelp(
+  source: 'user_delta' | 'user_approve' = 'user_delta',
+) {
+  return `--authorization-file JSON: ${JSON.stringify({
+    kind: 'implementation_authorization',
+    source,
+    reason: 'Describe the authorized plan delta.',
+    scope: { summary: 'Describe the current post-delta plan.' },
+  })}`
+}
+
 export const commandUsage: Record<string, string> = {
   init: 'Usage: latch init [--json]',
   checkpoint:
@@ -22,11 +33,14 @@ export const commandUsage: Record<string, string> = {
   save:
     'Usage: latch save <task-id> --expect-revision <revision> [--plan-file <path|->] [--feedback <text>] [--decision <text>] [--artifact <kind>:<path>] [--remove-artifact <kind>:<path>] [--block-reason <text> --waiting-for <text> | --unblock] [--profile <light|standard> --profile-reason <text> [--user-requested-narrowing] | --provenance <clean|mixed> --provenance-reason <text> | --group <id> | --clear-group] [--json]',
   'append-scope':
-    'Usage: latch append-scope <task-id> --expect-revision <revision> --path <repo-relative-path>... [--authorization-file <path|->] [--json]',
+    'Usage: latch append-scope <task-id> --expect-revision <revision> --path <repo-relative-path>... [--authorization-file <path|->] [--json]\n' +
+    implementationAuthorizationFileHelp(),
   'update-verification-command':
-    'Usage: latch update-verification-command <task-id> --expect-revision <revision> --name <existing-gate-name> [--authorization-file <path|->] [--json] -- <command> [arg...]',
+    'Usage: latch update-verification-command <task-id> --expect-revision <revision> --name <existing-gate-name> [--authorization-file <path|->] [--json] -- <command> [arg...]\n' +
+    implementationAuthorizationFileHelp(),
   'resolve-open-questions':
-    'Usage: latch resolve-open-questions <task-id> --expect-revision <revision> --answers-file <path|-> [--authorization-file <path|->] [--json]',
+    'Usage: latch resolve-open-questions <task-id> --expect-revision <revision> --answers-file <path|-> [--authorization-file <path|->] [--json]\n' +
+    implementationAuthorizationFileHelp('user_approve'),
   approve:
     'Usage: latch approve <task-id> --expect-revision <revision> (--reason <text> | --authorization-file <path|-> | --retrospective-file <path|->) [--json]\n' +
     '       latch approve <task-id> --expect-revision <revision> --feedback <text> [--authorization-file <path|->] [--json]\n' +

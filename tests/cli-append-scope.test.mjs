@@ -293,7 +293,14 @@ test('append-scope applies explicit user_approve and valid user_delta authorizat
   const approved = checkpoint(cwd, 'append user approve', {
     workspace_scope: { paths: ['existing.txt'] },
   })
-  const userApprove = authorization('user_approve')
+  const userApprove = {
+    ...authorization('user_approve'),
+    scope: {
+      summary: '实施追加后的当前 plan',
+      paths: ['existing.txt', 'approved.txt'],
+      notes: '用户批准追加后的完整范围。',
+    },
+  }
   const result = appendScope(cwd, approved.task_id, ['approved.txt'], {
     authorizationFile: '-',
     input: JSON.stringify(userApprove),
@@ -311,6 +318,7 @@ test('append-scope applies explicit user_approve and valid user_delta authorizat
   let task = readTask(cwd, approved.task_id)
   assert.equal(task.work_basis.source, 'user_approve')
   assert.equal(task.work_basis.plan_revision, 2)
+  assert.deepEqual(task.work_basis.scope, userApprove.scope)
   assert.equal(task.work_revision, 1)
   assert.deepEqual(
     events(cwd, approved.task_id).slice(-3).map((event) => event.type),
@@ -350,19 +358,60 @@ test('append-scope refuses inferred or invalid authorization before mutation', (
   const created = checkpoint(cwd, 'append invalid authorization', {
     workspace_scope: { paths: ['existing.txt'] },
   })
+  const { kind: _kind, ...withoutKind } = authorization('user_approve')
   const cases = [
-    authorization('user_delta'),
-    authorization('user_request'),
-    { ...authorization('user_approve'), reason: '' },
+    {
+      value: authorization('user_delta'),
+      pattern: /user_delta requires a valid implementation authorization/,
+    },
+    {
+      value: withoutKind,
+      pattern: /authorization kind must be implementation_authorization/,
+      example: true,
+    },
+    {
+      value: authorization('user_request'),
+      pattern: /authorization source must be user_delta or user_approve/,
+      example: true,
+    },
+    {
+      value: { ...authorization('user_approve'), reason: '' },
+      pattern: /authorization reason must be a non-empty string/,
+      example: true,
+    },
+    {
+      value: { ...authorization('user_approve'), scope: { summary: '' } },
+      pattern: /authorization scope\.summary must be a non-empty string/,
+      example: true,
+    },
+    {
+      value: { ...authorization('user_approve'), scope: 'invalid' },
+      pattern: /authorization scope must be an object with scope\.summary/,
+      example: true,
+    },
+    {
+      value: { ...authorization('user_approve'), scope: { summary: 'scope', paths: [1] } },
+      pattern: /authorization scope\.paths must be a string array/,
+      example: true,
+    },
+    {
+      value: { ...authorization('user_approve'), scope: { summary: 'scope', notes: ' ' } },
+      pattern: /authorization scope\.notes must be a non-empty string/,
+      example: true,
+    },
   ]
-  for (const value of cases) {
+  for (const fixture of cases) {
     const before = storedState(cwd, created.task_id)
     const result = appendScope(cwd, created.task_id, ['new.txt'], {
       authorizationFile: '-',
-      input: JSON.stringify(value),
+      input: JSON.stringify(fixture.value),
     })
     assert.notEqual(result.status, 0)
-    assert.equal(JSON.parse(result.stderr).error.code, 'invalid_arguments')
+    const error = JSON.parse(result.stderr).error
+    assert.equal(error.code, 'invalid_arguments')
+    assert.match(error.message, fixture.pattern)
+    if (fixture.example)
+      assert.match(error.message, /"kind":"implementation_authorization"/)
     assert.deepEqual(storedState(cwd, created.task_id), before)
   }
 
@@ -454,7 +503,8 @@ test('append-scope returns typed task, writer, schema, blocked, and revision ref
 test('append-scope human and JSON help expose only the approved arguments', () => {
   const cwd = temporaryDirectory()
   const expected =
-    'Usage: latch append-scope <task-id> --expect-revision <revision> --path <repo-relative-path>... [--authorization-file <path|->] [--json]\n'
+    'Usage: latch append-scope <task-id> --expect-revision <revision> --path <repo-relative-path>... [--authorization-file <path|->] [--json]\n' +
+    '--authorization-file JSON: {"kind":"implementation_authorization","source":"user_delta","reason":"Describe the authorized plan delta.","scope":{"summary":"Describe the current post-delta plan."}}\n'
   const human = run(cwd, ['append-scope', '--help'])
   assert.equal(human.status, 0, human.stderr)
   assert.equal(human.stdout, expected)

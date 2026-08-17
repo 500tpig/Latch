@@ -448,6 +448,14 @@ test('update-verification-command refuses inferred or invalid authorization befo
     authorization('user_delta'),
     authorization('user_request'),
     { ...authorization('user_approve'), reason: '' },
+    {
+      ...authorization('user_approve'),
+      scope: { summary: 'scope', paths: 'invalid' },
+    },
+    {
+      ...authorization('user_approve'),
+      scope: { summary: 'scope', notes: '' },
+    },
   ]
   for (const value of cases) {
     const before = storedState(cwd, created.task_id)
@@ -666,7 +674,8 @@ test('update-verification-command keeps -- after separator out of Latch CLI flag
 test('update-verification-command human and JSON help expose only the approved arguments', () => {
   const cwd = temporaryDirectory()
   const expected =
-    'Usage: latch update-verification-command <task-id> --expect-revision <revision> --name <existing-gate-name> [--authorization-file <path|->] [--json] -- <command> [arg...]\n'
+    'Usage: latch update-verification-command <task-id> --expect-revision <revision> --name <existing-gate-name> [--authorization-file <path|->] [--json] -- <command> [arg...]\n' +
+    '--authorization-file JSON: {"kind":"implementation_authorization","source":"user_delta","reason":"Describe the authorized plan delta.","scope":{"summary":"Describe the current post-delta plan."}}\n'
   const human = run(cwd, ['update-verification-command', '--help'])
   assert.equal(human.status, 0, human.stderr)
   assert.equal(human.stdout, expected)

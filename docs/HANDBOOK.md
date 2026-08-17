@@ -137,11 +137,11 @@ latch context [task-id] --json --since-revision <revision>
 `checkpoint --print-plan-template light|standard` 向 stdout 写入对应 profile
 的最小合法 JSON（shape scaffold），不创建 `.latch`，也不要求 `title`、`--plan-file` 或
 canonical actor。Light scaffold 只包含 `goal`、`workspace_scope`、`scope`、
-`acceptance`、`approach` 和 `verification_plan`；Standard scaffold 继续包含完整
-12 字段，并在 `verification_plan` 中提供一个最小 gate 示例，其中包含 `name`、
-`command`（`string[]`）和 `kind`。示例命令必须替换为当前项目的真实检查命令。两个
-scaffold 都只保证对应 authoring input 的结构合法，不能直接获得 work basis，也不替代
-A/B/C 判断。模板入口不能与 task 创建参数组合。
+`acceptance`、`approach` 和 `verification_plan`，并在 `verification_plan` 中给出
+`name`、`command`（`string[]`）和 `kind: gate` 的最小示例。Standard scaffold 继续包含完整
+12 字段，并使用同一 gate 示例。示例命令必须替换为当前项目的真实检查命令，不得保留
+`replace-with-real-command` sentinel。两个 scaffold 都只保证对应 authoring input 的结构合法，
+不能直接获得 work basis，也不替代 A/B/C 判断。模板入口不能与 task 创建参数组合。
 
 plan 校验分为四步：Light authoring validation 要求六组核心字段；CLI 将省略的
 `api_assumptions`、`permission_assumptions`、`data_assumptions`、`user_flow`、
@@ -156,7 +156,8 @@ authorizable validation 只在创建或更新 work basis 前执行。授权要�
 
 创建 task 时，Standard `checkpoint` 必须读取完整 plan 文件；Light `checkpoint`
 接受六字段 authoring input，并在写入前规范化为现有完整 `TaskPlan`。plan 校验失败时，
-错误会列出期望类型、实际类型、最小合法值和模板命令。同标题 task 不覆盖。`use`
+错误会列出期望类型、实际类型、最小合法值和模板命令。同一 `verification_plan` 项的多个
+独立结构错误会在一次确定性响应中全部报告。同标题 task 不覆盖。`use`
 只修改当前 actor 的索引。带 `--plan-file` 的 `save` 始终按当前 task 的 `profile`
 校验 authoring input；Light save 同样接受六字段输入并持久化完整 `TaskPlan`，Standard
 save 继续要求完整 12 字段。
@@ -204,10 +205,13 @@ mutation 前返回 `invalid_arguments`。该命令不新增、删除或重命名
 旧验证与 submission。`append-scope` 还会移除 active `workspace_proof` 引用；
 `update-verification-command` 因 machine scope 未变而保留既有 baseline，但不运行新旧
 command，也不采集 evidence。提供 authorization 文件时，只接受 `source: user_delta` 或
-`source: user_approve`。`user_delta` 要求当前 plan 已有有效 implementation
-authorization；两种 source 都必须通过 post-delta authorizable 校验，成功后原子绑定新
-plan revision、增加 `work_revision` 并进入 `dev`。命令名称、路径、argv、task title 或
-调用方意图均不构成授权。
+`source: user_approve`。`--authorization-file` 的 JSON 形状为
+`{"kind":"implementation_authorization","source":"user_delta","reason":"...","scope":{"summary":"..."}}`；
+`resolve-open-questions` 的示例 `source` 为 `user_approve`。缺少 `kind`、非法 `source`、
+空 `reason` 或无效 `scope` 会分别返回对应错误。`user_delta` 要求当前 plan 已有有效
+implementation authorization；两种 source 都必须通过 post-delta authorizable 校验，成功后
+原子绑定新 plan revision、增加 `work_revision` 并进入 `dev`。命令名称、路径、argv、task
+title 或调用方意图均不构成授权。
 
 `resolve-open-questions` 只接受处于 `plan` 阶段且仍有当前问题的 task。`--answers-file`
 的唯一 JSON shape 为 `{ "answers": [{ "question": "...", "answer": "...", "decision": "..." }] }`；
@@ -259,6 +263,19 @@ pretty-print JSON 加最终换行计）。超限时先按字段与集合上限�
 不会推进 generation 或写 evidence。`context --json --since-revision <revision>`
 返回该 revision 之后的 event，以及当前最小状态；调用方必须已有对应 baseline，
 delta 不能替代完整 context。
+
+### Agent 指令预算
+
+`tests/fixtures/instruction-budget-v1.json` 统一保存 always-loaded 与 planning-path 的
+reviewed ratchet。always-loaded surface 除 estimate-unit 的 `reviewed_baseline` 和
+`hard_cap` 外，还保存 `reviewed_baseline_bytes`、`hard_cap_bytes: 12288`、
+`min_headroom_bytes: 1024` 和 `byte_review_reason`。当前完整文件必须不超过 reviewed byte
+baseline；baseline 更新必须重新说明 review reason，并在 hard cap 下至少保留 1024 bytes。
+
+`pnpm check:instruction-budget` 只运行预算预检。`pnpm check` 在 typecheck、build 和完整测试
+前先运行该命令；预算失败时立即停止。超过 `hard_cap_bytes` 时必须重新设计或拆分指令面，
+不得只提高 hard cap。该 byte ratchet 替代旧的独立 10240-byte 断言；estimate-unit hard cap
+保持不变。
 
 `shared_worktree` 统计当前 task 之外的 open task，并返回 `active_task_count`、
 `overlap_task_count`、`sample_limit`、`total_count`、`returned_count`、`sample` 和
@@ -451,6 +468,9 @@ evidence ref 不得作为日志引用。完整输出只可在本次运行期间�
 
 `echo`、`printf`、`true` 和只输出操作说明的命令不得配置为 gate。这类命令返回 0 只能证明命令成功退出，不能证明手工步骤已经执行。需要在 plan 中保留手工步骤时，将其标为 diagnostic；diagnostic 的执行结果不构成手工验收事实。手工验收尚未完成时，通过重复的 `--unverified-item` 写入 `submission.unverified_items`。
 
+`--fix`、`--write` 或等价自动修复命令不得作为 named gate。修复在 `dev` 阶段运行；gate
+使用只检查、不修改工作区的命令。Core 不根据命令名或 package script 内容推断 gate 是否会写文件。
+
 named gate 启动前和子进程退出后都会采集 covered workspace evidence。command
 outcome、workspace effect 和 proof status 是三组独立事实；只有命令成功、before/after
 evidence 完整、covered workspace 无净 mutation、结果绑定当前 work revision 与
@@ -526,8 +546,10 @@ latch submit <task-id> --expect-revision 10 \
 ```
 
 `--knowledge-impact-none <reason>` 只构造 `{ kind: "none", reason }`，必须提供
-非空 reason，且不能与 `--knowledge-impact-file` 组合。`updated` 仍必须通过文件
-提供 artifact refs。存在多个未登记引用时，submit 一次列出全部缺失项，并返回包含当前 task ID、revision 和全部缺失项的 `latch artifact add` 修复命令。
+非空 reason，且不能与 `--knowledge-impact-file` 组合。`knowledge_impact.updated` 的
+`artifact_refs` 必须在 submit 前已经附加到 task，并仍通过文件提供这些引用。存在多个未登记
+引用时，submit 一次列出全部缺失项，并返回包含当前 task ID、revision 和全部缺失项的
+`latch artifact add` 修复命令。不自动附加 knowledge artifact。
 
 无可执行 gate 的任务使用：
 

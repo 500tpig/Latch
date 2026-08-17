@@ -59,6 +59,15 @@ v2 / Schema 5 观察期的 archive 定量样本分离。
 
 ## 已实现设计
 
+### [Agent 指令预算 Ratchet 契约](briefs/2026-08-17-latch-instruction-budget-ratchet.md)
+
+- 状态：`implemented`；文件内设计状态保留为实施前的 `approved`；
+- Source-Task：`20260817082547603-改进-latch-输入与-gate-可发现性-cd1fd6`；
+- 用途：将 always-loaded UTF-8 byte budget 纳入 reviewed ratchet，固定 12 KiB hard cap、
+  至少 1 KiB 余量和完整检查前的快速预算预检；
+- 边界：不删除 canonical Skill 高频安全规则，不修改 A/B/C、adopter activation、
+  estimate-unit hard cap 或 lifecycle 门禁。
+
 ### [Latch 0.5 流程与指令面收口契约](briefs/2026-08-13-latch-consolidation-contract.md)
 
 - 状态：`implemented`；文件内设计状态保留为实施前的 `approved`；

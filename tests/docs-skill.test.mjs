@@ -24,6 +24,8 @@ const groupsReference = 'skills/latch/references/groups.md'
 const knowledgeReference = 'skills/latch/references/knowledge-and-context.md'
 const migrationReference = 'skills/latch/references/migration.md'
 const recordsReference = 'skills/latch/references/records.md'
+const instructionBudgetContract =
+  'docs/briefs/2026-08-17-latch-instruction-budget-ratchet.md'
 const skillReferences = [
   lifecycleReference,
   recoveryReference,
@@ -122,6 +124,25 @@ function classifyInstructionEstimate(surface, estimate) {
   }
 }
 
+function classifyInstructionBytes(surface, bytes) {
+  if (bytes > surface.hard_cap_bytes) {
+    return {
+      status: 'hard-cap-exceeded',
+      message: `${surface.name} exceeds its byte hard cap; redesign or split the instruction surface; do not only raise hard_cap_bytes.`,
+    }
+  }
+  if (bytes > surface.reviewed_baseline_bytes) {
+    return {
+      status: 'review-required',
+      message: `${surface.name} exceeds its reviewed byte baseline; update reviewed_baseline_bytes and byte_review_reason after review.`,
+    }
+  }
+  return {
+    status: 'within-reviewed-baseline',
+    message: `${surface.name} remains within its reviewed byte baseline.`,
+  }
+}
+
 test('high-frequency instruction growth requires a reviewed aggregate baseline', () => {
   const fixturePath = 'tests/fixtures/instruction-budget-v1.json'
   const budget = JSON.parse(text(fixturePath))
@@ -186,16 +207,75 @@ test('high-frequency instruction growth requires a reviewed aggregate baseline',
     )
     assert.notEqual(reviewRequired.status, hardCapExceeded.status)
   }
-})
 
-test('always-loaded Agent instructions stay within the frozen UTF-8 byte budget', () => {
-  const paths = ['AGENTS.md', 'skills/latch/SKILL.md']
-  const bytes = paths.reduce(
+  const alwaysLoaded = budget.surfaces[0]
+  assert.equal(Number.isInteger(alwaysLoaded.reviewed_baseline_bytes), true)
+  assert.equal(Number.isInteger(alwaysLoaded.hard_cap_bytes), true)
+  assert.equal(Number.isInteger(alwaysLoaded.min_headroom_bytes), true)
+  assert.ok(alwaysLoaded.min_headroom_bytes >= 1024)
+  assert.ok(
+    alwaysLoaded.hard_cap_bytes - alwaysLoaded.reviewed_baseline_bytes >=
+      alwaysLoaded.min_headroom_bytes,
+  )
+  assert.ok(alwaysLoaded.byte_review_reason.trim().length >= 20)
+  assertTextMatches(alwaysLoaded.byte_review_reason, /re-reviewed/i)
+  assertTextMatches(
+    alwaysLoaded.byte_review_reason,
+    new RegExp(String(alwaysLoaded.reviewed_baseline_bytes)),
+  )
+
+  const currentBytes = alwaysLoaded.paths.reduce(
     (total, path) => total + Buffer.byteLength(text(path), 'utf8'),
     0,
   )
+  const currentByteOutcome = classifyInstructionBytes(alwaysLoaded, currentBytes)
+  assert.equal(
+    currentByteOutcome.status,
+    'within-reviewed-baseline',
+    currentByteOutcome.message,
+  )
 
-  assert.ok(bytes <= 10_240, `always-loaded instructions use ${bytes} UTF-8 bytes`)
+  const byteReviewRequired = classifyInstructionBytes(
+    alwaysLoaded,
+    alwaysLoaded.reviewed_baseline_bytes + 1,
+  )
+  assert.equal(byteReviewRequired.status, 'review-required')
+  assertTextMatches(
+    byteReviewRequired.message,
+    /update reviewed_baseline_bytes and byte_review_reason/i,
+  )
+
+  const byteHardCapExceeded = classifyInstructionBytes(
+    alwaysLoaded,
+    alwaysLoaded.hard_cap_bytes + 1,
+  )
+  assert.equal(byteHardCapExceeded.status, 'hard-cap-exceeded')
+  assertTextMatches(
+    byteHardCapExceeded.message,
+    /redesign or split.*do not only raise hard_cap_bytes/i,
+  )
+  assert.equal(budget.surfaces[1].reviewed_baseline_bytes, undefined)
+
+  const index = text('docs/INDEX.md')
+  const handBook = text('docs/HANDBOOK.md')
+  const design = text('docs/DESIGN.md')
+  const contract = text(instructionBudgetContract)
+  assertTextMatches(index, /2026-08-17-latch-instruction-budget-ratchet\.md/)
+  for (const content of [handBook, design, contract]) {
+    assertTextMatches(content, /12288/)
+    assertTextMatches(content, /1024/)
+    assertTextMatches(content, /reviewed_baseline_bytes/)
+    assertTextMatches(content, /hard_cap_bytes/)
+  }
+})
+
+test('project check runs the instruction budget preflight first', () => {
+  const scripts = JSON.parse(text('package.json')).scripts
+  assertTextMatches(scripts['check:instruction-budget'], /high-frequency instruction growth/)
+  assertTextMatches(
+    scripts.check,
+    /^pnpm check:instruction-budget && pnpm typecheck && pnpm test$/,
+  )
 })
 
 test('always-loaded scope safety semantics stay in the canonical skill', () => {
@@ -743,6 +823,43 @@ test('Light plan template entry stays consistent across CLI-facing instructions'
   assertTextMatches(routed, /authorizable validation/)
   assertTextMatches(skill, /all 12 fields/)
   assertTextMatches(handBook, /Standard scaffold 继续包含完整\s+12 字段/)
+  assertTextMatches(handBook, /`name`[\s\S]*`command`[\s\S]*`kind: gate`/)
+  assertTextMatches(routed, /command: string\[\]/)
+  assertTextMatches(routed, /replace-with-real-command/)
+  assertTextMatches(handBook, /同一 `verification_plan` 项[\s\S]*一次确定性响应/)
+  assertTextMatches(lifecycle, /Independent structural errors/)
+})
+
+test('Skill and Handbook require attached knowledge artifacts before updated submit', () => {
+  const skill = text('skills/latch/SKILL.md')
+  const lifecycle = text(lifecycleReference)
+  const knowledge = text(knowledgeReference)
+  const handBook = text('docs/HANDBOOK.md')
+
+  for (const content of [skill, lifecycle, knowledge, handBook]) {
+    assertTextMatches(content, /artifact_refs/)
+    assertTextMatches(content, /before submit|submit 前/)
+  }
+  for (const content of [lifecycle, knowledge, handBook]) {
+    assertTextMatches(content, /latch artifact add/)
+    assertTextMatches(content, /every missing|全部缺失/)
+  }
+})
+
+test('Skill and Handbook require check-only named gates', () => {
+  const skill = text('skills/latch/SKILL.md')
+  const lifecycle = text(lifecycleReference)
+  const handBook = text('docs/HANDBOOK.md')
+  const design = text('docs/DESIGN.md')
+
+  for (const content of [skill, lifecycle, handBook, design]) {
+    assertTextMatches(content, /`--fix`/)
+    assertTextMatches(content, /`--write`/)
+  }
+  for (const content of [skill, lifecycle, handBook]) {
+    assertTextMatches(content, /check-only|只检查/)
+    assertTextMatches(content, /in `dev`|在 `dev`/)
+  }
 })
 
 test('startup reads context and project docs only when conditions require them', () => {

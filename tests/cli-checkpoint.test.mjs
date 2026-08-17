@@ -29,7 +29,11 @@ test('checkpoint templates are side-effect-free shape scaffolds that require com
     scope: [],
     acceptance: [],
     approach: [],
-    verification_plan: [],
+    verification_plan: [{
+      name: 'check',
+      command: ['replace-with-real-command'],
+      kind: 'gate',
+    }],
   }
   const standardExpected = {
     goal: 'Describe the intended outcome.',
@@ -428,11 +432,52 @@ test('checkpoint rejects missing or invalid plan without creating task', () => {
     'Invalid verification kind',
     '--plan-file',
     invalidKindPlan,
+    '--json',
   ])
   assert.notEqual(invalidKind.status, 0)
-  assert.match(invalidKind.stderr, /Invalid verification_plan\.kind/)
-  assert.match(invalidKind.stderr, /expected "gate" \| "diagnostic"/)
-  assert.match(invalidKind.stderr, /Minimal legal value: "gate"/)
+  const invalidKindMessage = JSON.parse(invalidKind.stderr).error.message
+  assert.equal(
+    invalidKindMessage,
+    `Invalid verification_plan.kind in ${invalidKindPlan}: expected "gate" | "diagnostic", got string. ` +
+      'Minimal legal value: "gate". ' +
+      'Run `latch checkpoint --print-plan-template light` or ' +
+      '`latch checkpoint --print-plan-template standard` for a shape-valid scaffold.',
+  )
+
+  const combinedInvalidPlan = writePlan(
+    cwd,
+    plan({
+      verification_plan: [{
+        name: '',
+        command: 'pnpm check',
+        kind: 'check',
+      }],
+    }),
+    'combined-invalid-verification.json',
+  )
+  const combinedInvalid = run(cwd, [
+    'checkpoint',
+    'Combined verification errors',
+    '--plan-file',
+    combinedInvalidPlan,
+    '--json',
+  ])
+  assert.notEqual(combinedInvalid.status, 0)
+  const combinedMessage = JSON.parse(combinedInvalid.stderr).error.message
+  assert.match(combinedMessage, /Invalid verification_plan\.name/)
+  assert.match(combinedMessage, /Invalid verification_plan\.command/)
+  assert.match(combinedMessage, /Invalid verification_plan\.kind/)
+  assert.match(combinedMessage, /expected non-empty string/)
+  assert.match(combinedMessage, /expected string\[\]/)
+  assert.match(combinedMessage, /expected "gate" \| "diagnostic"/)
+  assert.ok(
+    combinedMessage.indexOf('Invalid verification_plan.name') <
+      combinedMessage.indexOf('Invalid verification_plan.command'),
+  )
+  assert.ok(
+    combinedMessage.indexOf('Invalid verification_plan.command') <
+      combinedMessage.indexOf('Invalid verification_plan.kind'),
+  )
   assert.deepEqual(taskIds(cwd), [])
 })
 

@@ -487,6 +487,12 @@ test('resolve-open-questions rejects inferred, wrong-source, invalid, and non-au
     authorization('user_request'),
     authorization('user_approve', { reason: '' }),
     { kind: 'implementation_authorization', source: 'user_approve' },
+    authorization('user_approve', {
+      scope: { summary: 'scope', paths: [false] },
+    }),
+    authorization('user_approve', {
+      scope: { summary: 'scope', notes: ' ' },
+    }),
   ]
   for (const value of cases) {
     const authFile = writeJson(cwd, 'authorization.json', value)
@@ -659,7 +665,8 @@ test('resolve-open-questions returns typed lifecycle refusals without mutation',
 test('resolve-open-questions exposes the approved usage and rejects missing answers-file', () => {
   const cwd = temporaryDirectory()
   const expected =
-    'Usage: latch resolve-open-questions <task-id> --expect-revision <revision> --answers-file <path|-> [--authorization-file <path|->] [--json]\n'
+    'Usage: latch resolve-open-questions <task-id> --expect-revision <revision> --answers-file <path|-> [--authorization-file <path|->] [--json]\n' +
+    '--authorization-file JSON: {"kind":"implementation_authorization","source":"user_approve","reason":"Describe the authorized plan delta.","scope":{"summary":"Describe the current post-delta plan."}}\n'
   const help = run(cwd, ['resolve-open-questions', '--help'])
   assert.equal(help.status, 0, help.stderr)
   assert.equal(help.stdout, expected)

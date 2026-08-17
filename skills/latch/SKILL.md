@@ -67,7 +67,11 @@ and never auto-retry a revision conflict.
   default.
 
 Scaffolds are shape-only; authorizable validation binds scope from
-`plan.workspace_scope.paths`. Submit enters review; never auto-complete.
+`plan.workspace_scope.paths`. Light templates include a `name` /
+`command: string[]` / `kind: gate` example with the
+`replace-with-real-command` sentinel and do not pass authorizable
+validation. Attach every `knowledge_impact.updated` `artifact_refs`
+entry to the task before submit. Submit enters review; never auto-complete.
 
 ## Always-on safety
 
@@ -81,9 +85,11 @@ Scaffolds are shape-only; authorizable validation binds scope from
   titles, answers, or artifacts. Plan-delta commands remain fail closed.
 - Run every named gate. Use `verify-all` for pending/stale gates and for in-scope
   corrections in `dev` or `check`; do not use review feedback there.
-  Instruction-only `echo`/`printf`/`true` commands are not evidence. A pass needs
-  successful execution, complete evidence, an unchanged covered workspace,
-  current proof generation, and no unresolved violation.
+  Instruction-only `echo`/`printf`/`true` commands are not evidence. Named gates
+  must be check-only: do not use `--fix`, `--write`, or equivalent auto-fix
+  commands as gates; run those fixes in `dev`. A pass needs successful
+  execution, complete evidence, an unchanged covered workspace, current proof
+  generation, and no unresolved violation.
 - Preserve unexpected mutations. Never reset, clean, stash, widen scope, or skip
   proof. Truncation is not failure; JSON mode keeps one document, `--verbose`
   streams details, and there is no `log_ref`.
