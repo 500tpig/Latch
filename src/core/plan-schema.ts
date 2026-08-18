@@ -14,6 +14,36 @@ type WritableTaskPlan = TaskPlan & {
   workspace_scope: NonNullable<TaskPlan['workspace_scope']>
 }
 
+export type PlanValidationIssueReason =
+  | 'required'
+  | 'type_mismatch'
+  | 'invalid_value'
+  | 'duplicate'
+  | 'non_empty_required'
+  | 'directory_suffix_required'
+  | 'sentinel_not_replaced'
+  | 'gate_required'
+  | 'must_be_empty'
+
+export type PlanValidationIssue = {
+  path: string
+  reason: PlanValidationIssueReason
+  expected?: string
+  actual_type?: string
+  actual_value?: string
+  minimal_legal_value?: unknown
+}
+
+export class PlanValidationError extends Error {
+  constructor(
+    message: string,
+    readonly issues: PlanValidationIssue[],
+  ) {
+    super(message)
+    this.name = 'PlanValidationError'
+  }
+}
+
 const lightPlanCoreFields = [
   'goal',
   'workspace_scope',
@@ -53,8 +83,18 @@ type PlanFieldSpec = {
   shapeRequired: boolean
   writableRequired: boolean
   summary: string
+  jsonPath: string
+  expected: string
   validateShape: (value: unknown, path: string) => void
-  authorizable?: (value: unknown, profile: TaskProfile) => string | undefined
+  authorizable?: (
+    value: unknown,
+    profile: TaskProfile,
+  ) => AuthorizableRequirement | AuthorizableRequirement[] | undefined
+}
+
+type AuthorizableRequirement = {
+  requirement: string
+  issue: PlanValidationIssue
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -68,6 +108,12 @@ function actualType(value: unknown): string {
       return `array containing ${actualType(value[invalidIndex])} at index ${invalidIndex}`
     return 'array'
   }
+  if (value === null) return 'null'
+  return typeof value
+}
+
+function machineActualType(value: unknown): string {
+  if (Array.isArray(value)) return 'array'
   if (value === null) return 'null'
   return typeof value
 }
@@ -92,9 +138,18 @@ function invalidField(
   value: unknown,
   minimumLegalValue: unknown,
   path: string,
+  jsonPath: string,
+  machineExpected = expected,
 ): never {
-  throw new Error(
+  throw new PlanValidationError(
     invalidFieldMessage(field, expected, value, minimumLegalValue, path),
+    [{
+      path: jsonPath,
+      reason: 'type_mismatch',
+      expected: machineExpected,
+      actual_type: machineActualType(value),
+      minimal_legal_value: minimumLegalValue,
+    }],
   )
 }
 
@@ -103,9 +158,18 @@ function requireString(
   field: string,
   path: string,
   minimumLegalValue: string,
+  jsonPath: string,
 ): asserts value is string {
   if (typeof value !== 'string' || value.trim() === '')
-    invalidField(field, 'non-empty string', value, minimumLegalValue, path)
+    invalidField(
+      field,
+      'non-empty string',
+      value,
+      minimumLegalValue,
+      path,
+      jsonPath,
+      'non_empty_string',
+    )
 }
 
 function requireStringArray(
@@ -113,14 +177,53 @@ function requireStringArray(
   field: string,
   path: string,
   minimumLegalValue: string[] = [],
+  jsonPath: string,
 ): asserts value is string[] {
-  if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string'))
-    invalidField(field, 'string[]', value, minimumLegalValue, path)
+  if (!Array.isArray(value))
+    invalidField(
+      field,
+      'string[]',
+      value,
+      minimumLegalValue,
+      path,
+      jsonPath,
+      'string_array',
+    )
+  const invalidIndex = value.findIndex((entry) => typeof entry !== 'string')
+  if (invalidIndex >= 0)
+    throw new PlanValidationError(
+      invalidFieldMessage(field, 'string[]', value, minimumLegalValue, path),
+      [{
+        path: `${jsonPath}/${invalidIndex}`,
+        reason: 'type_mismatch',
+        expected: 'string',
+        actual_type: machineActualType(value[invalidIndex]),
+        minimal_legal_value: '',
+      }],
+    )
 }
 
-function normalizeWorkspaceScopePath(value: string, path: string) {
+function invalidWorkspaceScopePath(
+  value: string,
+  index: number,
+  message: string,
+): never {
+  throw new PlanValidationError(message, [{
+    path: `/workspace_scope/paths/${index}`,
+    reason: 'invalid_value',
+    expected: 'repo_relative_posix_path',
+    actual_type: 'string',
+    actual_value: value,
+  }])
+}
+
+function normalizeWorkspaceScopePath(value: string, path: string, index: number) {
   if (value === '' || value === '.' || value === '..')
-    throw new Error(`Invalid plan.workspace_scope.paths in ${path}: empty or root path.`)
+    invalidWorkspaceScopePath(
+      value,
+      index,
+      `Invalid plan.workspace_scope.paths in ${path}: empty or root path.`,
+    )
   if (
     value.startsWith('/') ||
     /^[A-Za-z]:[\\/]/.test(value) ||
@@ -129,7 +232,11 @@ function normalizeWorkspaceScopePath(value: string, path: string) {
     /[*?[\]]/.test(value) ||
     value.includes('\0')
   )
-    throw new Error(`Invalid plan.workspace_scope.paths in ${path}: ${value}.`)
+    invalidWorkspaceScopePath(
+      value,
+      index,
+      `Invalid plan.workspace_scope.paths in ${path}: ${value}.`,
+    )
   const directory = value.endsWith('/')
   const normalized = posix.normalize(value)
   if (
@@ -138,7 +245,11 @@ function normalizeWorkspaceScopePath(value: string, path: string) {
     normalized.startsWith('../') ||
     normalized.split('/').includes('..')
   )
-    throw new Error(`Invalid plan.workspace_scope.paths in ${path}: ${value}.`)
+    invalidWorkspaceScopePath(
+      value,
+      index,
+      `Invalid plan.workspace_scope.paths in ${path}: ${value}.`,
+    )
   return directory ? `${normalized.replace(/\/+$/, '')}/` : normalized
 }
 
@@ -150,15 +261,20 @@ function validateWorkspaceScope(value: unknown, path: string) {
       value,
       { paths: [] },
       path,
+      '/workspace_scope',
+      'workspace_scope',
     )
   requireStringArray(
     value.paths,
     'plan.workspace_scope.paths',
     path,
+    [],
+    '/workspace_scope/paths',
   )
   value.paths = [
     ...new Set(
-      value.paths.map((entry) => normalizeWorkspaceScopePath(entry, path)),
+      value.paths.map((entry, index) =>
+        normalizeWorkspaceScopePath(entry, path, index)),
     ),
   ]
 }
@@ -171,12 +287,15 @@ function validateVerificationPlan(value: unknown, path: string) {
       value,
       [],
       path,
+      '/verification_plan',
+      'verification_plan',
     )
 
   const errors: string[] = []
+  const issues: PlanValidationIssue[] = []
   const verificationNames = new Set<string>()
   const exampleItem = verificationPlanScaffold[0]
-  for (const verification of value) {
+  for (const [index, verification] of value.entries()) {
     if (!isRecord(verification)) {
       errors.push(
         invalidFieldMessage(
@@ -187,9 +306,16 @@ function validateVerificationPlan(value: unknown, path: string) {
           path,
         ),
       )
+      issues.push({
+        path: `/verification_plan/${index}`,
+        reason: 'type_mismatch',
+        expected: 'verification_item',
+        actual_type: machineActualType(verification),
+        minimal_legal_value: exampleItem,
+      })
       continue
     }
-    if (typeof verification.name !== 'string' || verification.name.trim() === '')
+    if (typeof verification.name !== 'string' || verification.name.trim() === '') {
       errors.push(
         invalidFieldMessage(
           'verification_plan.name',
@@ -199,15 +325,34 @@ function validateVerificationPlan(value: unknown, path: string) {
           path,
         ),
       )
-    else if (verificationNames.has(verification.name))
+      issues.push({
+        path: `/verification_plan/${index}/name`,
+        reason: typeof verification.name === 'string'
+          ? 'non_empty_required'
+          : 'type_mismatch',
+        expected: 'non_empty_string',
+        actual_type: machineActualType(verification.name),
+        ...(typeof verification.name === 'string'
+          ? { actual_value: verification.name }
+          : {}),
+        minimal_legal_value: 'check',
+      })
+    } else if (verificationNames.has(verification.name)) {
       errors.push(
         `Duplicate verification_plan.name in ${path}: ${verification.name}.`,
       )
-    else verificationNames.add(verification.name)
+      issues.push({
+        path: `/verification_plan/${index}/name`,
+        reason: 'duplicate',
+        expected: 'unique_verification_name',
+        actual_type: 'string',
+        actual_value: verification.name,
+      })
+    } else verificationNames.add(verification.name)
     if (
       !Array.isArray(verification.command) ||
       verification.command.some((entry) => typeof entry !== 'string')
-    )
+    ) {
       errors.push(
         invalidFieldMessage(
           'verification_plan.command',
@@ -217,13 +362,28 @@ function validateVerificationPlan(value: unknown, path: string) {
           path,
         ),
       )
-    else if (verification.command.length === 0)
+      issues.push({
+        path: `/verification_plan/${index}/command`,
+        reason: 'type_mismatch',
+        expected: 'non_empty_string_array',
+        actual_type: machineActualType(verification.command),
+        minimal_legal_value: [verificationCommandSentinel],
+      })
+    } else if (verification.command.length === 0) {
       errors.push(
         `Invalid empty verification_plan.command in ${path}: expected non-empty string[], got empty array. ` +
           `Minimal legal value: ${JSON.stringify([verificationCommandSentinel])}. ` +
           planTemplateHelp,
       )
-    if (verification.kind !== 'gate' && verification.kind !== 'diagnostic')
+      issues.push({
+        path: `/verification_plan/${index}/command`,
+        reason: 'non_empty_required',
+        expected: 'non_empty_string_array',
+        actual_type: 'array',
+        minimal_legal_value: [verificationCommandSentinel],
+      })
+    }
+    if (verification.kind !== 'gate' && verification.kind !== 'diagnostic') {
       errors.push(
         invalidFieldMessage(
           'verification_plan.kind',
@@ -233,9 +393,22 @@ function validateVerificationPlan(value: unknown, path: string) {
           path,
         ),
       )
+      issues.push({
+        path: `/verification_plan/${index}/kind`,
+        reason: typeof verification.kind === 'string'
+          ? 'invalid_value'
+          : 'type_mismatch',
+        expected: 'gate_or_diagnostic',
+        actual_type: machineActualType(verification.kind),
+        ...(typeof verification.kind === 'string'
+          ? { actual_value: verification.kind }
+          : {}),
+        minimal_legal_value: 'gate',
+      })
+    }
   }
-  if (errors.length === 1) throw new Error(errors[0])
-  if (errors.length > 1) throw new Error(errors.join('; '))
+  if (errors.length > 0)
+    throw new PlanValidationError(errors.join('; '), issues)
 }
 
 function stringArraySpec(
@@ -247,17 +420,27 @@ function stringArraySpec(
     shapeRequired: true,
     writableRequired: false,
     summary: `plan.${field}: string[]`,
+    jsonPath: `/${field}`,
+    expected: 'string_array',
     validateShape(value, path) {
-      requireStringArray(value, `plan.${field}`, path)
+      requireStringArray(value, `plan.${field}`, path, [], `/${field}`)
     },
     ...(authorizable ? { authorizable } : {}),
   }
 }
 
-function requireMeaningfulItem(value: unknown) {
-  return (value as string[]).some((entry) => entry.trim() !== '')
-    ? undefined
-    : 'must contain at least one non-empty item'
+function requireMeaningfulItem(field: 'scope' | 'acceptance' | 'approach') {
+  return (value: unknown): AuthorizableRequirement | undefined =>
+    (value as string[]).some((entry) => entry.trim() !== '')
+      ? undefined
+      : {
+          requirement: 'must contain at least one non-empty item',
+          issue: {
+            path: `/${field}`,
+            reason: 'non_empty_required',
+            expected: 'string_array_with_non_empty_item',
+          },
+        }
 }
 
 const planFieldSpecs = {
@@ -266,13 +449,29 @@ const planFieldSpecs = {
     shapeRequired: true,
     writableRequired: false,
     summary: 'plan.goal: non-empty string',
+    jsonPath: '/goal',
+    expected: 'non_empty_string',
     validateShape(value, path) {
-      requireString(value, 'plan.goal', path, 'Describe the intended outcome.')
+      requireString(
+        value,
+        'plan.goal',
+        path,
+        'Describe the intended outcome.',
+        '/goal',
+      )
     },
     authorizable(value) {
       return typeof value === 'string' && value.trim() !== ''
         ? undefined
-        : 'must be non-empty'
+        : {
+            requirement: 'must be non-empty',
+            issue: {
+              path: '/goal',
+              reason: 'non_empty_required',
+              expected: 'non_empty_string',
+              minimal_legal_value: 'Describe the intended outcome.',
+            },
+          }
     },
   },
   workspace_scope: {
@@ -280,16 +479,28 @@ const planFieldSpecs = {
     shapeRequired: false,
     writableRequired: true,
     summary: 'plan.workspace_scope: { paths: repo-relative POSIX path[] }',
+    jsonPath: '/workspace_scope',
+    expected: 'workspace_scope',
     validateShape: validateWorkspaceScope,
     authorizable(value) {
       return (value as NonNullable<TaskPlan['workspace_scope']>).paths.length > 0
         ? undefined
-        : 'must contain at least one path'
+        : {
+            requirement: 'must contain at least one path',
+            issue: {
+              path: '/workspace_scope/paths',
+              reason: 'non_empty_required',
+              expected: 'non_empty_repo_relative_posix_path_array',
+            },
+          }
     },
   },
-  scope: stringArraySpec('scope', requireMeaningfulItem),
-  acceptance: stringArraySpec('acceptance', requireMeaningfulItem),
-  approach: stringArraySpec('approach', requireMeaningfulItem),
+  scope: stringArraySpec('scope', requireMeaningfulItem('scope')),
+  acceptance: stringArraySpec(
+    'acceptance',
+    requireMeaningfulItem('acceptance'),
+  ),
+  approach: stringArraySpec('approach', requireMeaningfulItem('approach')),
   api_assumptions: stringArraySpec('api_assumptions'),
   permission_assumptions: stringArraySpec('permission_assumptions'),
   data_assumptions: stringArraySpec('data_assumptions'),
@@ -301,25 +512,51 @@ const planFieldSpecs = {
     writableRequired: false,
     summary:
       'plan.verification_plan: Array<{ name: non-empty string; command: non-empty string[]; kind: "gate" | "diagnostic" }>',
+    jsonPath: '/verification_plan',
+    expected: 'verification_plan',
     validateShape: validateVerificationPlan,
     authorizable(value, profile) {
       const verificationPlan = value as TaskPlan['verification_plan']
-      if (
-        verificationPlan.some((verification) =>
-          verification.command.includes(verificationCommandSentinel),
-        )
-      )
-        return `must replace every ${verificationCommandSentinel} sentinel with a real command`
+      const sentinels = verificationPlan.flatMap((verification, index) =>
+        verification.command.includes(verificationCommandSentinel)
+          ? [{
+              requirement:
+                `must replace every ${verificationCommandSentinel} sentinel with a real command`,
+              issue: {
+                path: `/verification_plan/${index}/command`,
+                reason: 'sentinel_not_replaced' as const,
+                expected: 'real_command_argv',
+              },
+            }]
+          : [])
+      if (sentinels.length > 0) return sentinels
       return profile === 'light' &&
           !verificationPlan.some(
             (verification) => verification.kind === 'gate',
           )
-        ? 'must contain at least one gate'
+        ? {
+            requirement: 'must contain at least one gate',
+            issue: {
+              path: '/verification_plan',
+              reason: 'gate_required',
+              expected: 'verification_plan_with_gate',
+            },
+          }
         : undefined
     },
   },
   open_questions: stringArraySpec('open_questions', (value) =>
-    (value as string[]).length === 0 ? undefined : 'must be empty'),
+    (value as string[]).length === 0
+      ? undefined
+      : {
+          requirement: 'must be empty',
+          issue: {
+            path: '/open_questions',
+            reason: 'must_be_empty',
+            expected: 'empty_array',
+            minimal_legal_value: [],
+          },
+        }),
 } satisfies Record<keyof TaskPlan, PlanFieldSpec>
 
 const planFieldEntries = Object.entries(planFieldSpecs) as Array<
@@ -365,18 +602,24 @@ export function assertTaskPlan(
 ): asserts plan is TaskPlan {
   const minimumPlan = planTemplate('standard')
   if (!isRecord(plan))
-    invalidField('plan', 'object', plan, minimumPlan, path)
+    invalidField('plan', 'object', plan, minimumPlan, path, '', 'object')
 
   const missingFields = requiredPlanFields.filter(
     (field) => plan[field] === undefined,
   )
   if (missingFields.length > 0)
-    throw new Error(
+    throw new PlanValidationError(
       `Missing required plan fields in ${path}: ` +
         `${missingFields.map((field) => `plan.${field}`).join(', ')}. ` +
         `Expected schema: ${planSchemaSummary}. ` +
         `Minimal legal plan: ${JSON.stringify(minimumPlan)}. ` +
         planTemplateHelp,
+      missingFields.map((field) => ({
+        path: planFieldSpecs[field].jsonPath,
+        reason: 'required',
+        expected: planFieldSpecs[field].expected,
+        minimal_legal_value: structuredClone(planFieldSpecs[field].scaffold),
+      })),
     )
 
   for (const [field, spec] of planFieldEntries) {
@@ -396,10 +639,16 @@ export function assertWritableTaskPlan(
     .map(([field]) => field)
     .filter((field) => plan[field] === undefined)
   if (missingFields.length > 0)
-    throw new Error(
+    throw new PlanValidationError(
       `Missing required writable plan fields in ${path}: ` +
         `${missingFields.map((field) => `plan.${field}`).join(', ')}. ` +
       planTemplateHelp,
+      missingFields.map((field) => ({
+        path: planFieldSpecs[field].jsonPath,
+        reason: 'required',
+        expected: planFieldSpecs[field].expected,
+        minimal_legal_value: structuredClone(planFieldSpecs[field].scaffold),
+      })),
     )
 }
 
@@ -409,18 +658,24 @@ function assertLightPlanAuthoringInput(
 ): asserts plan is LightPlanAuthoringInput {
   const minimumPlan = planTemplate('light')
   if (!isRecord(plan))
-    invalidField('plan', 'object', plan, minimumPlan, path)
+    invalidField('plan', 'object', plan, minimumPlan, path, '', 'object')
 
   const missingFields = lightPlanCoreFields.filter(
     (field) => plan[field] === undefined,
   )
   if (missingFields.length > 0)
-    throw new Error(
+    throw new PlanValidationError(
       `Missing required Light plan fields in ${path}: ` +
         `${missingFields.map((field) => `plan.${field}`).join(', ')}. ` +
         `Expected Light authoring schema: ${lightPlanSchemaSummary}. ` +
         `Minimal legal plan: ${JSON.stringify(minimumPlan)}. ` +
         planTemplateHelp,
+      missingFields.map((field) => ({
+        path: planFieldSpecs[field].jsonPath,
+        reason: 'required',
+        expected: planFieldSpecs[field].expected,
+        minimal_legal_value: structuredClone(planFieldSpecs[field].scaffold),
+      })),
     )
 
   for (const [field, spec] of lightPlanFieldEntries)
@@ -451,13 +706,14 @@ export function normalizeTaskPlanInput(
 function notAuthorizable(
   profile: TaskProfile,
   field: string,
-  requirement: string,
+  requirements: AuthorizableRequirement[],
   path: string,
 ): never {
-  throw new Error(
+  throw new PlanValidationError(
     `Plan is not authorizable for profile=${profile} in ${path}: ` +
-      `plan.${field} ${requirement}. Printed scaffolds prove shape validity only; ` +
-      'complete the plan before creating work_basis.',
+      `plan.${field} ${requirements[0].requirement}. ` +
+      'Printed scaffolds prove shape validity only; complete the plan before creating work_basis.',
+    requirements.map((requirement) => requirement.issue),
   )
 }
 
@@ -469,6 +725,12 @@ export function assertAuthorizableTaskPlan(
   assertWritableTaskPlan(plan, path)
   for (const [field, spec] of planFieldEntries) {
     const requirement = spec.authorizable?.(plan[field], profile)
-    if (requirement) notAuthorizable(profile, field, requirement, path)
+    if (requirement)
+      notAuthorizable(
+        profile,
+        field,
+        Array.isArray(requirement) ? requirement : [requirement],
+        path,
+      )
   }
 }

@@ -220,12 +220,12 @@ test('save changes or clears group metadata without changing lifecycle facts', (
     'save', v2.id, '--expect-revision', '1', '--group', 'Wave:Alpha',
   ])
   assert.notEqual(denied.status, 0)
-  assert.match(denied.stderr, /Latch CLI 0\.6\.0 only mutates schema_version 5/)
+  assert.match(denied.stderr, /Latch CLI 0\.6\.1 only mutates schema_version 5/)
   const deniedClear = run(cwd, [
     'save', v2.id, '--expect-revision', '1', '--clear-group',
   ])
   assert.notEqual(deniedClear.status, 0)
-  assert.match(deniedClear.stderr, /Latch CLI 0\.6\.0 only mutates schema_version 5/)
+  assert.match(deniedClear.stderr, /Latch CLI 0\.6\.1 only mutates schema_version 5/)
 })
 
 test('list filters exact group members and includes archive only on request', () => {

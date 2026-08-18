@@ -500,6 +500,8 @@ test('out-of-scope mutation creates a violation and submit rejects it', () => {
   assert.notEqual(submitted.status, 0)
   const envelope = JSON.parse(submitted.stderr)
   assert.equal(envelope.error.code, 'workspace_violation')
+  assert.equal(envelope.error.category, undefined)
+  assert.equal(envelope.error.issues, undefined)
   assert.match(envelope.error.message, /unresolved workspace violation/)
 })
 

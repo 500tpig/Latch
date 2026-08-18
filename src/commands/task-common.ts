@@ -2,7 +2,10 @@ import { lstatSync } from 'node:fs'
 import { isAbsolute, normalize, resolve, sep } from 'node:path'
 import { fail, readInputFile } from '../cli-support.js'
 import { discoverWorkspaceRoot } from '../core/paths.js'
-import { normalizeTaskPlanInput } from '../core/plan-schema.js'
+import {
+  normalizeTaskPlanInput,
+  PlanValidationError,
+} from '../core/plan-schema.js'
 import { jsonEnvelopeV3 } from '../core/task-view.js'
 import {
   compactMutationStrings,
@@ -132,10 +135,18 @@ export function readPlan(
       if (code === 'ENOENT' || code === 'ENOTDIR') continue
       throw error
     }
-    throw new Error(
+    throw new PlanValidationError(
       `Invalid plan.workspace_scope.paths in ${planFile}: ${candidate} is an existing directory. ` +
         'Paths without a trailing "/" are exact files; ' +
         `use ${candidate}/ for a directory prefix.`,
+      [{
+        path: `/workspace_scope/paths/${normalized.workspace_scope.paths.indexOf(candidate)}`,
+        reason: 'directory_suffix_required',
+        expected: 'repo_relative_posix_directory_prefix',
+        actual_type: 'string',
+        actual_value: candidate,
+        minimal_legal_value: `${candidate}/`,
+      }],
     )
   }
   return normalized
@@ -226,7 +237,7 @@ export function currentWritableTask(
   if (task.schema_version !== 5)
     fail(
       'writer_version_mismatch',
-      `Latch CLI 0.6.0 only mutates schema_version 5 tasks; the current runner treats task ${task.id} as historical read-only and requires its matching runner for schema_version ${task.schema_version}.`,
+      `Latch CLI 0.6.1 only mutates schema_version 5 tasks; the current runner treats task ${task.id} as historical read-only and requires its matching runner for schema_version ${task.schema_version}.`,
     )
   return task
 }

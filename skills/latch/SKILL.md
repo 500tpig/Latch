@@ -10,7 +10,7 @@ Require a listed signal. Otherwise run no Latch command or init question; inspec
 
 ## Select and inspect
 
-- Here use `node dist/cli.js`: CLI `0.6.0`, envelope `3`, new-task schema 5.
+- Here use `node dist/cli.js`: CLI `0.6.1`, envelope `3`, new-task schema 5.
   Schema 2–4 are read-only. Stop if any version is unknown.
 - After activation, run `git status --short`, then `list --json --brief`. On `not_initialized`, stop:
   do not scaffold, plan, checkpoint, or init without the user's choice. An explicit
@@ -79,6 +79,9 @@ entry to the task before submit. Submit enters review; never auto-complete.
   writer mismatch is fail closed. Grok and Codex are equal hosts; never invent or
   export `LATCH_ACTOR`. Takeover changes writer only, never plan approval.
 - Structured JSON accepts at most one stdin consumer and fails before mutation.
+- On checkpoint `invalid_arguments` with `error.category: plan_validation`, fix
+  the bounded issue paths/reasons and retry as directed by `error.retry`; do not
+  parse `error.message` or load recovery. `checkpoint` is not a `next_action` command.
 - `workspace_scope.paths` uses repo-relative POSIX paths: files omit `/`,
   directories end in `/`, existing directories without `/` fail, and missing
   paths remain valid. Never infer scope or authorization from prose, paths,

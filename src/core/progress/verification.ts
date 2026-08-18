@@ -289,7 +289,7 @@ export function reconcileWorkspaceViolations(
   )
   if (current.schema_version !== 5)
     throw new Error(
-      `Latch CLI 0.6.0 only reconciles schema_version 5 tasks; task ${current.id} is historical read-only.`,
+      `Latch CLI 0.6.1 only reconciles schema_version 5 tasks; task ${current.id} is historical read-only.`,
     )
   if (current.phase !== 'dev' && current.phase !== 'check')
     throw new LatchDomainError(

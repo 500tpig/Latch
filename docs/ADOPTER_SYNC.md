@@ -1,6 +1,6 @@
 # Latch CLI 0.6 / schema 5 接入状态
 
-本页区分 Latch repo 的 CLI `0.6.0` / JSON envelope 3 / schema 5 current release 与
+本页区分 Latch repo 的 CLI `0.6.1` / JSON envelope 3 / schema 5 current release 与
 外部 adopter rollout。Latch repo 已进入 current；Latch-Board 已完成独立 reader-v3
 rollout，monitoring 与 appearance-sec 仍保持 `pending`。
 
@@ -10,7 +10,7 @@ rollout，monitoring 与 appearance-sec 仍保持 `pending`。
 
 | 项目 | 状态 | 当前证据 | 独立后续 |
 |---|---|---|---|
-| Latch | CLI `0.6.0` / envelope 3 / schema 5 current | envelope 3 producer commit `0c94c8c`；gate bounded output commit `502a489`；Agent 常驻指令与 CLI 帮助收口 commit `c754150`（当前 HEAD） | 本仓 current 不证明全局 `latch` 链接或 canonical Skill 已传播到其它 repo |
+| Latch | CLI `0.6.1` / envelope 3 / schema 5 current | envelope 3 producer commit `0c94c8c`；plan error recovery 来源 task `20260818070139210-改进-plan-输入错误恢复契约-d9413f` | 本 task 不证明 Git delivery、全局 `latch` 链接或 canonical Skill 已传播到其它 repo |
 | Latch-Board | reader-v3 rollout 已完成 | 独立 task `20260814023156010-将-latch-board-一次性切换到-envelope-3-reader-v-5fb1b3` 已在 revision 15 以 `done` 归档；reader-v3 rollout commit `b6d2476`；README 修复 commit `dc6486890e70ebbc65a3d01b0acfedffe0078fa8`（将 CLI envelope 说明更正为 `schema_version: 3`） | 107 项测试、生产构建和真实 reader-v3 流程已通过；未启动浏览器或 dev server，Browser UI 验收未执行 |
 | monitoring | pending | 本次未读取或修改该 repo，也未迁移其 historical task | 独立 Standard task 核对 CLI/Skill 安装、schema 5 新 task 与 historical read-only 展示 |
 | appearance-sec | pending | 本次未读取或修改该 repo，也未创建 adopter task | 独立 Standard task 核对 CLI/Skill 安装、schema 5 新 task 与空状态流程 |
@@ -23,7 +23,7 @@ pending、安装传播未核验和全面 rollout 未完成等边界。
 
 ## Current schema 边界
 
-- 当前 package / CLI 为 `0.6.0`，CLI JSON envelope 使用 `schema_version: 3`；
+- 当前 package / CLI 为 `0.6.1`，CLI JSON envelope 使用 `schema_version: 3`；
 - 新 task 使用 `schema_version: 5` 和 `min_writer_version: "0.5.0"`，schema 5 是
   唯一 current writer；
 - adopter reader-v3 将 schema 3/4 作为 historical read-only，将 schema 2 作为
@@ -51,6 +51,11 @@ closed；不得保留 envelope 2 parser、字段探测、双读或 fallback。`n
 - `command`：单一可执行 CLI primitive，可按契约携带 mode；
 - `await_user`：标明用户输入边界与原因；
 - `stop`：标明只读、阻塞或不可继续的稳定原因。
+
+CLI `0.6.1` 只在 checkpoint plan error 的 `error` 对象中增加 additive 字段，并继续返回
+既有 `invalid_arguments` code。Latch-Board 的 failure reader 读取 `error.code` 和
+`error.message`，忽略其它字段；version parser 接受 `0.6.x`。因此本轮只做影响分析，
+不修改 Latch-Board 仓库、冻结 fixture 或 SHA-256。
 
 冻结契约覆盖：
 

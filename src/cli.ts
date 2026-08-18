@@ -30,6 +30,10 @@ import { runDowngradeV2, runUpgradeV4 } from './commands/migration.js'
 import { actorRequiredCommands, usage } from './commands/usage.js'
 import { runVersion } from './commands/version.js'
 import {
+  CheckpointPlanInputError,
+  checkpointPlanErrorEnvelope,
+} from './commands/checkpoint-plan-error.js'
+import {
   runCheckpoint,
   runInit,
   runList,
@@ -215,32 +219,38 @@ async function main() {
       error instanceof NotInitializedError
         ? error.code
         : 'command_failed'
-    if (optionArgv.includes('--json'))
+    if (optionArgv.includes('--json')) {
+      const envelope = {
+        ...(optionArgv.includes('--version') || argv[0] !== 'record'
+          ? jsonEnvelopeV3()
+          : recordJsonEnvelope()),
+        next_action: new Set([
+          'writer_mismatch',
+          'phase_mismatch',
+          'proof_stale',
+          'workspace_violation',
+          'task_blocked',
+          'writer_version_mismatch',
+        ]).has(code)
+          ? errorNextAction(argv, cwd, actorId())
+          : NEXT_ACTIONS.invalidTaskState,
+        ...(error instanceof DowngradeTaskV2Error
+          ? {
+              backup_path: error.backupPath,
+              warnings: error.warnings,
+            }
+          : {}),
+      }
       process.stderr.write(
-        `${JSON.stringify({
-          ...(optionArgv.includes('--version') || argv[0] !== 'record'
-            ? jsonEnvelopeV3()
-            : recordJsonEnvelope()),
-          next_action: new Set([
-            'writer_mismatch',
-            'phase_mismatch',
-            'proof_stale',
-            'workspace_violation',
-            'task_blocked',
-            'writer_version_mismatch',
-          ]).has(code)
-            ? errorNextAction(argv, cwd, actorId())
-            : NEXT_ACTIONS.invalidTaskState,
-          ...(error instanceof DowngradeTaskV2Error
-            ? {
-                backup_path: error.backupPath,
-                warnings: error.warnings,
-              }
-            : {}),
-          error: { code, message },
-        }, null, 2)}\n`,
+        `${JSON.stringify(
+          error instanceof CheckpointPlanInputError
+            ? checkpointPlanErrorEnvelope(envelope, error)
+            : { ...envelope, error: { code, message } },
+          null,
+          2,
+        )}\n`,
       )
-    else process.stderr.write(`${message}\n`)
+    } else process.stderr.write(`${message}\n`)
     process.exitCode = 1
   }
 }

@@ -4,10 +4,17 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
+  readlinkSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
+import {
+  CHECKPOINT_PLAN_ERROR_BYTE_BUDGET,
+  CheckpointPlanInputError,
+  checkpointPlanErrorEnvelope,
+} from '../dist/commands/checkpoint-plan-error.js'
 import {
   cleanupTemporaryDirectories,
   checkpoint,
@@ -21,6 +28,33 @@ import {
 } from './cli-test-support.mjs'
 
 test.afterEach(cleanupTemporaryDirectories)
+
+function latchTreeSnapshot(cwd) {
+  const root = join(cwd, '.latch')
+  const snapshot = []
+  function visit(directory, prefix = '') {
+    const entries = readdirSync(directory, { withFileTypes: true })
+      .sort((left, right) => left.name.localeCompare(right.name))
+    for (const entry of entries) {
+      const path = join(directory, entry.name)
+      const relative = prefix ? `${prefix}/${entry.name}` : entry.name
+      if (entry.isDirectory()) {
+        snapshot.push([relative, 'directory'])
+        visit(path, relative)
+      } else if (entry.isSymbolicLink()) {
+        snapshot.push([relative, 'symlink', readlinkSync(path)])
+      } else {
+        snapshot.push([
+          relative,
+          'file',
+          readFileSync(path).toString('base64'),
+        ])
+      }
+    }
+  }
+  visit(root)
+  return snapshot
+}
 
 test('checkpoint templates are side-effect-free shape scaffolds that require completion', () => {
   const lightExpected = {
@@ -132,6 +166,7 @@ test('checkpoint templates are side-effect-free shape scaffolds that require com
   assert.equal(draft.status, 0, draft.stderr)
   assert.equal(readTask(cwd, JSON.parse(draft.stdout).task_id).phase, 'plan')
 
+  const latchBeforeDenied = latchTreeSnapshot(cwd)
   const denied = run(cwd, [
     'checkpoint',
     'Template authorization denied',
@@ -143,7 +178,24 @@ test('checkpoint templates are side-effect-free shape scaffolds that require com
   ])
   assert.notEqual(denied.status, 0)
   assert.match(denied.stderr, /not authorizable/)
+  const deniedEnvelope = JSON.parse(denied.stderr)
+  assert.equal(deniedEnvelope.error.code, 'invalid_arguments')
+  assert.equal(deniedEnvelope.error.category, 'plan_validation')
+  assert.deepEqual(deniedEnvelope.error.issues.sample[0], {
+    path: '/workspace_scope/paths',
+    reason: 'non_empty_required',
+    expected: 'non_empty_repo_relative_posix_path_array',
+  })
+  assert.deepEqual(deniedEnvelope.error.retry, {
+    command: 'checkpoint',
+    input: '--plan-file',
+  })
+  assert.deepEqual(deniedEnvelope.next_action, {
+    kind: 'stop',
+    reason: 'invalid_task_state',
+  })
   assert.equal(taskIds(cwd).length, 1)
+  assert.deepEqual(latchTreeSnapshot(cwd), latchBeforeDenied)
 
   const completedLightPlan = {
     ...lightExpected,
@@ -180,6 +232,7 @@ test('checkpoint templates are side-effect-free shape scaffolds that require com
     'sentinel-template.json',
   )
   const taskCountBeforeSentinel = taskIds(cwd).length
+  const latchBeforeSentinel = latchTreeSnapshot(cwd)
   const sentinelDenied = run(cwd, [
     'checkpoint',
     'Sentinel authorization denied',
@@ -191,7 +244,49 @@ test('checkpoint templates are side-effect-free shape scaffolds that require com
   ])
   assert.notEqual(sentinelDenied.status, 0)
   assert.match(sentinelDenied.stderr, /replace-with-real-command/)
+  const sentinelEnvelope = JSON.parse(sentinelDenied.stderr)
+  assert.equal(sentinelEnvelope.error.code, 'invalid_arguments')
+  assert.deepEqual(sentinelEnvelope.error.issues.sample[0], {
+    path: '/verification_plan/0/command',
+    reason: 'sentinel_not_replaced',
+    expected: 'real_command_argv',
+  })
   assert.equal(taskIds(cwd).length, taskCountBeforeSentinel)
+  assert.deepEqual(latchTreeSnapshot(cwd), latchBeforeSentinel)
+
+  const noGateFile = writePlan(
+    cwd,
+    {
+      ...completedLightPlan,
+      verification_plan: [{
+        name: 'diagnostic',
+        command: [process.execPath, '-e', 'process.exit(0)'],
+        kind: 'diagnostic',
+      }],
+    },
+    'no-gate-template.json',
+  )
+  const latchBeforeNoGate = latchTreeSnapshot(cwd)
+  const noGateDenied = run(cwd, [
+    'checkpoint',
+    'No gate authorization denied',
+    '--plan-file',
+    noGateFile,
+    '--authorize-request',
+    '用户请求执行明确的低风险变更',
+    '--json',
+  ])
+  assert.notEqual(noGateDenied.status, 0)
+  assert.deepEqual(
+    JSON.parse(noGateDenied.stderr).error.issues.sample[0],
+    {
+      path: '/verification_plan',
+      reason: 'gate_required',
+      expected: 'verification_plan_with_gate',
+    },
+  )
+  assert.equal(taskIds(cwd).length, taskCountBeforeSentinel)
+  assert.deepEqual(latchTreeSnapshot(cwd), latchBeforeNoGate)
 
   const created = run(cwd, [
     'checkpoint',
@@ -331,18 +426,30 @@ test('checkpoint rejects missing or invalid plan without creating task', () => {
   assert.deepEqual(taskIds(cwd), [])
 
   const invalidPlan = writePlan(cwd, { goal: 'incomplete' }, 'invalid.json')
+  const latchBeforeInvalid = latchTreeSnapshot(cwd)
   const invalid = run(cwd, [
     'checkpoint',
     'Invalid plan',
     '--plan-file',
     invalidPlan,
+    '--json',
   ])
   assert.notEqual(invalid.status, 0)
   assert.match(invalid.stderr, /Missing required plan fields/)
   assert.match(invalid.stderr, /plan\.scope/)
   assert.match(invalid.stderr, /Expected schema/)
   assert.match(invalid.stderr, /Minimal legal plan/)
-  assert.match(invalid.stderr, /checkpoint --print-plan-template light/)
+  const invalidEnvelope = JSON.parse(invalid.stderr)
+  assert.equal(invalidEnvelope.error.code, 'invalid_arguments')
+  assert.equal(invalidEnvelope.error.category, 'plan_validation')
+  assert.equal(invalidEnvelope.error.message_truncated, true)
+  assert.deepEqual(invalidEnvelope.error.issues.sample[0], {
+    path: '/scope',
+    reason: 'required',
+    expected: 'string_array',
+    minimal_legal_value: [],
+  })
+  assert.deepEqual(latchTreeSnapshot(cwd), latchBeforeInvalid)
 
   for (const [value, actual] of [
     ['src/cli.ts', 'string'],
@@ -376,7 +483,14 @@ test('checkpoint rejects missing or invalid plan without creating task', () => {
   assert.notEqual(invalidScopeJson.status, 0)
   const invalidScopeEnvelope = JSON.parse(invalidScopeJson.stderr)
   assert.equal(invalidScopeEnvelope.schema_version, 3)
-  assert.equal(invalidScopeEnvelope.error.code, 'command_failed')
+  assert.equal(invalidScopeEnvelope.error.code, 'invalid_arguments')
+  assert.deepEqual(invalidScopeEnvelope.error.issues.sample[0], {
+    path: '/scope',
+    reason: 'type_mismatch',
+    expected: 'string_array',
+    actual_type: 'string',
+    minimal_legal_value: [],
+  })
   assert.match(invalidScopeEnvelope.error.message, /expected string\[\]/)
   assert.match(
     invalidScopeEnvelope.error.message,
@@ -399,14 +513,29 @@ test('checkpoint rejects missing or invalid plan without creating task', () => {
     'Invalid verification command',
     '--plan-file',
     invalidVerification,
+    '--json',
   ])
   assert.notEqual(invalidCommand.status, 0)
-  assert.match(invalidCommand.stderr, /Invalid verification_plan\.command/)
-  assert.match(invalidCommand.stderr, /expected string\[\]/)
-  assert.match(invalidCommand.stderr, /got string/)
+  const invalidCommandEnvelope = JSON.parse(invalidCommand.stderr)
   assert.match(
-    invalidCommand.stderr,
+    invalidCommandEnvelope.error.message,
+    /Invalid verification_plan\.command/,
+  )
+  assert.match(invalidCommandEnvelope.error.message, /expected string\[\]/)
+  assert.match(invalidCommandEnvelope.error.message, /got string/)
+  assert.match(
+    invalidCommandEnvelope.error.message,
     /Minimal legal value: \["replace-with-real-command"\]/,
+  )
+  assert.deepEqual(
+    invalidCommandEnvelope.error.issues.sample[0],
+    {
+      path: '/verification_plan/0/command',
+      reason: 'type_mismatch',
+      expected: 'non_empty_string_array',
+      actual_type: 'string',
+      minimal_legal_value: ['replace-with-real-command'],
+    },
   )
 
   const invalidVerificationPlan = writePlan(
@@ -520,6 +649,7 @@ test('checkpoint rejects existing directory paths without a trailing slash befor
   symlinkSync('ui', join(cwd, 'src', 'features', 'ui-link'))
   const statePath = join(cwd, '.latch', 'state.json')
   const stateBefore = readFileSync(statePath, 'utf8')
+  const latchBefore = latchTreeSnapshot(cwd)
 
   const invalidPlan = plan({
     workspace_scope: { paths: ['src/features/ui'] },
@@ -534,7 +664,15 @@ test('checkpoint rejects existing directory paths without a trailing slash befor
   assert.notEqual(standard.status, 0)
   const envelope = JSON.parse(standard.stderr)
   assert.equal(envelope.schema_version, 3)
-  assert.equal(envelope.error.code, 'command_failed')
+  assert.equal(envelope.error.code, 'invalid_arguments')
+  assert.deepEqual(envelope.error.issues.sample[0], {
+    path: '/workspace_scope/paths/0',
+    reason: 'directory_suffix_required',
+    expected: 'repo_relative_posix_directory_prefix',
+    actual_type: 'string',
+    actual_value: 'src/features/ui',
+    minimal_legal_value: 'src/features/ui/',
+  })
   assert.match(envelope.error.message, /src\/features\/ui is an existing directory/)
   assert.match(envelope.error.message, /exact files/)
   assert.match(envelope.error.message, /src\/features\/ui\//)
@@ -551,6 +689,7 @@ test('checkpoint rejects existing directory paths without a trailing slash befor
   assert.match(light.stderr, /src\/features\/ui is an existing directory/)
   assert.deepEqual(taskIds(cwd), [])
   assert.equal(readFileSync(statePath, 'utf8'), stateBefore)
+  assert.deepEqual(latchTreeSnapshot(cwd), latchBefore)
 
   for (const [name, path] of [
     ['directory prefix', 'src/features/ui/'],
@@ -572,6 +711,101 @@ test('checkpoint rejects existing directory paths without a trailing slash befor
     assert.equal(result.status, 0, result.stderr)
   }
   assert.equal(taskIds(cwd).length, 4)
+})
+
+test('checkpoint plan error envelope is bounded and truncates issues deterministically', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const statePath = join(cwd, '.latch', 'state.json')
+  const stateBefore = readFileSync(statePath, 'utf8')
+  const latchBefore = latchTreeSnapshot(cwd)
+  const invalidVerificationPlan = Array.from({ length: 20 }, () => ({
+    name: '',
+    command: 'pnpm check',
+    kind: 'check',
+  }))
+  const result = run(cwd, [
+    'checkpoint',
+    'Bounded plan error',
+    '--plan-file',
+    writePlan(
+      cwd,
+      plan({ verification_plan: invalidVerificationPlan }),
+      'bounded-plan-error.json',
+    ),
+    '--json',
+  ])
+
+  assert.notEqual(result.status, 0)
+  assert.ok(Buffer.byteLength(result.stderr, 'utf8') <= 4096)
+  const envelope = JSON.parse(result.stderr)
+  assert.equal(envelope.error.code, 'invalid_arguments')
+  assert.equal(envelope.error.category, 'plan_validation')
+  assert.equal(envelope.error.issues.total, 60)
+  assert.equal(envelope.error.issues.sample_limit, 8)
+  assert.equal(envelope.error.issues.returned_count, 8)
+  assert.equal(envelope.error.issues.sample.length, 8)
+  assert.equal(envelope.error.issues.truncated, true)
+  assert.equal(envelope.error.truncated, true)
+  assert.equal(envelope.error.message_truncated, true)
+  assert.deepEqual(taskIds(cwd), [])
+  assert.equal(readFileSync(statePath, 'utf8'), stateBefore)
+  assert.deepEqual(latchTreeSnapshot(cwd), latchBefore)
+})
+
+test('checkpoint plan error bounds multibyte actual values on UTF-8 boundaries', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const latchBefore = latchTreeSnapshot(cwd)
+  const invalidPath = `${'界'.repeat(300)}*`
+  const result = run(cwd, [
+    'checkpoint',
+    'UTF-8 plan error',
+    '--plan-file',
+    writePlan(
+      cwd,
+      plan({ workspace_scope: { paths: [invalidPath] } }),
+      'utf8-plan-error.json',
+    ),
+    '--json',
+  ])
+
+  assert.notEqual(result.status, 0)
+  assert.ok(Buffer.byteLength(result.stderr, 'utf8') <= 4096)
+  const issue = JSON.parse(result.stderr).error.issues.sample[0]
+  assert.equal(issue.path, '/workspace_scope/paths/0')
+  assert.equal(issue.reason, 'invalid_value')
+  assert.equal(issue.expected, 'repo_relative_posix_path')
+  assert.equal(issue.actual_type, 'string')
+  assert.equal(issue.actual_value_truncated, true)
+  assert.ok(Buffer.byteLength(issue.actual_value, 'utf8') <= 256)
+  assert.doesNotMatch(issue.actual_value, /\uFFFD/)
+  assert.deepEqual(latchTreeSnapshot(cwd), latchBefore)
+})
+
+test('checkpoint plan error has an absolute final budget fallback', () => {
+  const error = new CheckpointPlanInputError('界'.repeat(10_000), [{
+    path: `/${'path'.repeat(3_000)}`,
+    reason: 'type_mismatch',
+    expected: 'expected'.repeat(3_000),
+    actual_type: 'string',
+    actual_value: '值'.repeat(3_000),
+    minimal_legal_value: '最小值'.repeat(3_000),
+  }])
+  const envelope = checkpointPlanErrorEnvelope({
+    schema_version: 3,
+    generated_at: '2026-08-18T00:00:00.000Z',
+    next_action: { kind: 'stop', reason: 'invalid_task_state' },
+  }, error)
+
+  assert.ok(
+    Buffer.byteLength(`${JSON.stringify(envelope, null, 2)}\n`, 'utf8') <=
+      CHECKPOINT_PLAN_ERROR_BYTE_BUDGET,
+  )
+  assert.equal(envelope.error.issues.returned_count, 0)
+  assert.equal(envelope.error.issues.truncated, true)
+  assert.equal(envelope.error.truncated, true)
+  assert.equal(envelope.error.message_truncated, true)
 })
 
 test('artifact paths must remain relative to workspace root', () => {

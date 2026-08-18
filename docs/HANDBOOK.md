@@ -55,7 +55,7 @@ template、不准备 plan、不调用 `checkpoint`，也不自动执行 `latch i
 
 ### JSON 错误码
 
-CLI `0.6.0` 的 JSON error envelope 使用 `schema_version: 3`，并为可恢复的高频领域拒绝提供稳定
+CLI `0.6.1` 的 JSON error envelope 使用 `schema_version: 3`，并为可恢复的高频领域拒绝提供稳定
 `error.code`：writer 不匹配使用 `writer_mismatch`，phase 不匹配使用 `phase_mismatch`，plan、
 work revision 或 gate proof 失效使用 `proof_stale`，live workspace mismatch 或 unresolved scope
 violation 使用 `workspace_violation`。可读 `error.message` 保留具体原因，但 Agent 应按 code 与
@@ -64,6 +64,25 @@ typed `next_action` 选择恢复动作，不得解析英文 message。
 `invalid_arguments`、`not_initialized` 和 `writer_version_mismatch` 的既有语义不变；
 未分类的真实异常继续返回 `command_failed`，其 `next_action` 为
 `{ "kind": "stop", "reason": "invalid_task_state" }`。
+
+`checkpoint` 的可预期 plan 校验失败返回 `error.code: "invalid_arguments"` 和
+`error.category: "plan_validation"`。`error.issues.sample` 按校验顺序返回问题；每项包含以
+plan 输入根为基准的 RFC 6901 JSON Pointer `path`、稳定 `reason`，并在适用时包含
+`expected`、`actual_type`、`actual_value` 或 `minimal_legal_value`。`expected` 只使用
+稳定约束 token，`actual_type` 只表示 JSON 类型，只有修正输入需要原值时才返回
+`actual_value`。`error.retry` 指向 `checkpoint` 和
+`--plan-file`。Agent 应根据这些字段修正输入并重试，不读取 Recovery，也不解析
+`error.message`。命令级 `retry` 信息不改变 lifecycle `next_action`；`checkpoint` 不进入
+`next_action.command` union。
+
+整份 `checkpoint` plan error JSON（含缩进和结尾换行）不得超过 4096 UTF-8 bytes。
+issue sample 上限为 8，响应同时返回 `total`、`sample_limit`、`returned_count` 和
+`truncated`。`message` 首轮保留 1024 bytes，`actual_value` 保留 256 bytes，单项
+`minimal_legal_value` 的 JSON 表示不超过 512 bytes；超限时依次移除尾部可选的
+`minimal_legal_value`、移除尾部 issue、将 `message` 收紧到 256 bytes，最后保留首项的
+`path`、`reason` 和 `expected`；如果这三个字段本身仍无法满足总预算，则返回空 sample，
+同时保留总数和截断标记。被裁剪的字符串在 UTF-8 码点边界截断，`error.truncated`、
+`message_truncated` 和 issue 级截断标记说明裁剪结果。
 
 ### 结构化 JSON stdin
 
@@ -93,7 +112,7 @@ latch --json --version
 Human 输出只包含当前 CLI 包的版本号和换行。JSON 输出使用 `schema_version: 3`
 envelope，并独立报告 `cli_version`、`envelope_schema_version: 3`、
 `current_task_schema_version: 5` 和
-`historical_readable_task_schema_versions: [2, 3, 4]`。CLI `0.6.0` 的所有
+`historical_readable_task_schema_versions: [2, 3, 4]`。CLI `0.6.1` 的所有
 `--json` 成功、error、list、context、mutation 与 Record envelope 统一为
 `schema_version: 3`；task 存储仍为 schema 5，event 仍为 `events_schema_version: 3`。
 
@@ -162,6 +181,11 @@ authorizable validation 只在创建或更新 work basis 前执行。授权要�
 只修改当前 actor 的索引。带 `--plan-file` 的 `save` 始终按当前 task 的 `profile`
 校验 authoring input；Light save 同样接受六字段输入并持久化完整 `TaskPlan`，Standard
 save 继续要求完整 12 字段。
+
+带 work basis 的 Light `checkpoint` 在进入 `createTaskV5` 前完成 authorizable preflight。
+shape、writable、目录后缀和 authorizable 任一校验失败时，不创建 task、event、evidence，
+也不修改 state、shared worktree 或 dirty baseline。结构化 plan error 投影只适用于
+`checkpoint`；`save`、`approve`、plan delta 和其它 structured input 的错误契约保持不变。
 
 `checkpoint --group <id>` 只接受用户明确提供的精确 Group ID，并在创建 task 时原子写入
 现有 `group_id` 字段；不从 path overlap、标题或相邻 task 推断 Group。Group 不改变每张

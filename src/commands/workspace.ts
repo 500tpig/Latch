@@ -21,6 +21,7 @@ import {
   listHumanV2,
   listJsonV2,
 } from '../core/task-view.js'
+import { assertAuthorizableTaskPlan } from '../core/plan-schema.js'
 import {
   createTaskV5,
   initTaskStoreV2,
@@ -39,6 +40,7 @@ import {
   readPlan,
   requirePositionals,
 } from './task-common.js'
+import { rethrowCheckpointPlanInputError } from './checkpoint-plan-error.js'
 import { commandUsage } from './usage.js'
 
 export function runInit(args: string[], cwd: string) {
@@ -157,7 +159,12 @@ export function runCheckpoint(args: string[], cwd: string, actor: string) {
     ['--authorization-file', parsed.values['authorization-file']],
     ['--retrospective-file', parsed.values['retrospective-file']],
   ])
-  const plan = readPlan(cwd, parsed.values['plan-file'], profile)
+  let plan: ReturnType<typeof readPlan>
+  try {
+    plan = readPlan(cwd, parsed.values['plan-file'], profile)
+  } catch (error) {
+    rethrowCheckpointPlanInputError(error)
+  }
   const artifacts = (parsed.values.artifact ?? []).map(artifact)
   const authorization = hasAuthorizationFile
     ? readInputFile<ImplementationAuthorizationInput>(
@@ -194,6 +201,17 @@ export function runCheckpoint(args: string[], cwd: string, actor: string) {
           },
         }
       : undefined
+  if (hasInlineAuthorization || hasAuthorizationFile || hasRetrospective) {
+    try {
+      assertAuthorizableTaskPlan(
+        plan,
+        profile,
+        parsed.values['plan-file'] ?? '--plan-file',
+      )
+    } catch (error) {
+      rethrowCheckpointPlanInputError(error)
+    }
+  }
   const sourceRecord = parsed.values['source-record']
     ? showProjectRecordV1(
         openRecordStoreV1(cwd),

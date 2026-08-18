@@ -393,7 +393,7 @@ test('canonical skill routes every low-frequency reference without hiding core s
   assertTextMatches(text(groupsReference), /group_id/)
   assertTextMatches(text(knowledgeReference), /knowledge fingerprint/)
   assertTextMatches(text(knowledgeReference), /context pack/i)
-  assertTextMatches(text(migrationReference), /CLI `0\.6\.0` is the current runner[\s\S]*minimum writer for schema 5/)
+  assertTextMatches(text(migrationReference), /CLI `0\.6\.1` is the current runner[\s\S]*minimum writer for schema 5/)
   assertTextMatches(text(migrationReference), /Schema 2–4 are historical read-only/)
   assertTextMatches(text(migrationReference), /rejects every schema 2–4 task mutation/)
   assert.doesNotMatch(text(migrationReference), /upgrade-v4|downgrade-v2/)
@@ -441,7 +441,7 @@ test('current release surfaces consistently expose schema 5 and keep adopters pe
   const adopter = text('docs/ADOPTER_SYNC.md')
   const fixture = JSON.parse(text('tests/fixtures/context-v5-board-reader.json'))
 
-  assert.equal(packageJson.version, '0.6.0')
+  assert.equal(packageJson.version, '0.6.1')
   for (const content of [index, handBook, design, install, contract]) {
     assertTextMatches(content, /schema 5/)
     assert.doesNotMatch(content, /current (?:task )?writer[^\n]*schema 4/i)
@@ -663,6 +663,29 @@ test('current docs freeze the compact mutation and closeout handoff contract', (
   assertTextMatches(handBook, /unverified_items[\s\S]*item_id/)
   assertTextMatches(handBook, /context <task-id> --json --review/)
   assertTextMatches(lifecycle, /unavailable, truncated[\s\S]*--json --review/)
+})
+
+test('current docs and Skill freeze bounded checkpoint plan error recovery', () => {
+  const handBook = text('docs/HANDBOOK.md')
+  const design = text('docs/DESIGN.md')
+  const skill = text('skills/latch/SKILL.md')
+  const lifecycle = text(lifecycleReference)
+
+  for (const content of [handBook, design]) {
+    assertTextMatches(content, /plan_validation/)
+    assertTextMatches(content, /invalid_arguments/)
+    assertTextMatches(content, /4096 UTF-8 bytes/)
+    assertTextMatches(content, /RFC 6901 JSON Pointer/)
+  }
+  assertTextMatches(handBook, /sample (?:上限|limit)[^\n]*8/)
+  assertTextMatches(handBook, /error\.retry[\s\S]*checkpoint/)
+  assertTextMatches(handBook, /actual_type[\s\S]*JSON 类型/)
+  assertTextMatches(handBook, /actual_value[\s\S]*原值/)
+  assertTextMatches(skill, /error\.category: plan_validation/)
+  assertTextMatches(skill, /error\.retry/)
+  assertTextMatches(skill, /do not[\s\S]*load recovery/i)
+  assertTextMatches(lifecycle, /bounded `plan_validation` issues/)
+  assertTextMatches(lifecycle, /does not add `checkpoint` to `next_action\.command`/)
 })
 
 test('canonical skill bounds large command output without creating a new workflow', () => {
