@@ -1,12 +1,13 @@
 import {
   assertSingleStdinInput,
-  commonOptions,
   fail,
   json,
+  mutationOptions,
   parseCommand,
   positiveInteger,
   printWarnings,
   readInputFile,
+  validateBrief,
 } from '../cli-support.js'
 import {
   PlanDeltaError,
@@ -14,6 +15,7 @@ import {
 } from '../core/progress.js'
 import { openTaskStoreV2 } from '../core/task-store.js'
 import type { ImplementationAuthorizationInput } from '../core/types.js'
+import { compactResolvedQuestions } from '../core/task-view/mutation.js'
 import { mutationJson, requirePositionals } from './task-common.js'
 import { commandUsage } from './usage.js'
 
@@ -35,13 +37,14 @@ export function runResolveOpenQuestions(
   actor: string,
 ) {
   const parsed = parseCommand(args, {
-    ...commonOptions(),
+    ...mutationOptions(),
     'expect-revision': { type: 'string' },
     'answers-file': { type: 'string' },
     'authorization-file': { type: 'string' },
   })
   if (parsed.values.help)
     return process.stdout.write(`${commandUsage['resolve-open-questions']}\n`)
+  validateBrief(parsed.values.json, parsed.values.brief)
   requirePositionals('resolve-open-questions', parsed.positionals, 1)
   const expectRevision = positiveInteger(
     parsed.values['expect-revision'],
@@ -78,19 +81,30 @@ export function runResolveOpenQuestions(
   }
 
   if (parsed.values.json)
-    return json({
-      ...mutationJson(
+    return json(
+      mutationJson(
         store,
         result.task,
         actor,
         result.warnings,
         expectRevision,
+        {
+          brief: Boolean(parsed.values.brief),
+          details: {
+            plan_revision: result.task.plan_revision,
+            work_revision: result.task.work_revision,
+            authorization_applied: result.authorizationApplied,
+            resolved_questions: result.resolvedQuestions,
+          },
+          briefDetails: {
+            plan_revision: result.task.plan_revision,
+            work_revision: result.task.work_revision,
+            authorization_applied: result.authorizationApplied,
+            resolved_questions: compactResolvedQuestions(result.resolvedQuestions),
+          },
+        },
       ),
-      plan_revision: result.task.plan_revision,
-      work_revision: result.task.work_revision,
-      authorization_applied: result.authorizationApplied,
-      resolved_questions: result.resolvedQuestions,
-    })
+    )
 
   process.stdout.write(
     `Resolved ${result.resolvedQuestions.length} open question(s) for ${result.task.id}.\n`,

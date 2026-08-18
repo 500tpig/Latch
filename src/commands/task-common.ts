@@ -5,6 +5,10 @@ import { discoverWorkspaceRoot } from '../core/paths.js'
 import { normalizeTaskPlanInput } from '../core/plan-schema.js'
 import { jsonEnvelopeV3 } from '../core/task-view.js'
 import {
+  compactMutationStrings,
+  enforceMutationBudget,
+} from '../core/task-view/mutation.js'
+import {
   nextAction,
   workspaceProofView,
 } from '../core/task-view/list-status.js'
@@ -137,15 +141,63 @@ export function readPlan(
   return normalized
 }
 
+export type MutationJsonOptions = {
+  brief?: boolean
+  archived?: boolean
+  details?: Record<string, unknown>
+  briefDetails?: Record<string, unknown>
+}
+
+function normalizeMutationJsonOptions(
+  options: MutationJsonOptions | boolean | undefined,
+): MutationJsonOptions {
+  return typeof options === 'boolean' ? { archived: options } : (options ?? {})
+}
+
 export function mutationJson(
   store: ReturnType<typeof openTaskStoreV2>,
   task: TaskV2,
   actor: string,
   warnings: string[],
   previousRevision?: number,
-  archived = false,
+  options?: MutationJsonOptions | boolean,
 ) {
+  const normalized = normalizeMutationJsonOptions(options)
+  const archived = Boolean(normalized.archived)
   const workspaceProof = workspaceProofView(store, task, archived)
+  if (normalized.brief) {
+    const compact = {
+      ...(normalized.briefDetails ?? {}),
+      ...jsonEnvelopeV3(),
+      task_id: task.id,
+      ...(previousRevision !== undefined
+        ? { previous_revision: previousRevision }
+        : {}),
+      revision: task.revision,
+      phase: task.phase,
+      next_action: nextAction(
+        task,
+        actor,
+        workspaceProof?.live_status,
+        archived,
+      ),
+      warning_count: warnings.length,
+      ...(warnings.length > 0
+        ? { warning_summary: compactMutationStrings(warnings) }
+        : {}),
+      proof_generation: workspaceProof?.generation ?? null,
+      proof_live_status: workspaceProof?.live_status ?? null,
+      unresolved_violations: workspaceProof?.unresolved_violations ?? 0,
+      ...(archived
+        ? {
+            archived: true,
+            outcome: task.outcome,
+            last_open_phase: task.phase,
+          }
+        : {}),
+    }
+    return enforceMutationBudget(compact)
+  }
   return {
     ...jsonEnvelopeV3(),
     task_id: task.id,
@@ -161,6 +213,8 @@ export function mutationJson(
     shared_worktree: sharedWorktreeProjection(store, task),
     ...(workspaceProof ? { workspace_proof: workspaceProof } : {}),
     warnings,
+    ...(archived ? { last_open_phase: task.phase } : {}),
+    ...(normalized.details ?? {}),
   }
 }
 

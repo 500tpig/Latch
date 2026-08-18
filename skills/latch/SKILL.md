@@ -50,8 +50,8 @@ Use this single route:
 list/status → checkpoint/approve → verify-all → submit/review → done
 ```
 
-Slashes are profile/state alternatives. Reuse every successful JSON `revision` as
-the next `--expect-revision` and follow typed `next_action`. Refresh status only
+Slashes select profile/state. Use compact JSON (`--json --brief`) for mutations;
+reuse every successful JSON `revision` and `next_action`. Refresh status only
 after a revision conflict, user-input boundary, judgment-requiring warning, or
 task meaning change. Never reread context only for `revision` or `next_action`,
 and never auto-retry a revision conflict.

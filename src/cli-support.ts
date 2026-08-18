@@ -70,6 +70,13 @@ export function commonOptions() {
   } as const
 }
 
+export function mutationOptions() {
+  return {
+    ...commonOptions(),
+    brief: { type: 'boolean' },
+  } as const
+}
+
 export function assertSingleStdinInput(
   inputs: Array<[option: string, path: string | undefined]>,
 ) {

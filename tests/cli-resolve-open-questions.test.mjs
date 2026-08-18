@@ -665,7 +665,7 @@ test('resolve-open-questions returns typed lifecycle refusals without mutation',
 test('resolve-open-questions exposes the approved usage and rejects missing answers-file', () => {
   const cwd = temporaryDirectory()
   const expected =
-    'Usage: latch resolve-open-questions <task-id> --expect-revision <revision> --answers-file <path|-> [--authorization-file <path|->] [--json]\n' +
+    'Usage: latch resolve-open-questions <task-id> --expect-revision <revision> --answers-file <path|-> [--authorization-file <path|->] [--json] [--brief]\n' +
     '--authorization-file JSON: {"kind":"implementation_authorization","source":"user_approve","reason":"Describe the authorized plan delta.","scope":{"summary":"Describe the current post-delta plan."}}\n'
   const help = run(cwd, ['resolve-open-questions', '--help'])
   assert.equal(help.status, 0, help.stderr)

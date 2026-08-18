@@ -50,9 +50,13 @@ Read this reference for plan structure, checkpoint and approve details, feedback
 ## Finish
 
 - Inspect open tasks and mutate only the named task.
-- Before `done`, read the bounded brief and compare every current
-  `submission.unverified_items` entry with the user's latest explicit review
-  acceptance. Archive intent alone is not risk acceptance.
+- Before `done`, reuse a current, untruncated `submit --json --brief`
+  `unverified_items` projection. If it is unavailable, truncated, or an
+  intervening mutation changed the revision, read
+  `context <task-id> --json --review`; do not read full Context only for item
+  IDs. Compare every current `submission.unverified_items` entry with the
+  user's latest explicit review acceptance. Archive intent alone is not risk
+  acceptance.
 - For schema 5, pass `--closeout-file <path>` containing exactly one resolution
   for every item ID. Unknown, duplicate, or missing item IDs fail before task,
   event, or archive writes. A task with zero items may omit `--closeout-file`.

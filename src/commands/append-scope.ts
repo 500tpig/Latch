@@ -1,12 +1,13 @@
 import {
   assertSingleStdinInput,
-  commonOptions,
   fail,
   json,
+  mutationOptions,
   parseCommand,
   positiveInteger,
   printWarnings,
   readInputFile,
+  validateBrief,
 } from '../cli-support.js'
 import {
   appendWorkspaceScope,
@@ -14,18 +15,20 @@ import {
 } from '../core/progress.js'
 import { openTaskStoreV2 } from '../core/task-store.js'
 import type { ImplementationAuthorizationInput } from '../core/types.js'
+import { compactMutationStrings } from '../core/task-view/mutation.js'
 import { mutationJson, requirePositionals } from './task-common.js'
 import { commandUsage } from './usage.js'
 
 export function runAppendScope(args: string[], cwd: string, actor: string) {
   const parsed = parseCommand(args, {
-    ...commonOptions(),
+    ...mutationOptions(),
     'expect-revision': { type: 'string' },
     path: { type: 'string', multiple: true },
     'authorization-file': { type: 'string' },
   })
   if (parsed.values.help)
     return process.stdout.write(`${commandUsage['append-scope']}\n`)
+  validateBrief(parsed.values.json, parsed.values.brief)
   requirePositionals('append-scope', parsed.positionals, 1)
   const expectRevision = positiveInteger(
     parsed.values['expect-revision'],
@@ -59,19 +62,30 @@ export function runAppendScope(args: string[], cwd: string, actor: string) {
   }
 
   if (parsed.values.json)
-    return json({
-      ...mutationJson(
+    return json(
+      mutationJson(
         store,
         result.task,
         actor,
         result.warnings,
         expectRevision,
+        {
+          brief: Boolean(parsed.values.brief),
+          details: {
+            plan_revision: result.task.plan_revision,
+            work_revision: result.task.work_revision,
+            authorization_applied: result.authorizationApplied,
+            appended_paths: result.appendedPaths,
+          },
+          briefDetails: {
+            plan_revision: result.task.plan_revision,
+            work_revision: result.task.work_revision,
+            authorization_applied: result.authorizationApplied,
+            appended_paths: compactMutationStrings(result.appendedPaths),
+          },
+        },
       ),
-      plan_revision: result.task.plan_revision,
-      work_revision: result.task.work_revision,
-      authorization_applied: result.authorizationApplied,
-      appended_paths: result.appendedPaths,
-    })
+    )
 
   process.stdout.write(
     `Appended ${result.appendedPaths.length} workspace scope path(s) to ${result.task.id}: ${result.appendedPaths.join(', ')}.\n`,

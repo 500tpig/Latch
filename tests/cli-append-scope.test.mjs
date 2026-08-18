@@ -503,7 +503,7 @@ test('append-scope returns typed task, writer, schema, blocked, and revision ref
 test('append-scope human and JSON help expose only the approved arguments', () => {
   const cwd = temporaryDirectory()
   const expected =
-    'Usage: latch append-scope <task-id> --expect-revision <revision> --path <repo-relative-path>... [--authorization-file <path|->] [--json]\n' +
+    'Usage: latch append-scope <task-id> --expect-revision <revision> --path <repo-relative-path>... [--authorization-file <path|->] [--json] [--brief]\n' +
     '--authorization-file JSON: {"kind":"implementation_authorization","source":"user_delta","reason":"Describe the authorized plan delta.","scope":{"summary":"Describe the current post-delta plan."}}\n'
   const human = run(cwd, ['append-scope', '--help'])
   assert.equal(human.status, 0, human.stderr)

@@ -1,12 +1,13 @@
 import {
   assertSingleStdinInput,
-  commonOptions,
   fail,
   json,
+  mutationOptions,
   parseCommand,
   positiveInteger,
   printWarnings,
   readInputFile,
+  validateBrief,
 } from '../cli-support.js'
 import {
   abandonTaskV2,
@@ -15,6 +16,7 @@ import {
   submitTaskV2,
 } from '../core/progress.js'
 import { openTaskStoreV2 } from '../core/task-store.js'
+import { compactUnverifiedItems } from '../core/task-view/mutation.js'
 import type {
   KnowledgeImpact,
   TaskCloseoutInput,
@@ -28,7 +30,7 @@ import { commandUsage } from './usage.js'
 
 export function runSubmit(args: string[], cwd: string, actor: string) {
   const parsed = parseCommand(args, {
-    ...commonOptions(),
+    ...mutationOptions(),
     'expect-revision': { type: 'string' },
     changes: { type: 'string' },
     'unverified-item': { type: 'string', multiple: true },
@@ -42,6 +44,7 @@ export function runSubmit(args: string[], cwd: string, actor: string) {
     'verbose-warnings': { type: 'boolean' },
   })
   if (parsed.values.help) return process.stdout.write(`${commandUsage.submit}\n`)
+  validateBrief(parsed.values.json, parsed.values.brief)
   requirePositionals('submit', parsed.positionals, 1)
   const expectRevision = positiveInteger(
     parsed.values['expect-revision'],
@@ -90,7 +93,14 @@ export function runSubmit(args: string[], cwd: string, actor: string) {
   })
   if (parsed.values.json)
     return json(
-      mutationJson(store, result.task, actor, result.warnings, expectRevision),
+      mutationJson(store, result.task, actor, result.warnings, expectRevision, {
+        brief: Boolean(parsed.values.brief),
+        briefDetails: {
+          unverified_items: compactUnverifiedItems(
+            result.task.submission?.unverified_items ?? [],
+          ),
+        },
+      }),
     )
   process.stdout.write(`Submitted ${result.task.id} for review.\n`)
   printWarnings(result.warnings)
@@ -102,7 +112,7 @@ export function runPatchSubmissionKnowledgeImpact(
   actor: string,
 ) {
   const parsed = parseCommand(args, {
-    ...commonOptions(),
+    ...mutationOptions(),
     'expect-revision': { type: 'string' },
     'knowledge-impact-file': { type: 'string' },
     reason: { type: 'string' },
@@ -111,6 +121,7 @@ export function runPatchSubmissionKnowledgeImpact(
     return process.stdout.write(
       `${commandUsage['patch-submission-knowledge-impact']}\n`,
     )
+  validateBrief(parsed.values.json, parsed.values.brief)
   requirePositionals(
     'patch-submission-knowledge-impact',
     parsed.positionals,
@@ -142,7 +153,9 @@ export function runPatchSubmissionKnowledgeImpact(
   )
   if (parsed.values.json)
     return json(
-      mutationJson(store, result.task, actor, result.warnings, expectRevision),
+      mutationJson(store, result.task, actor, result.warnings, expectRevision, {
+        brief: Boolean(parsed.values.brief),
+      }),
     )
   process.stdout.write(`Patched ${result.task.id} submission knowledge impact.\n`)
   printWarnings(result.warnings)
@@ -150,11 +163,12 @@ export function runPatchSubmissionKnowledgeImpact(
 
 export function runDone(args: string[], cwd: string, actor: string) {
   const parsed = parseCommand(args, {
-    ...commonOptions(),
+    ...mutationOptions(),
     'expect-revision': { type: 'string' },
     'closeout-file': { type: 'string' },
   })
   if (parsed.values.help) return process.stdout.write(`${commandUsage.done}\n`)
+  validateBrief(parsed.values.json, parsed.values.brief)
   requirePositionals('done', parsed.positionals, 1)
   const expectRevision = positiveInteger(
     parsed.values['expect-revision'],
@@ -185,7 +199,10 @@ export function runDone(args: string[], cwd: string, actor: string) {
         actor,
         result.warnings,
         expectRevision,
-        true,
+        {
+          archived: true,
+          brief: Boolean(parsed.values.brief),
+        },
       ),
       outcome: result.task.outcome,
       archived: true,
@@ -196,11 +213,12 @@ export function runDone(args: string[], cwd: string, actor: string) {
 
 export function runAbandon(args: string[], cwd: string, actor: string) {
   const parsed = parseCommand(args, {
-    ...commonOptions(),
+    ...mutationOptions(),
     'expect-revision': { type: 'string' },
     reason: { type: 'string' },
   })
   if (parsed.values.help) return process.stdout.write(`${commandUsage.abandon}\n`)
+  validateBrief(parsed.values.json, parsed.values.brief)
   requirePositionals('abandon', parsed.positionals, 1)
   const expectRevision = positiveInteger(
     parsed.values['expect-revision'],
@@ -222,7 +240,10 @@ export function runAbandon(args: string[], cwd: string, actor: string) {
         actor,
         result.warnings,
         expectRevision,
-        true,
+        {
+          archived: true,
+          brief: Boolean(parsed.values.brief),
+        },
       ),
       outcome: result.task.outcome,
       archived: true,

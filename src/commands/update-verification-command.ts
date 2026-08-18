@@ -1,12 +1,13 @@
 import {
   assertSingleStdinInput,
-  commonOptions,
   fail,
   json,
+  mutationOptions,
   parseCommand,
   positiveInteger,
   printWarnings,
   readInputFile,
+  validateBrief,
 } from '../cli-support.js'
 import {
   PlanDeltaError,
@@ -14,6 +15,7 @@ import {
 } from '../core/progress.js'
 import { openTaskStoreV2 } from '../core/task-store.js'
 import type { ImplementationAuthorizationInput } from '../core/types.js'
+import { compactMutationStrings } from '../core/task-view/mutation.js'
 import { mutationJson } from './task-common.js'
 import { commandUsage } from './usage.js'
 
@@ -44,7 +46,7 @@ export function runUpdateVerificationCommand(
 ) {
   const { optionArgs, command, hasSeparator } = splitCommandArgs(args)
   const parsed = parseCommand(optionArgs, {
-    ...commonOptions(),
+    ...mutationOptions(),
     'expect-revision': { type: 'string' },
     name: { type: 'string' },
     'authorization-file': { type: 'string' },
@@ -53,6 +55,7 @@ export function runUpdateVerificationCommand(
     return process.stdout.write(
       `${commandUsage['update-verification-command']}\n`,
     )
+  validateBrief(parsed.values.json, parsed.values.brief)
   if (parsed.positionals.length === 0)
     fail('invalid_arguments', commandUsage['update-verification-command'])
   if (parsed.positionals.length > 1)
@@ -97,24 +100,39 @@ export function runUpdateVerificationCommand(
   }
 
   if (parsed.values.json)
-    return json({
-      ...mutationJson(
+    return json(
+      mutationJson(
         store,
         result.task,
         actor,
         result.warnings,
         expectRevision,
+        {
+          brief: Boolean(parsed.values.brief),
+          details: {
+            plan_revision: result.task.plan_revision,
+            work_revision: result.task.work_revision,
+            authorization_applied: result.authorizationApplied,
+            verification: {
+              name: result.gateName,
+              kind: 'gate',
+              previous_command: result.previousCommand,
+              command: result.command,
+            },
+          },
+          briefDetails: {
+            plan_revision: result.task.plan_revision,
+            work_revision: result.task.work_revision,
+            authorization_applied: result.authorizationApplied,
+            verification: {
+              name: result.gateName,
+              kind: 'gate',
+              command: compactMutationStrings(result.command),
+            },
+          },
+        },
       ),
-      plan_revision: result.task.plan_revision,
-      work_revision: result.task.work_revision,
-      authorization_applied: result.authorizationApplied,
-      verification: {
-        name: result.gateName,
-        kind: 'gate',
-        previous_command: result.previousCommand,
-        command: result.command,
-      },
-    })
+    )
 
   process.stdout.write(
     `Updated verification command for ${result.task.id} gate ${result.gateName}: ${renderArgv(result.command)}.\n`,

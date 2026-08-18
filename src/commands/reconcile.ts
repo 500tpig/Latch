@@ -1,9 +1,10 @@
 import {
-  commonOptions,
   json,
+  mutationOptions,
   parseCommand,
   positiveInteger,
   printWarnings,
+  validateBrief,
 } from '../cli-support.js'
 import { reconcileWorkspaceViolations } from '../core/progress.js'
 import { openTaskStoreV2 } from '../core/task-store.js'
@@ -33,11 +34,12 @@ function humanIds(ids: ReturnType<typeof boundedIds>) {
 
 export function runReconcile(args: string[], cwd: string, actor: string) {
   const parsed = parseCommand(args, {
-    ...commonOptions(),
+    ...mutationOptions(),
     'expect-revision': { type: 'string' },
   })
   if (parsed.values.help)
     return process.stdout.write(`${commandUsage.reconcile}\n`)
+  validateBrief(parsed.values.json, parsed.values.brief)
   requirePositionals('reconcile', parsed.positionals, 1)
   const expectRevision = positiveInteger(
     parsed.values['expect-revision'],
@@ -59,11 +61,22 @@ export function runReconcile(args: string[], cwd: string, actor: string) {
         actor,
         result.warnings,
         expectRevision,
+        {
+          brief: Boolean(parsed.values.brief),
+          details: {
+            resolved_count: resolved.total,
+            remaining_count: remaining.total,
+            resolved_ids: resolved,
+            remaining_ids: remaining,
+          },
+          briefDetails: {
+            resolved_count: resolved.total,
+            remaining_count: remaining.total,
+            resolved_ids: resolved,
+            remaining_ids: remaining,
+          },
+        },
       ),
-      resolved_count: resolved.total,
-      remaining_count: remaining.total,
-      resolved_ids: resolved,
-      remaining_ids: remaining,
     })
   process.stdout.write(
     `Reconciled ${result.task.id}: ${resolved.total} restored, ${remaining.total} remaining; ` +

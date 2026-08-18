@@ -3,6 +3,7 @@ import {
   commonOptions,
   fail,
   json,
+  mutationOptions,
   parseCommand,
   positiveInteger,
   printWarnings,
@@ -52,7 +53,7 @@ export function runInit(args: string[], cwd: string) {
 
 export function runCheckpoint(args: string[], cwd: string, actor: string) {
   const parsed = parseCommand(args, {
-    ...commonOptions(),
+    ...mutationOptions(),
     'plan-file': { type: 'string' },
     'print-plan-template': { type: 'string' },
     profile: { type: 'string' },
@@ -66,6 +67,7 @@ export function runCheckpoint(args: string[], cwd: string, actor: string) {
     artifact: { type: 'string', multiple: true },
   })
   if (parsed.values.help) return process.stdout.write(`${commandUsage.checkpoint}\n`)
+  validateBrief(parsed.values.json, parsed.values.brief)
   const templateProfile = parsed.values['print-plan-template']
   if (templateProfile !== undefined) {
     if (templateProfile !== 'light' && templateProfile !== 'standard')
@@ -84,6 +86,7 @@ export function runCheckpoint(args: string[], cwd: string, actor: string) {
       ['--source-record', parsed.values['source-record']],
       ['--source-record-revision', parsed.values['source-record-revision']],
       ['--artifact', parsed.values.artifact],
+      ['--brief', parsed.values.brief],
     ]
       .filter(([, value]) => value !== undefined)
       .map(([option]) => option)
@@ -260,7 +263,11 @@ export function runCheckpoint(args: string[], cwd: string, actor: string) {
     }
   }
   if (parsed.values.json)
-    return json(mutationJson(store, result.task, actor, result.warnings))
+    return json(
+      mutationJson(store, result.task, actor, result.warnings, undefined, {
+        brief: Boolean(parsed.values.brief),
+      }),
+    )
   process.stdout.write(`Created ${result.task.id} at revision ${result.task.revision}\n`)
   printWarnings(result.warnings)
 }

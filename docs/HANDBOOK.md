@@ -299,6 +299,15 @@ mutation JSON 还返回同一 bounded `workspace_proof` 投影；没有 proof �
 输出保持不变。`schema5_view.reviewer_next_action` 仍是 Board 侧摘要字符串，不是机器
 路由字段；机器恢复只读 typed `next_action`。
 
+current schema 5 task mutation 可使用 `--json --brief` 返回紧凑成功响应；`--brief`
+未与 `--json` 组合时在 task、revision、event 或 evidence 写入前返回
+`invalid_arguments`。紧凑响应保留 task ID、前后 revision、phase 或 archive 状态、typed
+`next_action`、warning count 与有界 warning 摘要、proof generation/freshness、未解决
+violation 计数及命令专属最小结果，不返回 `shared_worktree`、完整 `workspace_proof` 或
+其它诊断 sample。每个集合默认最多 8 项，并有 total、returned count 与 truncation；
+规范最大响应不得超过 4096 UTF-8 bytes。默认 `--json` 继续返回既有详细响应，外部 reader
+无需切换；`--brief` 不改变 task 真源、event、proof、revision 或 exit status。
+
 `context --json --review` 是 review 与 closeout 的紧凑入口。它保留 `goal`、
 `scope`、`acceptance`、writer、lifecycle、named gate 状态、live workspace proof、
 有界的 submission、unverified item 与 closeout 摘要，以及 typed `next_action`，可独立
@@ -456,6 +465,11 @@ revision 或 CLI exit status。human verbose 将 gate stdout 写入 parent stdou
 parent stderr；`--json --verbose` 将两个 gate stream 都写入 parent stderr。JSON protocol 的
 stdout 始终只包含一个最终 JSON document；JSON 默认模式下 gate 输出也不会写入 stderr。
 
+`verify --json --brief` 与 `verify-all --json --brief` 在 gate 成功时只返回 name、status、
+exit code、duration、proof 与 stop/remaining 摘要，不返回 stdout/stderr。失败时仍返回紧凑
+failure diagnostics，每个 stream 最多保留 256-byte head 与 256-byte tail，并保持原始 byte
+count、omitted count、truncated 和 invalid UTF-8 事实。`--verbose` 的实时 stream 行为不变。
+
 `--timeout-ms <milliseconds>` 只接受十进制正整数 `1..86400000`。省略时不设置 timeout；
 `verify-all` 对每个实际启动的 gate 分别计时。timeout 触发后，POSIX runner 向独立 process
 group 发送 `SIGTERM`，等待 2000 ms 后按需发送 `SIGKILL`。timeout、signal、spawn error 与
@@ -567,6 +581,12 @@ schema 5 submission 将每个 `--unverified-item` 确定性编号为
 `none` 时 reason 需说明为何不更新模块知识。submission 绑定当前 work revision，
 verified 摘要由结构化 gate 结果生成。
 
+`submit --json --brief` 直接返回有界 `unverified_items`，每项含 `item_id` 与 summary。
+当该投影未截断且 response revision 仍 current 时，closeout 直接复用这些 ID，不再只为
+获取 `U1` 读取 Context。响应不可用、已截断或期间发生 mutation 时，使用
+`context <task-id> --json --review` 获取当前 proof 与完整有界 closeout 投影；不要读取 full
+Context，也不为同一用途增加新的 closeout selector。
+
 submit 还会检查 live scope 内容、evidence sidecar 完整性、work revision、proof
 generation 和 unresolved violation。scope 内容 baseline mismatch 会先写入新的
 generation 并使旧 proof stale，再拒绝 submit；ambient-only 或 delivery-only 变化保留
@@ -640,13 +660,15 @@ revision、proof generation、gate 结果和 live workspace baseline。stale sub
 使用 `reopen-review` 恢复。`abandon` 必须提供原因。AI 只有获得明确用户授权后才能执行
 这两个命令。
 
-执行 `done` 前，先读取 bounded brief，并将当前 `submission.unverified_items` 与 review
+执行 `done` 前，使用 current、未截断的 submit brief，或回退到
+`context <task-id> --json --review`，并将当前 `submission.unverified_items` 与 review
 期间新增的明确验收事实进行比较。归档请求本身不表示接受剩余风险。`resolved` 需要
 具体操作与观察结果，`accepted_risk` 需要明确用户接受，`followup` 需要具体行动和稳定 external
 owner。缺少任一事实时，task 保持在 review，等待补充信息。
 
-两条命令的 JSON 响应都保留既有 `outcome` 与最后开放 phase，并增加
-`archived: true` 以明确目录已归档；不把 `done` 或 `abandoned` 加入 phase 枚举。
+两条命令的 JSON 响应都保留既有 `outcome` 与兼容 `phase`，增加 `archived: true` 和
+`last_open_phase` 以明确目录已归档及归档前阶段；不把 `done` 或 `abandoned` 加入 phase
+枚举。
 
 归档 task 只能通过精确 ID 的 `context` 只读查看。`save`、`approve`、`verify`、
 `submit`、`done`、`abandon`、`claim`、`takeover` 和 `artifact` 等 mutation

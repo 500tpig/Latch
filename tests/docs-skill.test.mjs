@@ -636,6 +636,7 @@ test('canonical skill keeps execution paths and routes low-frequency closeout', 
   const lifecycle = text(lifecycleReference)
   const actor = text(actorReference)
   assertTextMatches(skill, /## Happy path/)
+  assertTextMatches(skill, /compact JSON[\s\S]*--json --brief/)
   assertTextMatches(skill, /Light:[\s\S]*checkpoint --profile light --authorize-request/)
   assertTextMatches(skill, /Standard:[\s\S]*task ID/)
   assertTextMatches(skill, /After explicit[\s\S]*run `approve`/)
@@ -648,6 +649,20 @@ test('canonical skill keeps execution paths and routes low-frequency closeout', 
   assertTextMatches(skill, /`done` needs explicit completion\/archive authorization/)
   assertTextMatches(skill, /Task authorization never grants Git/)
   assertTextMatches(lifecycle, /exactly one resolution[\s\S]*for every item ID/)
+})
+
+test('current docs freeze the compact mutation and closeout handoff contract', () => {
+  const handBook = text('docs/HANDBOOK.md')
+  const design = text('docs/DESIGN.md')
+  const lifecycle = text(lifecycleReference)
+  for (const content of [handBook, design]) {
+    assertTextMatches(content, /--json --brief/)
+    assertTextMatches(content, /4096 UTF-8 bytes/)
+    assertTextMatches(content, /last_open_phase/)
+  }
+  assertTextMatches(handBook, /unverified_items[\s\S]*item_id/)
+  assertTextMatches(handBook, /context <task-id> --json --review/)
+  assertTextMatches(lifecycle, /unavailable, truncated[\s\S]*--json --review/)
 })
 
 test('canonical skill bounds large command output without creating a new workflow', () => {

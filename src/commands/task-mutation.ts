@@ -2,9 +2,11 @@ import {
   commonOptions,
   fail,
   json,
+  mutationOptions,
   parseCommand,
   positiveInteger,
   printWarnings,
+  validateBrief,
 } from '../cli-support.js'
 import { changeTaskProfileV3 } from '../core/progress.js'
 import {
@@ -59,12 +61,13 @@ export function runClaim(args: string[], cwd: string, actor: string) {
 
 export function runTakeover(args: string[], cwd: string, actor: string) {
   const parsed = parseCommand(args, {
-    ...commonOptions(),
+    ...mutationOptions(),
     'expect-revision': { type: 'string' },
     reason: { type: 'string' },
   })
   if (parsed.values.help)
     return process.stdout.write(`${commandUsage.takeover}\n`)
+  validateBrief(parsed.values.json, parsed.values.brief)
   requirePositionals('takeover', parsed.positionals, 1)
   const expectRevision = positiveInteger(
     parsed.values['expect-revision'],
@@ -80,7 +83,9 @@ export function runTakeover(args: string[], cwd: string, actor: string) {
   })
   if (parsed.values.json)
     return json(
-      mutationJson(store, result.task, actor, result.warnings, expectRevision),
+      mutationJson(store, result.task, actor, result.warnings, expectRevision, {
+        brief: Boolean(parsed.values.brief),
+      }),
     )
   process.stdout.write(`Transferred ${result.task.id} to ${actor}.\n`)
   printWarnings(result.warnings)
@@ -88,7 +93,7 @@ export function runTakeover(args: string[], cwd: string, actor: string) {
 
 export function runSave(args: string[], cwd: string, actor: string) {
   const parsed = parseCommand(args, {
-    ...commonOptions(),
+    ...mutationOptions(),
     'expect-revision': { type: 'string' },
     'plan-file': { type: 'string' },
     feedback: { type: 'string' },
@@ -109,6 +114,7 @@ export function runSave(args: string[], cwd: string, actor: string) {
     'clear-group': { type: 'boolean' },
   })
   if (parsed.values.help) return process.stdout.write(`${commandUsage.save}\n`)
+  validateBrief(parsed.values.json, parsed.values.brief)
   requirePositionals('save', parsed.positionals, 1)
   const expectRevision = positiveInteger(
     parsed.values['expect-revision'],
@@ -168,7 +174,9 @@ export function runSave(args: string[], cwd: string, actor: string) {
     })
     if (parsed.values.json)
       return json(
-        mutationJson(store, result.task, actor, result.warnings, expectRevision),
+        mutationJson(store, result.task, actor, result.warnings, expectRevision, {
+          brief: Boolean(parsed.values.brief),
+        }),
       )
     process.stdout.write(
       `Changed ${result.task.id} provenance to ${selectedProvenance}.\n`,
@@ -220,7 +228,9 @@ export function runSave(args: string[], cwd: string, actor: string) {
     })
     if (parsed.values.json)
       return json(
-        mutationJson(store, result.task, actor, result.warnings, expectRevision),
+        mutationJson(store, result.task, actor, result.warnings, expectRevision, {
+          brief: Boolean(parsed.values.brief),
+        }),
       )
     process.stdout.write(
       nextGroup === undefined
@@ -259,7 +269,9 @@ export function runSave(args: string[], cwd: string, actor: string) {
     })
     if (parsed.values.json)
       return json(
-        mutationJson(store, result.task, actor, result.warnings, expectRevision),
+        mutationJson(store, result.task, actor, result.warnings, expectRevision, {
+          brief: Boolean(parsed.values.brief),
+        }),
       )
     process.stdout.write(
       `Changed ${result.task.id} profile to ${result.task.profile}.\n`,
@@ -368,7 +380,9 @@ export function runSave(args: string[], cwd: string, actor: string) {
 
   if (parsed.values.json)
     return json(
-      mutationJson(store, result.task, actor, result.warnings, current.revision),
+      mutationJson(store, result.task, actor, result.warnings, current.revision, {
+        brief: Boolean(parsed.values.brief),
+      }),
     )
   process.stdout.write(
     `Saved ${result.task.id}: revision ${current.revision} -> ${result.task.revision}\n`,
@@ -378,11 +392,12 @@ export function runSave(args: string[], cwd: string, actor: string) {
 
 export function runArtifact(args: string[], cwd: string, actor: string) {
   const parsed = parseCommand(args, {
-    ...commonOptions(),
+    ...mutationOptions(),
     'expect-revision': { type: 'string' },
   })
   if (parsed.values.help)
     return process.stdout.write(`${commandUsage.artifact}\n`)
+  validateBrief(parsed.values.json, parsed.values.brief)
   requirePositionals('artifact', parsed.positionals, [3, Number.MAX_SAFE_INTEGER])
   const [action, taskId, ...values] = parsed.positionals
   if (action !== 'add' && action !== 'remove')
@@ -416,7 +431,9 @@ export function runArtifact(args: string[], cwd: string, actor: string) {
   })
   if (parsed.values.json)
     return json(
-      mutationJson(store, result.task, actor, result.warnings, expectRevision),
+      mutationJson(store, result.task, actor, result.warnings, expectRevision, {
+        brief: Boolean(parsed.values.brief),
+      }),
     )
   process.stdout.write(
     `Updated ${result.task.id} artifacts: revision ${expectRevision} -> ${result.task.revision}\n`,

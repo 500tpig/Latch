@@ -2,13 +2,14 @@ import {
   assertOptionNotRepeated,
   assertSingleStdinInput,
   boundedPositiveInteger,
-  commonOptions,
   fail,
   json,
+  mutationOptions,
   parseCommand,
   positiveInteger,
   printWarnings,
   readInputFile,
+  validateBrief,
 } from '../cli-support.js'
 import {
   approveTaskV2,
@@ -22,6 +23,12 @@ import {
   type VerificationStreamProjection,
 } from '../core/progress/command-output.js'
 import { openTaskStoreV2 } from '../core/task-store.js'
+import {
+  compactFailedExecution,
+  compactVerifyAll,
+  compactMutationStrings,
+  compactVerification,
+} from '../core/task-view/mutation.js'
 import type {
   ImplementationAuthorizationInput,
   RetrospectiveRecordInput,
@@ -66,7 +73,7 @@ function writeVerificationResult(taskId: string, output: VerificationProjection)
 
 export function runApprove(args: string[], cwd: string, actor: string) {
   const parsed = parseCommand(args, {
-    ...commonOptions(),
+    ...mutationOptions(),
     'expect-revision': { type: 'string' },
     reason: { type: 'string' },
     feedback: { type: 'string' },
@@ -76,6 +83,7 @@ export function runApprove(args: string[], cwd: string, actor: string) {
   })
   if (parsed.values.help) return process.stdout.write(`${commandUsage.approve}
 `)
+  validateBrief(parsed.values.json, parsed.values.brief)
   requirePositionals('approve', parsed.positionals, 1)
   const hasReason = parsed.values.reason !== undefined
   const hasFeedback = parsed.values.feedback !== undefined
@@ -140,7 +148,9 @@ export function runApprove(args: string[], cwd: string, actor: string) {
   })
   if (parsed.values.json)
     return json(
-      mutationJson(store, result.task, actor, result.warnings, expectRevision),
+      mutationJson(store, result.task, actor, result.warnings, expectRevision, {
+        brief: Boolean(parsed.values.brief),
+      }),
     )
   const action =
     parsed.values['non-implementation-feedback'] !== undefined
@@ -155,7 +165,7 @@ export function runApprove(args: string[], cwd: string, actor: string) {
 export async function runVerify(args: string[], cwd: string, actor: string) {
   assertOptionNotRepeated(args, '--timeout-ms')
   const parsed = parseCommand(args, {
-    ...commonOptions(),
+    ...mutationOptions(),
     'expect-revision': { type: 'string' },
     name: { type: 'string' },
     diagnostic: { type: 'boolean' },
@@ -163,6 +173,7 @@ export async function runVerify(args: string[], cwd: string, actor: string) {
     'timeout-ms': { type: 'string' },
   })
   if (parsed.values.help) return process.stdout.write(`${commandUsage.verify}\n`)
+  validateBrief(parsed.values.json, parsed.values.brief)
   const diagnostic = Boolean(parsed.values.diagnostic)
   requirePositionals('verify', parsed.positionals, [1, Number.MAX_SAFE_INTEGER])
   const expectRevision = positiveInteger(
@@ -193,10 +204,18 @@ export async function runVerify(args: string[], cwd: string, actor: string) {
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
   })
   if (parsed.values.json)
-    json({
-      ...mutationJson(store, result.task, actor, result.warnings, expectRevision),
-      verification: result.output,
-    })
+    json(
+      mutationJson(store, result.task, actor, result.warnings, expectRevision, {
+        brief: Boolean(parsed.values.brief),
+        details: { verification: result.output },
+        briefDetails: {
+          verification: compactVerification(
+            result.output,
+            result.output.status === 'fail',
+          ),
+        },
+      }),
+    )
   else {
     writeVerificationResult(result.task.id, result.output)
     printWarnings(result.warnings)
@@ -207,13 +226,14 @@ export async function runVerify(args: string[], cwd: string, actor: string) {
 export async function runVerifyAll(args: string[], cwd: string, actor: string) {
   assertOptionNotRepeated(args, '--timeout-ms')
   const parsed = parseCommand(args, {
-    ...commonOptions(),
+    ...mutationOptions(),
     'expect-revision': { type: 'string' },
     verbose: { type: 'boolean' },
     'timeout-ms': { type: 'string' },
   })
   if (parsed.values.help)
     return process.stdout.write(`${commandUsage['verify-all']}\n`)
+  validateBrief(parsed.values.json, parsed.values.brief)
   requirePositionals('verify-all', parsed.positionals, 1)
   const expectRevision = positiveInteger(
     parsed.values['expect-revision'],
@@ -239,18 +259,33 @@ export async function runVerifyAll(args: string[], cwd: string, actor: string) {
     ...output,
     revision,
   }))
+  const failedExecution = compactFailedExecution(result.executions)
   if (parsed.values.json)
-    json({
-      ...mutationJson(store, result.task, actor, result.warnings, expectRevision),
-      executed,
-      failed: result.failed?.name ?? null,
-      stopped_reason: result.stoppedReason ?? null,
-      stopped_gate: result.stoppedGate ?? null,
-      remaining: result.remaining,
-      proof_generation: result.task.workspace_proof?.generation ?? null,
-      unresolved_violations:
-        result.task.workspace_proof?.unresolved_violations.length ?? 0,
-    })
+    json(
+      mutationJson(store, result.task, actor, result.warnings, expectRevision, {
+        brief: Boolean(parsed.values.brief),
+        details: {
+          executed,
+          failed: result.failed?.name ?? null,
+          stopped_reason: result.stoppedReason ?? null,
+          stopped_gate: result.stoppedGate ?? null,
+          remaining: result.remaining,
+          proof_generation: result.task.workspace_proof?.generation ?? null,
+          unresolved_violations:
+            result.task.workspace_proof?.unresolved_violations.length ?? 0,
+        },
+        briefDetails: {
+          executed: compactVerifyAll(result.executions),
+          ...(failedExecution ? { failed_execution: failedExecution } : {}),
+          failed: result.failed?.name ?? null,
+          stopped_reason: result.stoppedReason ?? null,
+          stopped_gate: result.stoppedGate ?? null,
+          remaining: compactMutationStrings(result.remaining),
+          unresolved_violations:
+            result.task.workspace_proof?.unresolved_violations.length ?? 0,
+        },
+      }),
+    )
   else {
     for (const execution of result.executions)
       writeVerificationResult(result.task.id, execution.output)
@@ -264,12 +299,13 @@ export async function runVerifyAll(args: string[], cwd: string, actor: string) {
 
 export function runReopenReview(args: string[], cwd: string, actor: string) {
   const parsed = parseCommand(args, {
-    ...commonOptions(),
+    ...mutationOptions(),
     'expect-revision': { type: 'string' },
     reason: { type: 'string' },
   })
   if (parsed.values.help)
     return process.stdout.write(`${commandUsage['reopen-review']}\n`)
+  validateBrief(parsed.values.json, parsed.values.brief)
   requirePositionals('reopen-review', parsed.positionals, 1)
   const expectRevision = positiveInteger(
     parsed.values['expect-revision'],
@@ -286,7 +322,9 @@ export function runReopenReview(args: string[], cwd: string, actor: string) {
   })
   if (parsed.values.json)
     return json(
-      mutationJson(store, result.task, actor, result.warnings, expectRevision),
+      mutationJson(store, result.task, actor, result.warnings, expectRevision, {
+        brief: Boolean(parsed.values.brief),
+      }),
     )
   process.stdout.write(
     `Reopened ${result.task.id} for implementation at work revision ${result.task.work_revision}.\n`,

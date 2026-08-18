@@ -1138,6 +1138,10 @@ test('done freezes current submission into closure, archives, clears current, an
     'done', id, '--expect-revision', expected, '--closeout-file', closeout, '--json',
   ])
   assert.equal(done.status, 0, done.stderr)
+  const doneOutput = JSON.parse(done.stdout)
+  assert.equal(doneOutput.archived, true)
+  assert.equal(doneOutput.phase, 'review')
+  assert.equal(doneOutput.last_open_phase, 'review')
   const archived = archivedTask(cwd, id)
   assert.equal(archived.outcome, 'done')
   assert.equal(archived.closure.changes, '实现完成')
@@ -1328,5 +1332,9 @@ test('done rejects stale submission and abandon requires reason and archives out
     '--reason', '用户取消', '--json',
   ])
   assert.equal(abandoned.status, 0, abandoned.stderr)
+  const abandonedOutput = JSON.parse(abandoned.stdout)
+  assert.equal(abandonedOutput.archived, true)
+  assert.equal(abandonedOutput.phase, 'plan')
+  assert.equal(abandonedOutput.last_open_phase, 'plan')
   assert.equal(archivedTask(cwd, abandonedId).outcome, 'abandoned')
 })

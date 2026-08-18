@@ -1,0 +1,11 @@
+{
+  "fixture_schema_version": 3,
+  "purpose": "normative maximum compact task mutation fixture",
+  "byte_budget": 4096,
+  "sample_limit": 8,
+  "synthetic_input": {
+    "repeat_count": 32,
+    "long_text": "界限测试文本：UTF-8 compact mutation response、failure diagnostics 和 collection clamp。",
+    "long_task_id": "fixture-task-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  }
+}
