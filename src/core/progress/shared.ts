@@ -26,13 +26,15 @@ export function cliArgument(value: string) {
 }
 
 export function sharedWorktreeWarnings(store: TaskStoreV2, taskId: string): string[] {
-  const active = listTasksV2(store).filter((task) => task.id !== taskId)
+  const active = listTasksV2(store)
+    .filter((task) => task.id !== taskId)
+    .sort((left, right) => left.id.localeCompare(right.id))
   const devOrCheck = active.find(
     (task) => task.phase === 'dev' || task.phase === 'check',
   )
   if (devOrCheck)
     return [
-      `Shared worktree: task ${devOrCheck.id} is also active in phase ${devOrCheck.phase}; verify changes against the whole worktree or use a separate Git worktree.`,
+      `Shared worktree: task ${devOrCheck.id} is an active writer in phase ${devOrCheck.phase}; potential shared write risk. Verify changes against the whole worktree or use a separate Git worktree.`,
     ]
   const review = active.find((task) => task.phase === 'review')
   if (!review) return []
@@ -46,7 +48,7 @@ export function sharedWorktreeWarnings(store: TaskStoreV2, taskId: string): stri
     ? 'the Git worktree is not clean'
     : 'Git status could not be determined'
   return [
-    `Shared worktree: task ${review.id} is active in phase review and ${reason}; verify changes against the whole worktree or use a separate Git worktree.`,
+    `Shared worktree: review-only task ${review.id} has ${reason}; this is dirty-worktree information only and does not indicate parallel writing or file ownership conflict.`,
   ]
 }
 
@@ -73,6 +75,7 @@ export function sharedWorktreeProjection(
         if (workspaceScopePathsOverlap(currentPath, otherPath))
           return [{
             task_id: candidate.id,
+            phase: candidate.phase,
             current_path: currentPath,
             other_path: otherPath,
           }]
@@ -80,10 +83,35 @@ export function sharedWorktreeProjection(
     }
     return []
   })
+  overlaps.sort((left, right) =>
+    left.task_id.localeCompare(right.task_id) ||
+    left.current_path.localeCompare(right.current_path) ||
+    left.other_path.localeCompare(right.other_path),
+  )
   const sampleLimit = 8
+  const planTasks = activeTasks.filter((candidate) => candidate.phase === 'plan')
+  const activeWriterTasks = activeTasks.filter(
+    (candidate) => candidate.phase === 'dev' || candidate.phase === 'check',
+  )
+  const reviewOnlyTasks = activeTasks.filter((candidate) => candidate.phase === 'review')
+  const phaseCounts = activeTasks.length > 0
+    ? {
+        plan_task_count: planTasks.length,
+        active_writer_task_count: activeWriterTasks.length,
+        review_only_task_count: reviewOnlyTasks.length,
+        plan_overlap_task_count: overlaps.filter((item) => item.phase === 'plan').length,
+        active_writer_overlap_task_count: overlaps.filter(
+          (item) => item.phase === 'dev' || item.phase === 'check',
+        ).length,
+        review_only_overlap_task_count: overlaps.filter(
+          (item) => item.phase === 'review',
+        ).length,
+      }
+    : undefined
   return {
     active_task_count: activeTasks.length,
     overlap_task_count: overlaps.length,
+    ...(phaseCounts ?? {}),
     sample_limit: sampleLimit,
     total_count: overlaps.length,
     returned_count: Math.min(overlaps.length, sampleLimit),

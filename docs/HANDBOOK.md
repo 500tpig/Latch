@@ -123,6 +123,7 @@ latch checkpoint "低风险任务" --plan-file plan.json \
   --profile light --authorization-file authorization.json
 latch checkpoint "事后记录" --plan-file plan.json \
   --retrospective-file retrospective.json
+latch checkpoint "同批任务" --plan-file plan.json --group <id>
 latch checkpoint "从 Record 创建任务" --plan-file plan.json \
   --source-record <record-id> \
   --source-record-revision <revision>
@@ -161,6 +162,10 @@ authorizable validation 只在创建或更新 work basis 前执行。授权要�
 只修改当前 actor 的索引。带 `--plan-file` 的 `save` 始终按当前 task 的 `profile`
 校验 authoring input；Light save 同样接受六字段输入并持久化完整 `TaskPlan`，Standard
 save 继续要求完整 12 字段。
+
+`checkpoint --group <id>` 只接受用户明确提供的精确 Group ID，并在创建 task 时原子写入
+现有 `group_id` 字段；不从 path overlap、标题或相邻 task 推断 Group。Group 不改变每张
+task 的 writer、authorization、verification、review 或 archive 决策。
 
 新建或更新 plan 必须提供 `workspace_scope.paths`。该字段只接受 repo-relative POSIX
 精确文件路径或以 `/` 结尾的目录前缀；不接受绝对路径、repo escape、glob 或 Git
@@ -277,13 +282,19 @@ baseline；baseline 更新必须重新说明 review reason，并在 hard cap 下
 不得只提高 hard cap。该 byte ratchet 替代旧的独立 10240-byte 断言；estimate-unit hard cap
 保持不变。
 
-`shared_worktree` 统计当前 task 之外的 open task，并返回 `active_task_count`、
+`shared_worktree` 统计当前 task 之外的 open task，并保留 `active_task_count`、
 `overlap_task_count`、`sample_limit`、`total_count`、`returned_count`、`sample` 和
-`truncated`。每条 sample 包含 `task_id`、`current_path` 和 `other_path`；结果按 task ID
-与 scope path 确定性排序。status / review 最多返回 4 条，brief 最多 8 条。精确文件相同、
-目录前缀包含文件或目录前缀互相包含均视为 overlap。历史 task 缺少 `workspace_scope` 时
-仍计入 `active_task_count`，但不推断 overlap。该投影只描述 plan scope 相交，不声明文件
-归属，也不修改 provenance 或 lifecycle gate。
+`truncated`。存在其他 open task 时，投影增加 `plan_task_count`、
+`active_writer_task_count`（`dev` / `check`）、`review_only_task_count` 及对应的
+`plan_overlap_task_count`、`active_writer_overlap_task_count`、
+`review_only_overlap_task_count`。每条 sample 包含 `task_id`、`phase`、`current_path` 和
+`other_path`；结果按 task ID 与 scope path 确定性排序。status / review 最多返回 4 条，brief
+最多 8 条。精确文件相同、目录前缀包含文件或目录前缀互相包含均视为 overlap。历史 task
+缺少 `workspace_scope` 时仍计入 `active_task_count`，但不推断 overlap。存在其他 `dev` /
+`check` task 时 warning 明确表示潜在 shared write risk；只有 review task 时，仅在 Git
+worktree 脏或状态未知时保留 review-only dirty-worktree 信息，并明确不表示并行写入或实际
+文件归属冲突。该投影只描述 plan scope 相交，不声明文件归属，也不修改 provenance 或
+lifecycle gate。
 
 envelope 3 的 `next_action` 是单一判别联合，不再返回字符串：
 
@@ -298,6 +309,11 @@ mutation JSON 还返回同一 bounded `workspace_proof` 投影；没有 proof �
 `done` 与 `abandon` 返回 `{ "kind": "stop", "reason": "archived_read_only" }`。human
 输出保持不变。`schema5_view.reviewer_next_action` 仍是 Board 侧摘要字符串，不是机器
 路由字段；机器恢复只读 typed `next_action`。
+
+Grouped task 的 `done` / `abandon --json` 额外返回只读 `group` 摘要：`group_id`、
+`remaining_open_count`、按 phase 的 `by_phase`，以及最多 8 个稳定排序的剩余 open sibling
+task ID 和 `sample_limit` / `truncated` 元数据。该摘要不改变 `next_action`，也不授予 sibling
+takeover、批准、验证或归档授权；没有 `group_id` 的 task 不返回该字段。
 
 current schema 5 task mutation 可使用 `--json --brief` 返回紧凑成功响应；`--brief`
 未与 `--json` 组合时在 task、revision、event 或 evidence 写入前返回

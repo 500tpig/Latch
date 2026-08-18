@@ -270,6 +270,37 @@ test('checkpoint is create-only, requires a full plan, and returns warnings', ()
   ])
 })
 
+test('checkpoint persists only an explicitly supplied group id', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const planFile = writePlan(cwd, plan({
+    workspace_scope: { paths: ['src/shared.ts'] },
+  }), 'group-plan.json')
+  const explicit = run(cwd, [
+    'checkpoint',
+    'Explicit group task',
+    '--plan-file',
+    planFile,
+    '--group',
+    'Wave:Explicit',
+    '--json',
+  ])
+  assert.equal(explicit.status, 0, explicit.stderr)
+  const explicitTask = readTask(cwd, JSON.parse(explicit.stdout).task_id)
+  assert.equal(explicitTask.group_id, 'Wave:Explicit')
+
+  const inferred = run(cwd, [
+    'checkpoint',
+    'Overlapping ungrouped task',
+    '--plan-file',
+    planFile,
+    '--json',
+  ])
+  assert.equal(inferred.status, 0, inferred.stderr)
+  const inferredTask = readTask(cwd, JSON.parse(inferred.stdout).task_id)
+  assert.equal('group_id' in inferredTask, false)
+})
+
 test('lifecycle phase rejections expose the stable phase_mismatch code', () => {
   const cwd = temporaryDirectory()
   init(cwd)

@@ -484,6 +484,22 @@ export function groupContext(store: TaskStoreV2, task: TaskV2) {
   }
 }
 
+export function groupCloseoutProjection(store: TaskStoreV2, task: TaskV2) {
+  if (task.group_id === undefined) return undefined
+  const remaining = listGroupTasksV3(store, task.group_id).open
+    .filter((member) => member.id !== task.id)
+    .sort((left, right) => left.id.localeCompare(right.id))
+  const sampleLimit = 8
+  return {
+    group_id: task.group_id,
+    remaining_open_count: remaining.length,
+    by_phase: byPhase(remaining),
+    sample_limit: sampleLimit,
+    sample: remaining.slice(0, sampleLimit).map((member) => member.id),
+    truncated: remaining.length > sampleLimit,
+  }
+}
+
 export type ContextJsonOptions = {
   brief?: boolean
   review?: boolean

@@ -64,6 +64,7 @@ export function runCheckpoint(args: string[], cwd: string, actor: string) {
     'retrospective-file': { type: 'string' },
     'source-record': { type: 'string' },
     'source-record-revision': { type: 'string' },
+    group: { type: 'string' },
     artifact: { type: 'string', multiple: true },
   })
   if (parsed.values.help) return process.stdout.write(`${commandUsage.checkpoint}\n`)
@@ -85,6 +86,7 @@ export function runCheckpoint(args: string[], cwd: string, actor: string) {
       ['--retrospective-file', parsed.values['retrospective-file']],
       ['--source-record', parsed.values['source-record']],
       ['--source-record-revision', parsed.values['source-record-revision']],
+      ['--group', parsed.values.group],
       ['--artifact', parsed.values.artifact],
       ['--brief', parsed.values.brief],
     ]
@@ -101,6 +103,7 @@ export function runCheckpoint(args: string[], cwd: string, actor: string) {
     return json(planTemplate(templateProfile))
   }
   requirePositionals('checkpoint', parsed.positionals, 1)
+  const selectedGroup = groupId(parsed.values.group)
   if (parsed.values.profile !== undefined &&
       parsed.values.profile !== 'light' &&
       parsed.values.profile !== 'standard')
@@ -234,6 +237,7 @@ export function runCheckpoint(args: string[], cwd: string, actor: string) {
             },
           }
         : {}),
+      ...(selectedGroup !== undefined ? { groupId: selectedGroup } : {}),
       ...(hasInlineAuthorization || hasAuthorizationFile || hasRetrospective
         ? {
             workBasis: hasInlineAuthorization

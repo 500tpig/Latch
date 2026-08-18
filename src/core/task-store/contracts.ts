@@ -48,11 +48,18 @@ export type TaskWriteResultV2 = {
 export type SharedWorktreeProjection = {
   active_task_count: number
   overlap_task_count: number
+  plan_task_count?: number
+  active_writer_task_count?: number
+  review_only_task_count?: number
+  plan_overlap_task_count?: number
+  active_writer_overlap_task_count?: number
+  review_only_overlap_task_count?: number
   sample_limit: number
   total_count: number
   returned_count: number
   sample: Array<{
     task_id: string
+    phase: TaskV2['phase']
     current_path: string
     other_path: string
   }>

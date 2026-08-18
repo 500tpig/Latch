@@ -392,6 +392,39 @@ test('a blocked sibling does not prevent another group member from finishing', (
     '--json',
   ])
   assert.equal(completed.status, 0, completed.stderr)
+  assert.deepEqual(JSON.parse(completed.stdout).group, {
+    group_id: 'Wave:Independent',
+    remaining_open_count: 1,
+    by_phase: { plan: 1 },
+    sample_limit: 8,
+    sample: [sibling.id],
+    truncated: false,
+  })
   assert.equal(readArchivedTaskV2(store, active.id).outcome, 'done')
   assert.equal(readTaskV2(store, sibling.id).blocked.reason, '等待确认')
+})
+
+test('abandon returns bounded remaining open group members without group authorization', () => {
+  const cwd = temporaryDirectory()
+  const store = initTaskStoreV2(cwd)
+  const abandoned = createV5(store, 'abandoned', { groupId: 'Wave:Abandon' })
+  const sibling = createV5(store, 'remaining', { groupId: 'Wave:Abandon' })
+
+  const result = run(cwd, [
+    'abandon', abandoned.id,
+    '--expect-revision', String(abandoned.revision),
+    '--reason', '取消当前独立 task',
+    '--json',
+  ])
+  assert.equal(result.status, 0, result.stderr)
+  assert.deepEqual(JSON.parse(result.stdout).group, {
+    group_id: 'Wave:Abandon',
+    remaining_open_count: 1,
+    by_phase: { plan: 1 },
+    sample_limit: 8,
+    sample: [sibling.id],
+    truncated: false,
+  })
+  assert.equal(readArchivedTaskV2(store, abandoned.id).outcome, 'abandoned')
+  assert.equal(readTaskV2(store, sibling.id).phase, 'plan')
 })

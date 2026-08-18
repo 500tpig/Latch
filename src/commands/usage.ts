@@ -17,7 +17,7 @@ function implementationAuthorizationFileHelp(
 export const commandUsage: Record<string, string> = {
   init: 'Usage: latch init [--json]',
   checkpoint:
-    'Usage: latch checkpoint <title> --plan-file <path|-> [--profile <light|standard>] [--authorize-request <reason> | --authorization-file <path|-> | --retrospective-file <path|->] [--source-record <id> --source-record-revision <revision>] [--artifact <kind>:<path>] [--json] [--brief]\n       latch checkpoint --print-plan-template <light|standard>',
+    'Usage: latch checkpoint <title> --plan-file <path|-> [--profile <light|standard>] [--authorize-request <reason> | --authorization-file <path|-> | --retrospective-file <path|->] [--source-record <id> --source-record-revision <revision>] [--group <id>] [--artifact <kind>:<path>] [--json] [--brief]\n       latch checkpoint --print-plan-template <light|standard>',
   use: 'Usage: latch use <task-id> [--json]',
   list:
     'Usage: latch list [--group <id> [--include-archive]] [--json] [--brief]',

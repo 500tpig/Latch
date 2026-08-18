@@ -16,6 +16,7 @@ import {
   submitTaskV2,
 } from '../core/progress.js'
 import { openTaskStoreV2 } from '../core/task-store.js'
+import { groupCloseoutProjection } from '../core/task-view/list-status.js'
 import { compactUnverifiedItems } from '../core/task-view/mutation.js'
 import type {
   KnowledgeImpact,
@@ -191,6 +192,7 @@ export function runDone(args: string[], cwd: string, actor: string) {
     actor,
     closeout,
   })
+  const group = groupCloseoutProjection(store, result.task)
   if (parsed.values.json)
     return json({
       ...mutationJson(
@@ -202,6 +204,8 @@ export function runDone(args: string[], cwd: string, actor: string) {
         {
           archived: true,
           brief: Boolean(parsed.values.brief),
+          details: group ? { group } : undefined,
+          briefDetails: group ? { group } : undefined,
         },
       ),
       outcome: result.task.outcome,
@@ -232,6 +236,7 @@ export function runAbandon(args: string[], cwd: string, actor: string) {
     actor,
     reason: parsed.values.reason,
   })
+  const group = groupCloseoutProjection(store, result.task)
   if (parsed.values.json)
     return json({
       ...mutationJson(
@@ -243,6 +248,8 @@ export function runAbandon(args: string[], cwd: string, actor: string) {
         {
           archived: true,
           brief: Boolean(parsed.values.brief),
+          details: group ? { group } : undefined,
+          briefDetails: group ? { group } : undefined,
         },
       ),
       outcome: result.task.outcome,

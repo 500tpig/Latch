@@ -237,8 +237,13 @@ test('active tasks allow approve and return a shared worktree warning', () => {
     const approved = approve(cwd, second)
     assert.equal(approved.status, 0, approved.stderr)
     assert.match(JSON.parse(approved.stdout).warnings[0], /Shared worktree/)
-    if (phase === 'review')
+    if (phase === 'review') {
       assert.match(JSON.parse(approved.stdout).warnings[0], /could not be determined/)
+      assert.match(JSON.parse(approved.stdout).warnings[0], /review-only/)
+      assert.match(JSON.parse(approved.stdout).warnings[0], /does not indicate parallel writing/)
+    } else {
+      assert.match(JSON.parse(approved.stdout).warnings[0], /potential shared write risk/)
+    }
     assert.equal(readTask(cwd, first.task_id).phase, phase)
 
     writeTask(cwd, first.task_id, (task) => {
@@ -308,6 +313,7 @@ test('shared worktree projection reports bounded deterministic scope overlaps', 
   const expectedSample = overlapFixtures
     .map((fixture) => ({
       task_id: fixture.created.task_id,
+      phase: 'plan',
       current_path: fixture.current_path,
       other_path: fixture.other_path,
     }))
@@ -316,6 +322,12 @@ test('shared worktree projection reports bounded deterministic scope overlaps', 
   assert.deepEqual(projection, {
     active_task_count: 10,
     overlap_task_count: 9,
+    plan_task_count: 10,
+    active_writer_task_count: 0,
+    review_only_task_count: 0,
+    plan_overlap_task_count: 9,
+    active_writer_overlap_task_count: 0,
+    review_only_overlap_task_count: 0,
     total_count: 9,
     returned_count: 8,
     sample_limit: 8,
@@ -335,6 +347,62 @@ test('shared worktree projection reports bounded deterministic scope overlaps', 
     sample: projection.sample.slice(0, 4),
   })
   assert.equal(readTask(cwd, target.task_id).provenance, 'clean')
+})
+
+test('shared worktree projection separates plan, active-writer, and review-only tasks', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const planTask = checkpoint(cwd, 'plan overlap', {
+    workspace_scope: { paths: ['src/shared.ts'] },
+  })
+  const devTask = checkpoint(cwd, 'dev overlap', {
+    workspace_scope: { paths: ['src/shared.ts'] },
+  })
+  writeTask(cwd, devTask.task_id, (task) => {
+    task.phase = 'dev'
+    task.work_revision = 1
+  })
+  const checkTask = checkpoint(cwd, 'check overlap', {
+    workspace_scope: { paths: ['src/shared.ts'] },
+  })
+  writeTask(cwd, checkTask.task_id, (task) => {
+    task.phase = 'check'
+    task.work_revision = 1
+  })
+  const reviewTask = checkpoint(cwd, 'review overlap', {
+    workspace_scope: { paths: ['src/shared.ts'] },
+  })
+  writeTask(cwd, reviewTask.task_id, (task) => {
+    task.phase = 'review'
+    task.work_revision = 1
+  })
+  const target = checkpoint(cwd, 'phase-aware target', {
+    workspace_scope: { paths: ['src/shared.ts'] },
+  })
+
+  const approved = approve(cwd, target)
+  assert.equal(approved.status, 0, approved.stderr)
+  const projection = JSON.parse(approved.stdout).shared_worktree
+  assert.deepEqual({
+    plan: projection.plan_task_count,
+    active_writer: projection.active_writer_task_count,
+    review_only: projection.review_only_task_count,
+    plan_overlap: projection.plan_overlap_task_count,
+    active_writer_overlap: projection.active_writer_overlap_task_count,
+    review_only_overlap: projection.review_only_overlap_task_count,
+  }, {
+    plan: 1,
+    active_writer: 2,
+    review_only: 1,
+    plan_overlap: 1,
+    active_writer_overlap: 2,
+    review_only_overlap: 1,
+  })
+  assert.deepEqual(
+    projection.sample.map((item) => item.phase).sort(),
+    ['check', 'dev', 'plan', 'review'],
+  )
+  assert.match(JSON.parse(approved.stdout).warnings[0], /potential shared write risk/)
 })
 
 test('clean Git worktree suppresses warning when every other active task is in review', () => {

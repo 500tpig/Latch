@@ -34,7 +34,7 @@ Latch 激活后，对会导致仓库写入或明确改变可观察行为的请�
 - 新 task 使用 schema 5，并保存 `min_writer_version: "0.5.0"`、`primary_writer` 和 `profile`；CLI `0.5.0` 是 current writer。
 - schema 2–4 仅供 historical read-only。CLI `0.5.0` 可读取这些 task，但在 mutation、event、evidence、backup 或 archive 写入前返回 `writer_version_mismatch`。
 - schema 5 新 task 写入根 `provenance: clean`；历史 task 缺失该字段时按 `clean` 读取，只有明确的重叠并行或隔离恢复才显式修改。
-- light request 与 retrospective task 可在 `checkpoint` 时原子写入 work basis，不需要创建后再拼接生命周期状态。
+- light request 与 retrospective task 可在 `checkpoint` 时原子写入 work basis，不需要创建后再拼接生命周期状态；`checkpoint --group <id>` 只把显式 Group ID 原子写入现有 `group_id`。
 - plan validation 分为历史可读 shape、schema 5 writable 和 authorizable 三层；只有第三层在创建或更新 work basis 前要求执行字段完整，并按 profile 检查 Light gate。
 - Light 与 Standard scaffold 共用 `TaskPlan` shape，只证明结构合法，不能直接获得 work basis。Light 模板同样给出 `name`、`command: string[]`、`kind: gate` 的最小示例，并保留 `replace-with-real-command` sentinel。
 - 新 plan 使用 `workspace_scope.paths` 保存机器范围；自然语言 `plan.scope`、授权摘要和 artifact 不替代该字段，获得 work basis 前 paths 必须非空。
@@ -56,7 +56,8 @@ Latch 激活后，对会导致仓库写入或明确改变可观察行为的请�
 - always-loaded Agent 指令预算由 `tests/fixtures/instruction-budget-v1.json` 的 reviewed ratchet 管理：estimate-unit hard cap 保持不变；byte 侧使用 `reviewed_baseline_bytes`、`hard_cap_bytes: 12288`、`min_headroom_bytes: 1024` 和独立 review reason。当前 surface 不得超过 reviewed baseline，baseline 与 hard cap 至少保留 1024 bytes；超过 hard cap 时必须 redesign 或 split，不得只提高 `hard_cap_bytes`。`pnpm check` 在其它检查前运行 instruction-budget 预检。
 - schema 5 review submission 的 proof stale 时，typed `next_action` 返回 `{ "kind": "command", "command": "reopen-review" }`；writer mismatch 仍先返回 await-user takeover，并通过 bounded `after_takeover_next_action` 预告接管后的恢复动作。
 - 所有成功 task mutation 的 JSON 复用 `status` 投影的 `next_action` 派生规则，并按 mutation 后的 task、writer 与 live proof 状态返回下一步；默认响应已有 proof 时复用同一 bounded `workspace_proof`，brief 响应只返回 generation、freshness 与 violation count；归档 mutation 返回 `{ "kind": "stop", "reason": "archived_read_only" }`，并以 `last_open_phase` 解释兼容 `phase`。
-- status 与成功 mutation JSON 复用 bounded `shared_worktree` 投影，统计其他 open task 及 plan scope overlap；status/review sample 最多 4 条、brief 最多 8 条确定性排序的 task ID 与相交 path。缺少 historical `workspace_scope` 的 task 只计入 active task，不推断 overlap。
+- status 与成功 mutation JSON 复用 bounded `shared_worktree` 投影，保留 envelope 3 兼容字段，并按 `plan`、`dev|check` active-writer、`review` review-only 增加 task 与 overlap 计数；sample 增加 phase，status/review 最多 4 条、brief 最多 8 条确定性排序的 task ID 与相交 path。缺少 historical `workspace_scope` 的 task 只计入 active task，不推断 overlap；active-writer warning 表达潜在 shared write risk，review-only warning 只表达 dirty-worktree 信息。
+- grouped task 的 `done` / `abandon` JSON 增加有界剩余 open sibling 摘要；该只读投影不改变 sibling 的独立 writer、authorization、verification、review 或 archive 决策，也不引入组级授权。
 - CLI error envelope 将明确的生命周期拒绝投影为稳定领域 code：`writer_mismatch`、`phase_mismatch`、`proof_stale` 和 `workspace_violation`；Core 通过领域错误类型携带 code，未知异常仍为 `command_failed` 且 `next_action` 为 stop。
 - open task 的 `workspace_proof.live_changes` 以 bounded additive view 展示 task scope content、ambient、index content 与 delivery state 计数和样本；该投影不改变 `live_status` 或 lifecycle 门禁。
 - `docs/INDEX.md` 指向唯一 current 产品契约；既有七个分章与 Record 分章按主题覆盖历史 v2 基线。
@@ -76,7 +77,7 @@ Latch 激活后，对会导致仓库写入或明确改变可观察行为的请�
 - `update-verification-command` 不采集 workspace，也不创建或重写 evidence。command 变化会清空全部 verification result 并删除 submission，但 machine scope 未变时保留既有 `workspace_proof` baseline；命令本身不运行新旧 gate command，也不推进 proof generation。
 - `resolve-open-questions` 不采集 workspace，也不创建或重写 evidence。问题 resolution 会清空旧 verification 与 submission，但 machine scope 未变时保留既有 `workspace_proof` baseline；答案文件不进入 workspace evidence。
 - `context` 只读计算 live workspace status，不推进 generation，也不写 task、event 或 evidence。
-- 不同 task 可以在同一 workspace 独立推进；结构化 scope overlap 与 human warning 均不声明文件归属、不自动修改 provenance，也不阻止 lifecycle mutation；
+- 不同 task 可以在同一 workspace 独立推进；结构化 scope overlap 与 human warning 均不声明文件归属、不自动修改 provenance，也不阻止 lifecycle mutation；Group 只保留用户显式提供的精确标签，closeout 只展示剩余 open sibling，不自动处理 sibling。
 - 原子写和短锁保护当前事实，不引入通用事务框架；
 - provenance 只保存在 task 根，不复制到 submission 或 closure；
 - archive 使用目录 rename 作为提交点。
