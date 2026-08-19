@@ -31,8 +31,8 @@ Latch 激活后，对会导致仓库写入或明确改变可观察行为的请�
 - `state.json` 只保存各 actor 的 current task；
 - `.latch/records/index.json` 只保存 Record 元数据，正文位于独立 Markdown 文件；
 - 项目正式文档通过 artifact 关联，并从 `docs/INDEX.md` 发现。
-- 新 task 使用 schema 5，并保存 `min_writer_version: "0.5.0"`、`primary_writer` 和 `profile`；CLI `0.5.0` 是 current writer。
-- schema 2–4 仅供 historical read-only。CLI `0.5.0` 可读取这些 task，但在 mutation、event、evidence、backup 或 archive 写入前返回 `writer_version_mismatch`。
+- 新 task 使用 schema 5，并保存 `min_writer_version: "0.5.0"`、`primary_writer` 和 `profile`；CLI `0.6.1` 是 current writer。
+- schema 2–4 仅供 historical read-only。CLI `0.6.1` 可读取这些 task，但在 mutation、event、evidence、backup 或 archive 写入前返回 `writer_version_mismatch`。
 - schema 5 新 task 写入根 `provenance: clean`；历史 task 缺失该字段时按 `clean` 读取，只有明确的重叠并行或隔离恢复才显式修改。
 - light request 与 retrospective task 可在 `checkpoint` 时原子写入 work basis，不需要创建后再拼接生命周期状态；`checkpoint --group <id>` 只把显式 Group ID 原子写入现有 `group_id`。
 - plan validation 分为历史可读 shape、schema 5 writable 和 authorizable 三层；只有第三层在创建或更新 work basis 前要求执行字段完整，并按 profile 检查 Light gate。

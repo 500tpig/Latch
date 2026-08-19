@@ -22,6 +22,8 @@ Updated: 2026-07-28 — 修订 A/B/C 的多 gate 判定，按独立验收面与�
 
 Updated: 2026-08-03 — schema 5、CLI `0.5.0`、structured closeout 与 richer event/view 进入 Latch repo current；外部 adopter 保持 pending。
 
+Updated: 2026-08-19 — current runner 为 CLI `0.6.1`，JSON envelope 为 3；schema 5 的 `min_writer_version` 仍为 `0.5.0`。
+
 Updated: 2026-08-13 — 区分已决设计状态记录与产品决策，并允许紧邻 checkpoint 的明确 Standard 实施授权复用。
 
 Updated: 2026-08-14 — 将用户级 canonical Skill 的自动激活收窄到已接入 repo、已有 `.latch`、已知 task 或显式请求；普通 repo 写入不再触发初始化询问。Source-Task: `20260814031650489-收窄-latch-全局-skill-触发并兼容-cc-switch-管理-4ea1d4`。
@@ -89,7 +91,7 @@ task（唯一可写生命周期）、events、primary_writer、group_id、模块
 20. Record 索引不含正文；普通启动、task 恢复、task list/context 和 context pack 不读取 Record。
 21. Record 只允许当前 repo 内的标题和标签元数据查询，默认最多返回 5 条；正文只能按精确 ID 或唯一明确命中读取一条。
 22. 显式 Record CRUD 只授权对应 Record 操作；关联与 task 来源不传播状态、writer 或 implementation authorization。
-23. CLI `0.5.0` 是 current runner；新 task 使用 schema 5 和 `min_writer_version: "0.5.0"`。
+23. CLI `0.6.1` 是 current runner；JSON envelope 使用 schema 3；新 task 使用 schema 5 和 `min_writer_version: "0.5.0"`。
 24. schema 2–4 为 historical read-only；current runner 不提供 claim、upgrade、downgrade、双写或 archive migration。
 25. schema 5 submit 使用结构化 `unverified_items`，done 必须为每项提供唯一 closeout resolution；自由文本 closeout 不是 current 契约。
 26. schema 5 Context 提供 bounded item/resolution view、确定性 timeline 和 reviewer next action；`tests/fixtures/context-v5-board-reader.json` 是外部 reader 的冻结契约。
@@ -115,6 +117,7 @@ Latch repo current release 已满足 C1–C8：Actor、Light、Group、knowledge
 ## 8. 发布记录
 
 2026-08-03 schema 5 current release 后，`docs/INDEX.md`、`docs/HANDBOOK.md`、`docs/DESIGN.md`、`docs/AI_INSTALL.md`、根 `AGENTS.md` 与 canonical Skill 均以本契约和触发章为 current 事实。CLI/package `0.5.0` 来自 S3 delivery，S4 保留 richer event/view，S5 负责 current 指令面与发布边界。
+2026-08-19 current 版本说明修正为 CLI/package `0.6.1`、JSON envelope 3；schema 5 的 minimum writer 仍为 `0.5.0`。
 
 ## 9. 残余风险
 

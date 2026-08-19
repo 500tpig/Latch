@@ -127,7 +127,7 @@ canonical actor、Git repo 或 `.latch` 初始化，也不写入文件。
 latch init
 ```
 
-`latch init` 只在明确选择初始化后执行。CLI `0.5.0` 不自动初始化，也不迁移或覆盖
+`latch init` 只在明确选择初始化后执行。CLI `0.6.1` 不自动初始化，也不迁移或覆盖
 既有 `.latch`。
 
 ### 创建与选择
@@ -271,7 +271,7 @@ task；需要 light 证明规则时显式增加 `--profile light`。两种 basis
 `--authorization-file` 或 `--retrospective-file` 组合。复杂 authorization、notes 或
 非请求授权继续使用文件方式。
 
-CLI `0.5.0` 的 `checkpoint` 创建 schema 5 task，写入
+CLI `0.6.1` 的 `checkpoint` 创建 schema 5 task，写入
 `min_writer_version: "0.5.0"`，并将当前 canonical session actor 保存到
 `primary_writer`。schema 2–4 为 historical read-only；current runner 可读取，但拒绝
 claim、upgrade、downgrade、takeover 和其它 mutation，不写 task、event、evidence、
@@ -722,7 +722,7 @@ archive list、分页、时间范围或模糊搜索。
 ### Historical schema
 
 schema 2–4 task 和 archive 保持原值，只能通过 `list` 与精确 ID `context` 读取。
-CLI `0.5.0` 不提供 claim、upgrade、downgrade、双写或字符串 migration。需要改变
+CLI `0.6.1` 不提供 claim、upgrade、downgrade、双写或字符串 migration。需要改变
 historical 数据时，必须先建立独立产品契约和实施 task；current 恢复、构建与验证流程
 不得触发迁移。
 
@@ -800,7 +800,7 @@ latch benchmark context --case-file case.json --run-file run.json \
 schema 5 event 文件继续使用 `events_schema_version: 3`，允许可选的首行
 `events_meta`；未知扩展 event 会被跳过并以 `warnings` 返回，schema 2 reader 仍对
 未知 event fail closed。event schema 表示 forward-compatible event 语法，不是
-writer 锁。schema 5 task 的 `min_writer_version` 固定为 `0.5.0`；CLI `0.5.0`
+writer 锁。schema 5 task 的 `min_writer_version` 固定为 `0.5.0`；CLI `0.6.1`
 在 task schema 边界执行机器级拒写，而不是依靠字段 warning。
 
 最终产品契约已全面 current；v2 中未被最终分章覆盖的条款继续作为历史基线有效。

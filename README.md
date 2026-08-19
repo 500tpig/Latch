@@ -6,7 +6,7 @@ Latch 不自动创建 task 或 Record。task 按 A/B/C 规则进入相应流程�
 
 ## 当前状态
 
-当前 CLI 版本为 `0.5.0`。新 task 使用 schema 5，minimum writer 为 `0.5.0`，
+当前 CLI 版本为 `0.6.1`，JSON envelope 为 `schema_version: 3`。新 task 使用 schema 5，minimum writer 为 `0.5.0`，
 并通过 `workspace_scope.paths`、gate 前后 evidence 和 proof generation 判断验证结果是否可
 参与 submit。schema 2–4 task 和 archive 仅供 historical read-only；current runner
 可以读取，但拒绝 claim、upgrade、downgrade、takeover 和其它 mutation，不执行迁移、

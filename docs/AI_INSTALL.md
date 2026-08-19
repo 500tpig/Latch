@@ -1,8 +1,8 @@
 # Latch 本机安装
 
-Latch 面向个人 macOS 开发环境。当前 repo package 和 CLI 版本为 `0.5.0`；新 task
-使用 schema 5，并保存 `min_writer_version: "0.5.0"`。CLI JSON envelope 继续使用
-schema 2，event 文件继续使用 `events_schema_version: 3`。产品规则以
+Latch 面向个人 macOS 开发环境。当前 repo package 和 CLI 版本为 `0.6.1`；新 task
+使用 schema 5，并保存 `min_writer_version: "0.5.0"`。CLI JSON envelope 使用
+schema 3，event 文件继续使用 `events_schema_version: 3`。产品规则以
 [最终产品契约](prd/2026-07-15-latch-final-product-contract.md)为准。
 
 ## 检查源码 release
@@ -15,7 +15,7 @@ node dist/cli.js --help
 pnpm skill:check
 ```
 
-版本应为 `0.5.0`。顶层 help 应包含 `checkpoint`、`submit`、`done` 和
+版本应为 `0.6.1`。顶层 help 应包含 `checkpoint`、`submit`、`done` 和
 `patch-submission-knowledge-impact`，并满足以下 current 指令面：
 
 - `checkpoint --help` 提供 `--profile`、`--authorize-request`、
@@ -143,7 +143,7 @@ approve。纯问答、只读探索、无写入意图或明确要求「不用 Lat
 ## Latch task 规则
 
 - 仓库写入或可观察行为变更使用 Latch；纯问答、只读探索、无写入意图或明确要求「不用 Latch」时不建 task。
-- 开始时先运行 `latch --version`，版本必须为 `0.5.0`；版本不匹配或无法确定 runner 时停止。新 task 使用 schema 5，schema 2–4 只读且不得 mutation。
+- 开始时先运行 `latch --version`，版本必须为 `0.6.1`；版本不匹配或无法确定 runner 时停止。新 task 使用 schema 5，`min_writer_version` 固定为 `0.5.0`，schema 2–4 只读且不得 mutation。
 - 冷启动、compaction 或恢复时依次读取 `git status --short`、`latch list --json --brief`。已知 task ID 时读取 `latch context <task-id> --json --status`；否则只为 list 返回的 `current_task_id` 读取 status；两者都没有时不得调用无 task ID 的 context。
 - 先读 task artifact；status 不足时只展开一张 task 的 bounded brief。普通启动和恢复不读取 Record、其他会话或无关 task。
 - 写入前执行 A/B/C 判断：目标、成功标准、范围、根因或高风险改法不明确时停在 grill；范围固定、低风险且 `open_questions` 为空时使用 Light；涉及方案确认、多个独立验收面、产品选择、公共契约或高风险面时使用 Standard，并在创建后等待明确批准。
@@ -158,7 +158,7 @@ Grok 与 Codex 均可作为可写宿主。无法解析稳定 session ID 时保�
 
 ## Historical schema
 
-schema 2–4 task 和 archive 保持原值。CLI `0.5.0` 可通过 `list` 和精确 ID
+schema 2–4 task 和 archive 保持原值。CLI `0.6.1` 可通过 `list` 和精确 ID
 `context` 读取，但拒绝所有 mutation。current release 不提供 upgrade、downgrade、
 双写、字符串 closeout migration 或 archive 重写。
 

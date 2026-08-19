@@ -435,17 +435,23 @@ test('current release surfaces consistently expose schema 5 and keep adopters pe
   const packageJson = JSON.parse(text('package.json'))
   const agents = text('AGENTS.md')
   const skill = text('skills/latch/SKILL.md')
+  const readme = text('README.md')
   const index = text('docs/INDEX.md')
   const handBook = text('docs/HANDBOOK.md')
   const design = text('docs/DESIGN.md')
   const install = text('docs/AI_INSTALL.md')
   const contract = text('docs/prd/2026-07-15-latch-final-product-contract.md')
+  const migration = text('docs/prd/2026-07-15-latch-migration-cli-draft.md')
   const adopter = text('docs/ADOPTER_SYNC.md')
   const fixture = JSON.parse(text('tests/fixtures/context-v5-board-reader.json'))
 
   assert.match(packageJson.version, /^\d+\.\d+\.\d+$/)
+  assert.equal(packageJson.version, '0.6.1')
   const escapedVersion = packageJson.version.replaceAll('.', '\\.')
   assertTextMatches(skill, new RegExp('CLI `' + escapedVersion + '`'))
+  assertTextMatches(skill, /envelope `3`/)
+  assertTextMatches(skill, /new-task schema 5/)
+  assertTextMatches(text(migrationReference), /CLI `0\.6\.1` is the current runner[\s\S]*`0\.5\.0` remains the minimum writer/)
   assertTextMatches(agents, /本仓 current runner 见 canonical Skill/)
   const startupSection = agents.match(/## 启动\n([\s\S]*?)\n## /)
   assert.ok(startupSection, 'AGENTS must keep a bounded startup section')
@@ -454,6 +460,27 @@ test('current release surfaces consistently expose schema 5 and keep adopters pe
     assertTextMatches(content, /schema 5/)
     assert.doesNotMatch(content, /current (?:task )?writer[^\n]*schema 4/i)
   }
+  for (const [name, content] of [
+    ['README', readme],
+    ['Handbook', handBook],
+    ['Design', design],
+    ['AI install', install],
+    ['final contract', contract],
+    ['migration component', migration],
+  ]) {
+    assertTextMatches(content, /0\.6\.1/, `${name} must name CLI 0.6.1`)
+    assertTextMatches(content, /schema(?:_version: | )3/, `${name} must name version 3 envelope`)
+    assertTextMatches(content, /schema 5/, `${name} must name task schema 5`)
+    assertTextMatches(content, /0\.5\.0/, `${name} must retain the minimum writer version`)
+  }
+  assertTextMatches(readme, /当前 CLI 版本为 `0\.6\.1`/)
+  assertTextMatches(handBook, /CLI `0\.6\.1` 的 `checkpoint` 创建 schema 5/)
+  assertTextMatches(design, /CLI `0\.6\.1` 是 current writer/)
+  assertTextMatches(install, /当前 repo package 和 CLI 版本为 `0\.6\.1`/)
+  assertTextMatches(contract, /CLI `0\.6\.1` 是 current runner/)
+  assertTextMatches(migration, /\| CLI package \| current 为 `0\.6\.1` \|/)
+  assertTextMatches(install, /版本应为 `0\.6\.1`/)
+  assertTextMatches(design, /`min_writer_version: "0\.5\.0"`[\s\S]*CLI `0\.6\.1` 是 current writer/)
   assertTextMatches(design, /schema 2–4[\s\S]*historical read-only/)
   assertTextMatches(handBook, /--unverified-item/)
   assertTextMatches(handBook, /--closeout-file/)
@@ -1006,7 +1033,10 @@ test('continuous mutation flows reuse returned revision without redundant contex
     assert.doesNotMatch(content, /user[- ]input\s+boundary|用户输入\s*边界/)
   }
 
-  assertTextMatches(adopterTemplate, /`latch --version`[\s\S]*`0\.5\.0`/)
+  assertTextMatches(
+    adopterTemplate,
+    /`latch --version`[\s\S]*`0\.6\.1`[\s\S]*`min_writer_version`[\s\S]*`0\.5\.0`/,
+  )
   assertTextMatches(adopterTemplate, /`git status --short`[\s\S]*`latch list --json --brief`/)
   assertTextMatches(adopterTemplate, /已知 task ID[\s\S]*`current_task_id`/)
   assertTextMatches(adopterTemplate, /两者都没有时不得调用无 task ID 的 context/)

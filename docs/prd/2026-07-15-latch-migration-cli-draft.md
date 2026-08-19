@@ -12,6 +12,8 @@ Revision: 5
 
 Updated: 2026-08-03 — CLI `0.5.0` 与 schema 5 进入 current；schema 2–4 固定为 historical read-only。
 
+Updated: 2026-08-19 — current runner 更新为 CLI `0.6.1`，JSON envelope 更新为 3；schema 5 的 minimum writer 仍为 `0.5.0`。
+
 ## 1. 与历史契约的关系
 
 `docs/prd/2026-07-10-latch-v2.md` 是历史基线。本分章覆盖 task schema、current CLI、
@@ -24,8 +26,8 @@ Updated: 2026-08-03 — CLI `0.5.0` 与 schema 5 进入 current；schema 2–4 �
 |---|---|
 | `task.json.schema_version` | 新写入固定为 `5` |
 | `task.json.min_writer_version` | schema 5 固定为 `0.5.0` |
-| CLI package | current 为 `0.5.0` |
-| CLI JSON envelope | 保持 `schema_version: 2` |
+| CLI package | current 为 `0.6.1` |
+| CLI JSON envelope | 使用 `schema_version: 3` |
 | `events.jsonl` | 保持 `events_schema_version: 3` |
 
 `events_schema_version` 表示 forward-compatible event grammar，不是 writer lock。task
@@ -33,7 +35,7 @@ schema 决定 writer 与 event validator。
 
 ## 3. Current writer
 
-CLI `0.5.0` 的 `checkpoint` 创建 schema 5 task，并写入 `primary_writer`、`profile`、
+CLI `0.6.1` 的 `checkpoint` 创建 schema 5 task，并写入 `primary_writer`、`profile`、
 `provenance: clean` 和完整 `TaskPlan`。Standard 为默认 profile；Light authoring input
 在持久化前补齐为完整 `TaskPlan`。
 
@@ -47,7 +49,7 @@ done 使用 `--closeout-file`，并要求每个 item 恰好对应一个 `resolve
 
 ## 4. Historical read-only
 
-CLI `0.5.0` 可读取 schema 2–5，但只修改 schema 5。schema 2–4 mutation 在 task、
+CLI `0.6.1` 可读取 schema 2–5，但只修改 schema 5。schema 2–4 mutation 在 task、
 event、evidence、backup 或 archive 写入前返回 `writer_version_mismatch`。
 
 Current workflow 不提供：
@@ -94,7 +96,7 @@ task current state 与 archive closure。
 
 ## 7. 读取契约
 
-`list` 与 `context` 的 JSON envelope 继续使用 schema 2。schema 5 detail 在既有字段之上
+`list` 与 `context` 的 JSON envelope 使用 `schema_version: 3`。schema 5 detail 在既有字段之上
 增加 `schema5_view`：
 
 - bounded `unverified_items` 与 resolution sample；
@@ -121,7 +123,7 @@ reader contract；fixture 不构成外部 repo 写入或 UI 实施授权。
 
 Latch repo current release 必须在同一边界包含：
 
-1. package 与 CLI `0.5.0`；
+1. package 与 CLI `0.6.1`；
 2. schema 5 writer 与 schema 2–4 historical read-only；
 3. canonical Skill、Handbook、Design、AI install、产品契约和文档入口；
 4. S3 structured closeout 与 S4 richer event/view；
@@ -133,7 +135,7 @@ Latch-Board、monitoring 与 appearance-sec 在独立 task 完成前保持 `pend
 
 ## 10. 一致性摘要
 
-- schema 5 是唯一 current writer，minimum writer 为 `0.5.0`；
+- CLI `0.6.1` 是 current runner；schema 5 是唯一 current writer，minimum writer 为 `0.5.0`；
 - schema 2–4 保持 historical read-only，不迁移、不双写、不重写 archive；
 - `workspace_scope.paths` 是唯一机器 scope；
 - submission 与 closeout 使用结构化 item/resolution；
