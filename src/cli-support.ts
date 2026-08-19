@@ -7,6 +7,7 @@ export class CliV2Error extends Error {
   constructor(
     readonly code: string,
     message: string,
+    readonly details?: Readonly<Record<string, unknown>>,
   ) {
     super(message)
   }

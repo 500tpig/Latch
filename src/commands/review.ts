@@ -2,6 +2,7 @@ import {
   assertOptionNotRepeated,
   assertSingleStdinInput,
   boundedPositiveInteger,
+  CliV2Error,
   fail,
   json,
   mutationOptions,
@@ -122,7 +123,28 @@ export function runApprove(args: string[], cwd: string, actor: string) {
     ['--retrospective-file', parsed.values['retrospective-file']],
   ])
   const store = openTaskStoreV2(cwd)
-  currentWritableTask(store, parsed.positionals[0])
+  const current = currentWritableTask(store, parsed.positionals[0])
+  if (
+    !hasReason &&
+    !hasFeedback &&
+    !hasNonImplementationFeedback &&
+    !hasAuthorization &&
+    !hasRetrospective &&
+    (current.phase === 'plan' || current.phase === 'review')
+  ) {
+    const acceptedInputs = current.phase === 'plan'
+      ? ['--reason', '--authorization-file', '--retrospective-file']
+      : ['--feedback', '--non-implementation-feedback']
+    throw new CliV2Error(
+      'invalid_arguments',
+      `approve in ${current.phase} requires one action input: ${acceptedInputs.join(', ')}.`,
+      {
+        category: 'approval_input',
+        accepted_inputs: acceptedInputs,
+        retry: { command: 'approve' },
+      },
+    )
+  }
   const authorization = parsed.values['authorization-file']
     ? readInputFile<ImplementationAuthorizationInput>(
         cwd,

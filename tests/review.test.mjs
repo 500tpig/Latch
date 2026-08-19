@@ -160,6 +160,32 @@ test.afterEach(() => {
     rmSync(directory, { recursive: true, force: true })
 })
 
+test('approve without an action returns phase-aware retry details without writes', () => {
+  const cwd = temporaryDirectory()
+  init(cwd)
+  const id = checkpoint(cwd, plan({ verification_plan: [] }), 'approve input')
+
+  function denied(acceptedInputs) {
+    const before = openTaskFiles(cwd, id)
+    const result = run(cwd, [
+      'approve', id, '--expect-revision', revision(cwd, id), '--json',
+    ])
+    assert.notEqual(result.status, 0)
+    const error = JSON.parse(result.stderr).error
+    assert.equal(error.code, 'invalid_arguments')
+    assert.equal(error.category, 'approval_input')
+    assert.deepEqual(error.accepted_inputs, acceptedInputs)
+    assert.deepEqual(error.retry, { command: 'approve' })
+    assert.deepEqual(openTaskFiles(cwd, id), before)
+  }
+
+  denied(['--reason', '--authorization-file', '--retrospective-file'])
+  approve(cwd, id)
+  const submitted = submit(cwd, id, ['--no-verify', '--reason', 'fixture'])
+  assert.equal(submitted.status, 0, submitted.stderr)
+  denied(['--feedback', '--non-implementation-feedback'])
+})
+
 test('multiple named gates are independent and submit requires all current passes', () => {
   const cwd = temporaryDirectory()
   init(cwd)

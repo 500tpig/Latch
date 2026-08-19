@@ -245,7 +245,14 @@ async function main() {
         `${JSON.stringify(
           error instanceof CheckpointPlanInputError
             ? checkpointPlanErrorEnvelope(envelope, error)
-            : { ...envelope, error: { code, message } },
+            : {
+                ...envelope,
+                error: {
+                  code,
+                  message,
+                  ...(error instanceof CliV2Error ? error.details : {}),
+                },
+              },
           null,
           2,
         )}\n`,
