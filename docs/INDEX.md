@@ -57,6 +57,13 @@ v2 / Schema 5 观察期的 archive 定量样本分离。
 - 边界：不修改 current 产品契约，不直接授权 CLI、Core、Skill 或外部 repo 变更；
   不替代 schema 5 观察期评估（schema 5 满 10 张后另建评估 task）。
 
+### [Latch 个人 AI 开发效率与质量评测方案](briefs/2026-08-19-latch-solo-efficiency-eval-plan.md)
+
+- 状态：`approved`；
+- Source-Task：`20260819081407173-设计-latch-个人-ai-开发效率与质量评测方案-0aa89d`；
+- 用途：定义个人 AI 开发下比较 current Latch、thin risk-only 与 hybrid on-demand Latch 的质量门槛、样本、指标和判定规则；
+- 边界：不构成 current 产品契约，不授权运行真实 Agent Eval，不授权修改 CLI、Skill、schema 或安装，不授权 Git 交付。
+
 ## 已实现设计
 
 ### [Agent 指令预算 Ratchet 契约](briefs/2026-08-17-latch-instruction-budget-ratchet.md)
