@@ -13,10 +13,10 @@
       "reviewed_baseline": 3849,
       "hard_cap": 4000,
       "review_reason": "Re-reviewed against the current complete always-loaded surface at 3849 stable engineering estimate units after adding the resolve-open-questions delta contract; accepted as a reviewed baseline, not a model token count.",
-      "reviewed_baseline_bytes": 10872,
+      "reviewed_baseline_bytes": 10865,
       "hard_cap_bytes": 12288,
       "min_headroom_bytes": 1024,
-      "byte_review_reason": "Re-reviewed against the current complete always-loaded surface at 10872 UTF-8 bytes after adding bounded checkpoint plan-error retry routing; accepted without compressing existing rules and with more than 1024 bytes reserved below the 12288-byte hard cap."
+      "byte_review_reason": "Re-reviewed against the current complete always-loaded surface at 10865 UTF-8 bytes after adding same-thread continuation, the default Standard approval command, and cold-start-only recovery; accepted with more than 1024 bytes reserved below the 12288-byte hard cap."
     },
     {
       "name": "planning-path",

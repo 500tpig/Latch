@@ -16,19 +16,21 @@ lint、typecheck、build 或文档索引等机械检查不单独触发 C，Core 
 
 ## 启动
 
-依次执行：
+冷启动、compaction 或恢复时：
 
 1. `git status --short`；
-2. 本仓使用 `node dist/cli.js list --json --brief`；已验证安装的 adopter repo 使用对应 current runner；
-3. 已知 task ID 时读取 `context <task-id> --json --status`，否则只读取 `current_task_id` 指向的 status；两者都没有时不得调用无 task ID 的 context；
-4. 先读 task artifact。status 不足时只展开一张 task；仅在产品契约、架构、安装或文档行为需要证据时，从 `docs/INDEX.md` 选择直接相关的 1–3 份文档。
+2. `node dist/cli.js list --json --brief`；
+3. 已知 task ID 或 `current_task_id` 时只读对应 `context --json --status`，否则不读 context；
+4. 先读 task artifact；证据不足时只展开一张 task，并仅为产品契约、架构、安装或文档行为从 `docs/INDEX.md` 选择 1–3 份文档。
 
-本仓 runner 为 `0.6.0`，新 task 使用 schema 5；schema 2–4 read-only。版本不明时停止。常规恢复不读取其他 Codex 会话，不同时展开多张完整 context 或原始 event，也不为聊天连续性创建 task。group 恢复按 reference 有界读取。
+同一线程持有最新 task ID、`revision` 与 `next_action` 时直接续接；仅在信息失效、revision conflict、需判断 warning 或 task 语义变化时刷新。
+
+本仓 current runner 见 canonical Skill；新 task 使用 schema 5，schema 2–4 read-only。版本不明时停止。恢复不读其他 Codex 会话，不展开多张完整 context 或原始 event，不为聊天连续性建 task；group 按 reference 有界读取。
 
 ## 授权与执行边界
 
 - Standard plan 只展示目标、material scope、风险、`open_questions` 和 task ID；完整 plan 留在 task store。只有当前 plan 获得明确实施批准后才能 `approve`。普通写入请求、问题答案、方向认可、checkpoint 或 takeover 均不构成批准。
-- 连续 mutation 使用成功 JSON 返回的 `revision` 作为下一条 `--expect-revision`，并按 typed `next_action` 推进。仅在 revision conflict、用户输入边界、需判断的 warning 或 task 语义变化时刷新 status；不得只为 `revision` 或 `next_action` 重读 context，也不自动重试 conflict。
+- 连续 mutation 使用成功 JSON 返回的 `revision` 作为下一条 `--expect-revision`，并按 typed `next_action` 推进。仅在信息失效、revision conflict、需判断的 warning 或 task 语义变化时刷新 status；不得只为 `revision` 或 `next_action` 重读 context，也不自动重试 conflict。
 - writer mismatch、blocked、proof stale、workspace violation、plan delta、review feedback 和 closeout 的完整恢复步骤按 canonical Skill 指向的 reference 读取，不从英文 message 猜命令，不自动 takeover、回滚或扩大 scope。
 - `done` 只接受明确完成或归档授权；schema 5 的每个 `submission.unverified_items` 必须通过 `--closeout-file` 获得结构化 resolution。`abandon` 只接受明确取消授权。
 - task 授权不包含 Git add、commit、push、branch、checkout、reset、clean 或 stash，也不包含外部 repo 写入。

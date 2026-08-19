@@ -12,13 +12,16 @@ Require a listed signal. Otherwise run no Latch command or init question; inspec
 
 - Here use `node dist/cli.js`: CLI `0.6.1`, envelope `3`, new-task schema 5.
   Schema 2–4 are read-only. Stop if any version is unknown.
-- After activation, run `git status --short`, then `list --json --brief`. On `not_initialized`, stop:
-  do not scaffold, plan, checkpoint, or init without the user's choice. An explicit
-  one-off/no-Latch request may proceed without Latch.
-- Read `context <task-id> --json --status` only for a known ID or returned
-  `current_task_id`; if neither exists, do not call context. Read task artifacts
-  first. Use 1–3 `docs/INDEX.md` documents only for product contracts,
-  architecture, install, documentation behavior, or missing evidence.
+- On cold start, compaction, or recovery, run `git status --short`, then
+  `list --json --brief`. On `not_initialized`, stop; only an explicit one-off or
+  no-Latch request may proceed. Do not scaffold, plan, checkpoint, or init
+  without the user's choice.
+- In a continuous same-thread flow, reuse task ID, `revision`, and `next_action`;
+  skip startup unless compaction, revision conflict, judgment warning, or task meaning change.
+- Never reread context only for `revision` or `next_action`.
+- On cold routes, read status only for a known ID or returned `current_task_id`;
+  otherwise no context. Read artifacts first; use 1–3 `docs/INDEX.md` documents
+  only for product contracts, architecture, install, docs, or missing evidence.
 - Do not read other Codex conversations or Records during startup, recovery, or
   ordinary discussion. Bound large worktree output and full diffs.
 
@@ -50,27 +53,24 @@ Use this single route:
 list/status → checkpoint/approve → verify-all → submit/review → done
 ```
 
-Slashes select profile/state. Use compact JSON (`--json --brief`) for mutations;
-reuse every successful JSON `revision` and `next_action`. Refresh status only
-after a revision conflict, user-input boundary, judgment-requiring warning, or
-task meaning change. Never reread context only for `revision` or `next_action`,
-and never auto-retry a revision conflict.
+Slashes select profile/state. Use compact JSON (`--json --brief`), reuse every
+successful `revision` and `next_action`, and never auto-retry a conflict.
 
-- Light: print the Light scaffold, then atomically create and authorize with
+- Light: author the six fields directly, then atomically create and authorize with
   `checkpoint --profile light --authorize-request`. Implement, `verify-all`,
   `submit`, and wait for review; run `done` only after explicit completion or
   archive authorization. Budget: at most 7 CLI calls and 2 required user turns.
-- Standard: complete all 12 fields, `checkpoint`, show goal, material scope,
-  risks, blocking `open_questions`, and task ID, then wait. After explicit
-  approval run `approve`, implement, `verify-all`, `submit`, and wait for review.
+- Standard: complete all 12 fields, `checkpoint`, show goal, material scope, risks,
+  questions, and task ID; wait. On approval run
+  `approve <id> --expect-revision <rev> --reason <text>`, implement,
+  `verify-all`, `submit`, and wait for review.
   Budget: at most 9 CLI calls and 3 required user turns. Do not paste plan JSON by
   default.
 
-Scaffolds are shape-only; authorizable validation binds scope from
-`plan.workspace_scope.paths`. Light templates include a `name` /
-`command: string[]` / `kind: gate` example with the
-`replace-with-real-command` sentinel and do not pass authorizable
-validation. Attach every `knowledge_impact.updated` `artifact_refs`
+The Light happy path skips the on-demand, shape-only scaffold. Its gate example
+uses `name`, `command: string[]`, `kind: gate`, and `replace-with-real-command`,
+so it is not authorizable. Scope binds from `plan.workspace_scope.paths`. Attach
+every `knowledge_impact.updated` `artifact_refs`
 entry to the task before submit. Submit enters review; never auto-complete.
 
 ## Always-on safety

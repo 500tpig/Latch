@@ -41,7 +41,7 @@ blocked 不改变 phase。其他处于 dev、check、review 的 task 不阻止�
 
 ### Agent 启动读取
 
-Agent 处理请求时，先运行 `git status --short` 和 `latch list --json --brief`。请求已点名 task 时，读取该 task 的 `context --json --status`；未点名时，仅当 list 返回 `current_task_id` 才读取对应 status。
+冷启动、compaction 或恢复时，Agent 先运行 `git status --short` 和 `latch list --json --brief`。请求已点名 task 时，读取该 task 的 `context --json --status`；未点名时，仅当 list 返回 `current_task_id` 才读取对应 status。同一线程已有最新成功 mutation 返回的 task ID、`revision` 与 `next_action` 时直接续接；仅在信息失效、revision conflict、需判断 warning 或 task 语义变化时刷新。
 
 `latch list --json --brief` 在未初始化的 Git repo 或非 Git 目录中返回
 `error.code: "not_initialized"`。收到该错误后立即停止 Latch 流程，不打印
@@ -156,7 +156,9 @@ latch context [task-id] --json --since-revision <revision>
 
 `checkpoint --print-plan-template light|standard` 向 stdout 写入对应 profile
 的最小合法 JSON（shape scaffold），不创建 `.latch`，也不要求 `title`、`--plan-file` 或
-canonical actor。Light scaffold 只包含 `goal`、`workspace_scope`、`scope`、
+canonical actor。模板用于显式查看或修正输入 shape，不属于普通 Light happy path；普通
+Light task 直接提交六字段 authoring input。Light scaffold 只包含 `goal`、
+`workspace_scope`、`scope`、
 `acceptance`、`approach` 和 `verification_plan`，并在 `verification_plan` 中给出
 `name`、`command`（`string[]`）和 `kind: gate` 的最小示例。Standard scaffold 继续包含完整
 12 字段，并使用同一 gate 示例。示例命令必须替换为当前项目的真实检查命令，不得保留
@@ -452,7 +454,7 @@ plan revision 原子进入 `dev`。新增、删除、rename gate，或把 diagno
  `open_questions` 并回到 `plan`；只有显式 `user_approve` 通过 post-delta 校验后才进入
  `dev`。它不修改其它 plan 字段，不增加、编辑或重排问题，也不采集 workspace evidence。
 
-`artifact add` 和 `artifact remove` 一次接受一个或多个 `<kind>:<path>`。两条命令复用 `save --artifact` 和 `save --remove-artifact` 的去重、相对路径校验、`artifact_updated` event 与 revision 语义；`save` 的既有参数保持兼容。
+`artifact add` 和 `artifact remove` 一次接受一个或多个 `<kind>:<path>`。计划阶段已知的长期文档使用 `checkpoint --artifact` 原子登记；`artifact add` 只处理规划后发现或改变的交付物。两条命令复用 `save --artifact` 和 `save --remove-artifact` 的去重、相对路径校验、`artifact_updated` event 与 revision 语义；`save` 的既有参数保持兼容。
 
 schema 5 新 task 的根 `provenance` 默认为 `clean`。只有明确允许路径重叠并行时才写
 `mixed`；隔离恢复后，使用同一命令显式写回 `clean`。provenance 更新必须单独执行，
@@ -472,6 +474,8 @@ latch approve <task-id> --expect-revision 13 \
 feedback 使用 `--feedback`，并保留可选 `--authorization-file` 以更新授权范围；
 non-implementation feedback 只使用 `--non-implementation-feedback`。不支持的跨 mode
 组合会在读取 task 或 basis 文件前返回 `invalid_arguments`。
+
+Standard plan 获得明确批准后默认使用 `--reason`；只有需要结构化授权 scope 或 notes 时才使用 `--authorization-file`。plan 或 review phase 完全缺少 action input 时，JSON error 返回 `invalid_arguments`、`category: approval_input`、当前 phase 的 `accepted_inputs` 和 `retry.command: approve`，且不写 task、event 或 state。
 
 首次批准绑定当前 plan revision。review 中的明确实现修正保留 plan approval，增加 `work_revision` 并回到 dev。发现其他活动 task 时，批准仍会成功，并提示共享 worktree 风险。
 
@@ -740,8 +744,8 @@ worktree，Latch 不负责创建或合并它。scope overlap 投影与现有 sha
 相互独立；review dirty worktree 提示继续描述 Git 状态，不解释为 plan scope overlap。
 
 同一连续写入流程中，直接复用成功 mutation 的 JSON 返回值：将 `revision` 用作下一条
-命令的 `--expect-revision`，并按 `next_action` 继续。仅在 `revision conflict`、用户输入
-边界、warning 需要判断或 task 语义变化时刷新 status；不得只为 `revision` 或
+命令的 `--expect-revision`，并按 `next_action` 继续。仅在信息失效、`revision conflict`、
+warning 需要判断或 task 语义变化时刷新 status；不得只为 `revision` 或
 `next_action` 重读 context，也不得自动重试 revision conflict。
 
 ### Session actor 宿主

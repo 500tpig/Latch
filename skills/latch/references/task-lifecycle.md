@@ -18,7 +18,9 @@ Read this reference for plan structure, checkpoint and approve details, feedback
 - New tasks use schema 5 with minimum writer `0.5.0`. CLI `0.6.1` reads schema 2–5 but rejects schema 2–4 mutations. Historical tasks remain read-only; never migrate during context, build, or verification.
 - Shape validation preserves history; writable plans require `workspace_scope`. Scaffolds are shape-only. Light and Standard templates include a `verification_plan` item with `name`, `command: string[]`, and `kind: gate`, plus the `replace-with-real-command` sentinel; the template does not pass authorizable validation. Independent structural errors on the same verification item are reported in one deterministic response. Run profile authorizable validation before `work_basis` writes. Chat normally shows short decision highlights and the created task id; only the adjacent exception omits the id. Full plan stays in task store or `context`. Do not paste full plan JSON or dump fields by default.
 - Checkpoint plan validation failures use `invalid_arguments` with bounded `plan_validation` issues and `error.retry`; correct the JSON Pointer paths and retry `checkpoint` without reading recovery or parsing the human message. This does not add `checkpoint` to `next_action.command`.
-- Use `source: user_request` for a complete low-risk request, `source: user_delta` for a precise low-risk addition to the current plan, and `source: user_approve` after explicit approval of the current Standard plan.
+- After explicit approval of a Standard plan, default to `approve <task-id> --expect-revision <revision> --reason <text>`. Use `--authorization-file` only when structured authorization scope or notes are required, and keep `--retrospective-file` for honest after-the-fact records.
+- Attach known durable documents with `checkpoint --artifact <kind:path>`; use `artifact add` only for artifacts discovered or changed after planning.
+- In structured authorization files, use `source: user_request` for a complete low-risk request, `source: user_delta` for a precise low-risk plan addition, and `source: user_approve` after explicit approval of the current Standard plan.
 - Use `checkpoint --retrospective-file` only for an honest after-the-fact record when no matching open task exists.
 - Use `save --plan-file` when goal, scope, acceptance, contracts, user flow, or important boundaries change. This returns the task to `plan` and requires new approval.
 - Record durable task facts rather than chat logs. Keep review feedback, decisions, submissions, and closure summaries concise and user-readable.
@@ -55,7 +57,7 @@ Read this reference for plan structure, checkpoint and approve details, feedback
   `unverified_items` projection. If it is unavailable, truncated, or an
   intervening mutation changed the revision, read
   `context <task-id> --json --review`; do not read full Context only for item
-  IDs. Compare every current `submission.unverified_items` entry with the
+  IDs or repeat cold-start reads in the same-thread flow. Compare every current `submission.unverified_items` entry with the
   user's latest explicit review acceptance. Archive intent alone is not risk
   acceptance.
 - For schema 5, pass `--closeout-file <path>` containing exactly one resolution
