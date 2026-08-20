@@ -8,7 +8,7 @@ Document-Status: current component of `2026-07-15-latch-final-product-contract.m
 
 Date: 2026-07-15
 
-Revision: 6
+Revision: 7
 
 Released: 2026-07-16 — 全面 current 发布。
 
@@ -17,6 +17,8 @@ Updated: 2026-07-28 — 修订多 gate 判定与 Light 中途重新分类规则�
 Updated: 2026-08-03 — current task writer 更新为 schema 5。
 
 Updated: 2026-08-14 — 增加 canonical Skill 激活前提，区分用户级可发现与 repo 采用；普通 repo 写入不再单独触发 Latch。Source-Task: `20260814031650489-收窄-latch-全局-skill-触发并兼容-cc-switch-管理-4ea1d4`。
+
+Updated: 2026-08-20 — 将 `.latch` / 普通写入与必须创建 task 解耦；支持 Latch 后按 enable 条件创建，低风险单会话直做。Source-Task: `20260820071601760-调整-latch-激活策略-低风险直做-高风险与跨会话才建-task-09778d`。
 
 **定位：** 承接 handoff 用户流程中尚未落入分章的可执行规则；Light 章「判定表 B」、Group 章「batch 委托」以本节为准，不重开 Actor/Light/Group 已定产品取舍。
 
@@ -51,22 +53,37 @@ Updated: 2026-08-14 — 增加 canonical Skill 激活前提，区分用户级可
 `list`，也不询问是否初始化。若唯一未知项是 `.latch` 是否存在，只读检查该路径；不得
 用 `list` 作为激活探针。
 
-### 2.2 激活后默认建 light
+### 2.2 支持后按需创建
 
-出现**将导致仓库写入**或**明确修 bug / 改可观察行为**的请求时，Skill **应**创建或续接 Latch task（默认 `profile: light`，条件不足则 plan 或 standard）。
+项目接入或 repo root 已存在 `.latch` 只表示项目支持 Latch，并授权冷启动廉价探测；二者都不能单独创建 task。普通写入、修 bug 或改变可观察行为，不单独创建 task。减少的是 task bookkeeping，不是必要验证。
+
+低风险、局部、单会话请求直接读取相关事实、完成最小完整修改、运行最窄权威验证并检查 diff。风险不得只按代码行数或文件数判断。
+
+以下任一条件成立时，Skill **应**创建或续接 Latch task（再按 A/B/C 选择 light 或 standard）：
+
+- 用户明确要求使用、保存或恢复 Latch task
+- 已知 Latch task 的续接、review、closeout 或跨会话恢复
+- 多个独立验收面
+- 目标、根因、方案或产品选择需要确认
+- 修改公共 API、兼容契约、认证、权限或其他信任边界
+- 修改持久化数据、schema、迁移、并发或一致性语义
+- 存在不可逆或难恢复的外部副作用
+- 影响面广、回归代价高，或预计需要跨会话
+- 需要 workspace proof、revision、stale-proof 或结构化 unverified items
 
 ### 2.3 不建
 
 | 情况 | 行为 |
 |---|---|
-| 用户明确「这次不用 Latch」 | 本轮不建、不写 task |
-| 纯问答、只读探索、无写入意图 | 不建 |
+| 用户明确「这次不用 Latch」，且无已知 continuation 或 closeout 责任 | 本轮不建、不写 task |
+| 用户明确「这次不用 Latch」，但存在已知 continuation 或 closeout 责任 | 继续 Latch，不可绕过 |
+| 纯问答、只读探索 | 不建 |
+| 普通写入且未命中 §2.2 enable 条件 | 直做并验证，不建 |
 | 用户只要看状态 | `list` / `context`，不建 |
 
 ### 2.4 与显式 Latch 请求
 
-显式 Latch 请求直接进入本章的 A/B/C 判定，但不是唯一入口；项目接入、已有 `.latch`
-或已知 task 同样可以激活。没有这些激活信号时，普通写入请求不进入本章。
+显式 Latch 请求直接进入本章的 A/B/C 判定，但不是唯一入口；已知 task continuation 同样必须进入。项目接入或已有 `.latch` 只表示支持 Latch，不单独进入本章。没有支持信号时，普通写入请求不进入本章。
 
 ### 2.5 信息不足
 

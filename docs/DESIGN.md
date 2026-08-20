@@ -9,11 +9,17 @@ Latch 是个人 macOS 开发环境中的本地任务状态记录器。它帮助 
 ## 触发规则
 
 用户级 canonical Skill 可以跨 repo 被发现，但只有项目 `AGENTS.md` 明确接入、repo root
-已存在 `.latch`、对话正在继续已知 Latch task，或用户显式请求 Latch 时才激活。普通
-repo 仅因请求会写文件、修 bug 或改变可观察行为，不运行 Latch startup，不探测
-`list`，也不询问是否初始化。
+已存在 `.latch`、对话正在继续已知 Latch task，或用户显式请求 Latch 时才进入支持范围。
+`.latch` 只表示项目支持 Latch，不能单独创建 task。普通 repo 仅因请求会写文件、修 bug
+或改变可观察行为，不运行 Latch startup，不探测 `list`，也不询问是否初始化。
 
-Latch 激活后，对会导致仓库写入或明确改变可观察行为的请求，先使用触发章 A/B/C 判定表：A 停在 grill；B 创建或续接 light task 并以请求授权；C 创建或续接 standard task，展示 plan 后等待明确 approve，通常先展示已创建的 task id。纯问答、只读探索、无写入意图或明确要求「不用 Latch」的请求不建 task。
+支持 Latch 的冷启动仍可运行 `git status --short` 和 `list --json --brief`，用于发现
+已知 task。普通写入不单独创建 task。低风险、局部、单会话请求直接读取相关事实、完成
+最小完整修改、运行最窄权威验证并检查 diff。减少的是 task bookkeeping，不是必要验证。
+风险不得只按代码行数或文件数判断。命中 enable 条件后，才使用触发章 A/B/C 判定表：A
+停在 grill；B 创建或续接 light task 并以请求授权；C 创建或续接 standard task，展示
+plan 后等待明确 approve，通常先展示已创建的 task id。纯问答、只读探索不建 task。用户
+明确要求「不用 Latch」时，仅在不存在已知 task continuation 或 closeout 责任时按请求执行。
 
 已决设计的纯状态同步是 B 的窄例外：设计正文必须已冻结、`open_questions` 为空、用户已明确批准当前设计，改动只涉及 artifact 状态与索引元数据，且不新增产品选择、公共行为或 scope。可写且 approved scope 已覆盖的 open 来源 task 继续原 lifecycle；关闭、只读或不存在来源 task 时才创建并原子授权 Light task。open 来源 task 存在 writer 或 scope 问题时先处理 handoff 或 plan。任一条件不满足时重新执行 A/B/C。
 

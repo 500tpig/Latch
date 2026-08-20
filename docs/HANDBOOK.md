@@ -6,7 +6,27 @@ Latch 记录本地 coding task。每张 task 保存 plan、批准、工作轮次
 
 ## 任务触发
 
-触发章的 A/B/C 判定表决定是否创建或续接 task：
+先判断是否创建 Latch task。减少的是 task bookkeeping，不是必要验证。
+
+项目 `AGENTS.md` 接入或 repo root 存在 `.latch` 只表示项目支持 Latch。支持 Latch 的冷启动仍运行 `git status --short` 和 `latch list --json --brief`，用于发现已知 task；二者都不能单独创建 task。无支持信号的仓库只 inspect `.latch`，不得把 `list` 当作激活探针，也不询问是否初始化。
+
+普通写入、修 bug 或改变可观察行为，不单独创建 task。低风险、局部、单会话请求仍须读取相关事实、完成最小完整修改、运行最窄权威验证并检查 diff。风险不得只按代码行数或文件数判断。
+
+以下任一条件成立时才创建或续接 task：
+
+- 用户明确要求使用、保存或恢复 Latch task
+- 已知 Latch task 的续接、review、closeout 或跨会话恢复
+- 多个独立验收面
+- 目标、根因、方案或产品选择需要确认
+- 修改公共 API、兼容契约、认证、权限或其他信任边界
+- 修改持久化数据、schema、迁移、并发或一致性语义
+- 存在不可逆或难恢复的外部副作用
+- 影响面广、回归代价高，或预计需要跨会话
+- 需要 workspace proof、revision、stale-proof 或结构化 unverified items
+
+纯问答、只读探索不建 task。用户明确要求「不用 Latch」时，仅在不存在已知 task continuation 或 closeout 责任时按请求执行。
+
+命中后，触发章的 A/B/C 判定表决定 grill、Light 或 Standard：
 
 - A：目标、成功标准、范围、根因或高风险改法不明确时，停在 grill，不实施；
 - B：改法和范围明确、低风险、`open_questions` 为空且不扩 scope 时，创建或续接 light task，`source: user_request` 作为授权；
@@ -27,7 +47,7 @@ Light task 出现 plan change、产品选择或 scope 扩大时，立即停止�
 
 设计 task 可以先以 `proposed` artifact 提交 review，但 plan 必须把用户批准后的状态与索引同步写入 scope 和 acceptance。用户批准后在同一 task 完成同步，不得把状态责任隐式留给后续实施 task。
 
-纯问答、只读探索和无写入意图的请求不建 task。用户明确要求「不用 Latch」时，本轮也不建 task。
+A/B/C 只在 Latch task 已启用后选择档位；未命中 enable 条件时不进入该判定。
 
 ## 基本流程
 

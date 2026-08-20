@@ -2,9 +2,7 @@
 
 ## 任务入口
 
-仓库写入或可观察行为变更按 `skills/latch/SKILL.md` 执行。纯问答、只读探索、无写入意图或明确要求「不用 Latch」时不建 task；创建或续接 task 必须来自明确写入请求。
-
-写入前按验收语义判断：
+`.latch` 只表示支持 Latch，普通写入不单独建 task。低风险直做并验证。纯问答、只读不建 task。明确「不用 Latch」仅在无已知 continuation 或 closeout 责任时有效。命中 enable 条件才建 task。启用后按验收语义判断：
 
 - A：目标、成功标准、范围、根因或高风险改法不明确时停在 grill；
 - B：范围固定、低风险且 `open_questions` 为空时使用 Light task；

@@ -996,11 +996,14 @@ test('canonical skill requires a Latch activation signal before startup', () => 
   assertTextMatches(skill, /known task continuation/)
   assertTextMatches(skill, /explicit requests/)
   assertTextMatches(skill, /never for write intent alone/)
-  assertTextMatches(skill, /Require a listed signal/)
+  assertTextMatches(skill, /Require a listed(?: support)? signal/)
   assertTextMatches(skill, /run no Latch command/)
   assertTextMatches(skill, /init question/)
   assertTextMatches(skill, /inspect\s+`\.latch`, never `list`/)
   assertTextMatches(skill, /On cold start, compaction, or recovery/)
+  assertTextMatches(skill, /Existing `\.latch` only marks support/)
+  assertTextMatches(skill, /Create a task only/)
+  assertTextMatches(skill, /Explicit no-Latch skips Latch\s+only/)
 })
 
 test('continuous mutation flows reuse returned revision without redundant context reads', () => {

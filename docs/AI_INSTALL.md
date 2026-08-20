@@ -82,8 +82,8 @@ canonical 目标为：
 
 用户级可发现不等于对所有 repo 自动生效。canonical Skill 只在项目 `AGENTS.md`
 明确接入、repo root 已存在 `.latch`、对话正在继续已知 Latch task，或用户显式请求
-Latch 时激活。普通仓库仅因请求会写文件或改变行为，不运行 Latch startup，也不询问
-是否初始化。
+Latch 时进入支持范围。`.latch` 只表示项目支持 Latch，不单独创建 task。普通仓库仅因
+请求会写文件或改变行为，不运行 Latch startup，也不询问是否初始化。
 
 链接脚本只管理上述符号链接，不复制文档快照，不修改 cc-switch 数据库或
 `~/.cc-switch/skills`。源码更新不证明外部 adopter 已完成 CLI 安装或行为验收。
@@ -129,9 +129,12 @@ latch checkpoint "任务标题" \
 同一命令最多一个 option 使用 `-`。stdin 不对应 workspace path，也不会进入 workspace
 evidence。真实文件继续使用既有 evidence 语义；`record --body-file` 等文本输入不适用。
 
-业务项目的 `AGENTS.md` 应写入触发章 A/B/C：A 停在 grill；B 创建或续接 Light task
-并以请求授权；C 创建或续接 Standard task，返回决策重点与 task ID 后等待明确
-approve。纯问答、只读探索、无写入意图或明确要求「不用 Latch」时不建 task。
+业务项目的 `AGENTS.md` 应先写清：`.latch` 或接入只表示支持 Latch，普通写入不单独建
+task；命中 enable 条件后才按触发章 A/B/C 选择 Light 或 Standard。A 停在 grill；B
+创建或续接 Light task 并以请求授权；C 创建或续接 Standard task，返回决策重点与
+task ID 后等待明确 approve。纯问答、只读探索不建 task。明确要求「不用 Latch」时，
+仅在无已知 continuation 或 closeout 责任时按请求执行。减少的是 task bookkeeping，
+不是必要验证。
 
 ### Adopter AGENTS 规则模板
 
@@ -142,11 +145,11 @@ approve。纯问答、只读探索、无写入意图或明确要求「不用 Lat
 <!-- LATCH:BEGIN -->
 ## Latch task 规则
 
-- 仓库写入或可观察行为变更使用 Latch；纯问答、只读探索、无写入意图或明确要求「不用 Latch」时不建 task。
+- `.latch` 或本区块只表示项目支持 Latch，普通写入不单独建 task。低风险、局部、单会话请求直接修改、运行最窄权威验证并检查 diff。命中已知 task 续接、多个独立验收面、需要确认、公共契约、认证权限、持久化或并发语义、不可逆外部副作用、跨会话或需要 workspace proof 时，才创建或续接 task。纯问答、只读探索不建 task。明确「不用 Latch」仅在无已知 continuation 或 closeout 责任时按请求执行。减少的是 task bookkeeping，不是必要验证。风险不得只按代码行数或文件数判断。
 - 开始时先运行 `latch --version`，版本必须为 `0.6.1`；版本不匹配或无法确定 runner 时停止。新 task 使用 schema 5，`min_writer_version` 固定为 `0.5.0`，schema 2–4 只读且不得 mutation。
 - 冷启动、compaction 或恢复时依次读取 `git status --short`、`latch list --json --brief`。已知 task ID 时读取 `latch context <task-id> --json --status`；否则只为 list 返回的 `current_task_id` 读取 status；两者都没有时不得调用无 task ID 的 context。
 - 先读 task artifact；status 不足时只展开一张 task 的 bounded brief。普通启动和恢复不读取 Record、其他会话或无关 task。
-- 写入前执行 A/B/C 判断：目标、成功标准、范围、根因或高风险改法不明确时停在 grill；范围固定、低风险且 `open_questions` 为空时使用 Light；涉及方案确认、多个独立验收面、产品选择、公共契约或高风险面时使用 Standard，并在创建后等待明确批准。
+- 命中 enable 条件后执行 A/B/C 判断：目标、成功标准、范围、根因或高风险改法不明确时停在 grill；范围固定、低风险且 `open_questions` 为空时使用 Light；涉及方案确认、多个独立验收面、产品选择、公共契约或高风险面时使用 Standard，并在创建后等待明确批准。
 - 同一线程连续 mutation 直接复用成功 JSON 返回的 task ID、`revision` 与 `next_action`，不重复启动读取；仅在信息失效、revision conflict、warning 需要判断或 task 语义变化时刷新 status，不为 `revision` 或 `next_action` 重读 context，也不自动重试 conflict。
 - Standard 明确批准后默认执行 `approve <task-id> --expect-revision <revision> --reason <text>`；`takeover`、`done`、`abandon` 和 Git 操作分别遵守明确授权边界，task 授权不包含 Git add、commit、push、branch、checkout、reset 或 clean。
 <!-- LATCH:END -->

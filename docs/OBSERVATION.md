@@ -34,8 +34,8 @@ task，不为统计专门制造任务，也不维护第二份实时台账。
 ## 正常使用
 
 - 在其他项目按真实需求开发，不改变原有工作安排；
-- 对会导致仓库写入或明确改变可观察行为的请求，先按 A/B/C 判定：范围明确且低风险时走 Light，信息不足时停在 grill，高风险或需要方案确认时走 Standard；
-- 纯问答、只读探索、无写入意图或明确要求「不用 Latch」时不建 task；
+- 普通写入不单独建 task；命中 enable 条件后再按 A/B/C 判定：范围明确且低风险时走 Light，信息不足时停在 grill，高风险或需要方案确认时走 Standard；
+- 纯问答、只读探索不建 task；明确要求「不用 Latch」时，仅在无已知 continuation 或 closeout 责任时按请求执行；
 - task 按 `plan`、`dev`、`check`、`review` 和 `done` 的正常流程执行；
 - 每张 task 的 `.latch/archive` 是原始记录，完成后不回到 Latch repo 手工登记。
 
@@ -164,7 +164,7 @@ closure.accepted_at：2026-08-04T03:42:02.974Z
 与 v2 相同：
 
 - 在授权项目中按真实需求开发，不改变原有工作安排；
-- 按 A/B/C 判定 Light / grill / Standard；纯问答、只读、明确「不用 Latch」不建 task；
+- 命中 enable 条件后再按 A/B/C 判定 Light / grill / Standard；纯问答、只读不建 task；明确「不用 Latch」仅在无已知 continuation 或 closeout 责任时按请求执行；
 - 生命周期仍为 `plan` → `dev` → `check` → `review` → 归档；
 - 原始记录留在各 repo 的 `.latch/archive`，不回到 Latch repo 手工登记台账。
 

@@ -8,7 +8,7 @@ Document-Status: current product contract
 
 Date: 2026-07-15
 
-Revision: 9
+Revision: 10
 
 Released: 2026-07-16 — C1–C8 已交付；本文件是唯一 current 产品契约入口。
 
@@ -27,6 +27,8 @@ Updated: 2026-08-19 — current runner 为 CLI `0.6.1`，JSON envelope 为 3；s
 Updated: 2026-08-13 — 区分已决设计状态记录与产品决策，并允许紧邻 checkpoint 的明确 Standard 实施授权复用。
 
 Updated: 2026-08-14 — 将用户级 canonical Skill 的自动激活收窄到已接入 repo、已有 `.latch`、已知 task 或显式请求；普通 repo 写入不再触发初始化询问。Source-Task: `20260814031650489-收窄-latch-全局-skill-触发并兼容-cc-switch-管理-4ea1d4`。
+
+Updated: 2026-08-20 — 将「项目支持 Latch」与「必须创建 task」解耦：`.latch` 或普通写入不单独建 task；仅在已知 continuation、高风险或显式 Latch 请求等 enable 条件成立时创建。Source-Task: `20260820071601760-调整-latch-激活策略-低风险直做-高风险与跨会话才建-task-09778d`。
 
 ## 0. 地位
 
@@ -101,10 +103,19 @@ task（唯一可写生命周期）、events、primary_writer、group_id、模块
 
 用户级 canonical Skill 的可发现范围不等于产品触发范围。只有项目 `AGENTS.md` 明确
 接入、repo root 已存在 `.latch`、对话正在继续已知 Latch task，或用户显式请求 Latch
-时，才进入触发章。普通 repo 仅因请求会写文件、修 bug 或改变可观察行为，不运行
-Latch startup，不调用 `list`，也不询问是否初始化。
+时，项目才支持 Latch。`.latch` 只表示项目支持 Latch，不能单独创建 task。普通 repo
+仅因请求会写文件、修 bug 或改变可观察行为，不运行 Latch startup，不调用 `list`，
+也不询问是否初始化。
 
-触发章的判定表是权威定义：A 命中不明确或高风险改法不清时停在 grill；B 在范围明确、低风险且无未决问题时创建或续接 light task，并以请求作为授权，多个 lint、typecheck、build、文档索引等机械检查本身不触发 Standard；C 在需要方案确认、存在多个独立验收面、产品选择、公共契约或高风险面时创建或续接 standard task，展示 plan 后等待明确 approve，通常先展示已创建的 task id。Light task 出现 plan change、产品选择或 scope 扩大时，必须重新执行 A/B/C 判断，并按结果保持 Light、停在 grill 或升级 Standard。
+支持 Latch 不等于每次写入都创建 task。普通写入不单独建 task。低风险、局部、单会话
+请求直接读取相关事实、完成最小完整修改、运行最窄权威验证并检查 diff。减少的是
+task bookkeeping，不是必要验证。风险不得只按代码行数或文件数判断。仅在显式 Latch
+保存或恢复、已知 task continuation / closeout、多个独立验收面、需要确认、公共契约、
+认证权限、持久化或并发语义、不可逆外部副作用、跨会话或机器 proof 等 enable 条件
+成立时，才创建或续接 task。纯问答、只读探索不建 task。用户明确要求「不用 Latch」时，
+仅在不存在已知 task continuation 或 closeout 责任时按请求执行。
+
+命中 enable 条件后，触发章的判定表是权威定义：A 命中不明确或高风险改法不清时停在 grill；B 在范围明确、低风险且无未决问题时创建或续接 light task，并以请求作为授权，多个 lint、typecheck、build、文档索引等机械检查本身不触发 Standard；C 在需要方案确认、存在多个独立验收面、产品选择、公共契约或高风险面时创建或续接 standard task，展示 plan 后等待明确 approve，通常先展示已创建的 task id。Light task 出现 plan change、产品选择或 scope 扩大时，必须重新执行 A/B/C 判断，并按结果保持 Light、停在 grill 或升级 Standard。
 
 已决设计的纯状态同步是 B 的窄例外，但必须同时满足：设计正文已冻结、`open_questions` 为空、用户已明确批准当前设计、改动仅包含 artifact 状态与索引元数据，且不新增产品选择、公共行为或 scope。来源设计 task 仍 open、同一 writer 可写且 approved scope 已覆盖时，按原 lifecycle 继续；来源 task 已关闭、只读或不存在时，创建并原子授权 Light task；open 来源 task 的 writer 或 scope 不满足时，先处理 handoff 或 plan。任一条件不满足时重新执行 A/B/C。设计 task 可以先提交 `proposed` artifact 供 review，但 plan 必须包含批准后的状态与索引同步；用户批准后在同一 task 完成同步，不得只为 `proposed` → `approved` 再建 Standard task。
 

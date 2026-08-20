@@ -1,0 +1,177 @@
+{
+  "schema_version": 1,
+  "note": "Instruction-layer oracle for Latch task creation. This is not a Core classifier. latch_support and write_intent are not enable keys.",
+  "enable_keys": [
+    "explicit_latch_request",
+    "known_task_continuation",
+    "closeout_duty",
+    "multiple_acceptance_surfaces",
+    "needs_confirmation",
+    "public_contract",
+    "auth_or_trust_boundary",
+    "persistence_or_consistency",
+    "irreversible_external_side_effect",
+    "wide_impact_or_cross_session",
+    "needs_machine_proof"
+  ],
+  "cases": [
+    {
+      "id": "low-risk-local-fix",
+      "summary": "Bounded local bugfix in a Latch-supporting repo",
+      "signals": {
+        "latch_support": true
+      },
+      "expect": "direct"
+    },
+    {
+      "id": "write-intent-only",
+      "summary": "Ordinary write intent with no enable condition",
+      "signals": {
+        "write_intent": true
+      },
+      "expect": "direct"
+    },
+    {
+      "id": "ordinary-docs-edit",
+      "summary": "Ordinary documentation wording change in a Latch-supporting repo",
+      "signals": {
+        "latch_support": true,
+        "write_intent": true
+      },
+      "expect": "direct"
+    },
+    {
+      "id": "explicit-latch-request",
+      "summary": "User asked to save or restore a Latch task",
+      "signals": {
+        "explicit_latch_request": true
+      },
+      "expect": "latch"
+    },
+    {
+      "id": "known-task-continuation",
+      "summary": "Continue a known Latch task",
+      "signals": {
+        "known_task_continuation": true
+      },
+      "expect": "latch"
+    },
+    {
+      "id": "closeout-duty",
+      "summary": "Structured closeout remains open",
+      "signals": {
+        "closeout_duty": true
+      },
+      "expect": "latch"
+    },
+    {
+      "id": "multiple-acceptance-surfaces",
+      "summary": "Multiple independent acceptance surfaces",
+      "signals": {
+        "multiple_acceptance_surfaces": true
+      },
+      "expect": "latch"
+    },
+    {
+      "id": "needs-confirmation",
+      "summary": "Goal, root cause, approach, or product choice needs confirmation",
+      "signals": {
+        "needs_confirmation": true
+      },
+      "expect": "latch"
+    },
+    {
+      "id": "public-contract-change",
+      "summary": "Public API or compatibility contract change",
+      "signals": {
+        "public_contract": true
+      },
+      "expect": "latch"
+    },
+    {
+      "id": "permission-change",
+      "summary": "Permission or trust-boundary change",
+      "signals": {
+        "auth_or_trust_boundary": true
+      },
+      "expect": "latch"
+    },
+    {
+      "id": "small-auth-change",
+      "summary": "Small permission change; line count is not a bypass",
+      "signals": {
+        "auth_or_trust_boundary": true
+      },
+      "expect": "latch"
+    },
+    {
+      "id": "persistence-or-consistency",
+      "summary": "Persistence, schema, migration, concurrency, or consistency change",
+      "signals": {
+        "persistence_or_consistency": true
+      },
+      "expect": "latch"
+    },
+    {
+      "id": "irreversible-side-effect",
+      "summary": "Irreversible or hard-to-recover external side effect",
+      "signals": {
+        "irreversible_external_side_effect": true
+      },
+      "expect": "latch"
+    },
+    {
+      "id": "wide-impact-or-cross-session",
+      "summary": "Wide impact, high regression cost, or likely cross-session work",
+      "signals": {
+        "wide_impact_or_cross_session": true
+      },
+      "expect": "latch"
+    },
+    {
+      "id": "cross-session-recovery",
+      "summary": "Resume a known Latch task across sessions",
+      "signals": {
+        "known_task_continuation": true,
+        "wide_impact_or_cross_session": true
+      },
+      "expect": "latch"
+    },
+    {
+      "id": "needs-machine-proof",
+      "summary": "Workspace proof, revision, stale-proof, or structured unverified items",
+      "signals": {
+        "needs_machine_proof": true
+      },
+      "expect": "latch"
+    },
+    {
+      "id": "explicit-no-latch-without-duty",
+      "summary": "User asked to skip Latch with no continuation or closeout duty",
+      "signals": {
+        "explicit_no_latch": true,
+        "latch_support": true,
+        "write_intent": true
+      },
+      "expect": "direct"
+    },
+    {
+      "id": "explicit-no-latch-with-continuation",
+      "summary": "User asked to skip Latch while a known task continues",
+      "signals": {
+        "explicit_no_latch": true,
+        "known_task_continuation": true
+      },
+      "expect": "latch"
+    },
+    {
+      "id": "explicit-no-latch-with-closeout",
+      "summary": "User asked to skip Latch while closeout duty remains",
+      "signals": {
+        "explicit_no_latch": true,
+        "closeout_duty": true
+      },
+      "expect": "latch"
+    }
+  ]
+}

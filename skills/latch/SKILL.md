@@ -6,7 +6,14 @@ description: Use Latch only for project opt-in, existing `.latch`, known task co
 # Latch
 
 Require a listed signal. Otherwise run no Latch command or init question; inspect
-`.latch`, never `list`. Pure Q&A and explicit no-Latch requests create no task.
+`.latch`, never `list`. Existing `.latch` only marks support, not task creation.
+Pure Q&A creates no task. Create a task only for explicit Latch save/restore,
+known continuation/closeout, multiple independent acceptance surfaces, needed
+confirmation of goal, root cause, approach, product choice, public contract,
+auth, persistence, schema, concurrency, irreversible side effects, wide
+impact/cross-session, machine proof. Else change minimum, run narrow checks,
+inspect diff; no task. Explicit no-Latch skips Latch only with no known
+continuation or closeout duty.
 
 ## Select and inspect
 
@@ -59,13 +66,11 @@ successful `revision` and `next_action`, and never auto-retry a conflict.
 - Light: author the six fields directly, then atomically create and authorize with
   `checkpoint --profile light --authorize-request`. Implement, `verify-all`,
   `submit`, and wait for review; run `done` only after explicit completion or
-  archive authorization. Budget: at most 7 CLI calls and 2 required user turns.
+  archive authorization.
 - Standard: complete all 12 fields, `checkpoint`, show goal, material scope, risks,
   questions, and task ID; wait. On approval run
   `approve <id> --expect-revision <rev> --reason <text>`, implement,
-  `verify-all`, `submit`, and wait for review.
-  Budget: at most 9 CLI calls and 3 required user turns. Do not paste plan JSON by
-  default.
+  `verify-all`, `submit`, and wait for review. Do not paste plan JSON by default.
 
 The Light happy path skips the on-demand, shape-only scaffold. Its gate example
 uses `name`, `command: string[]`, `kind: gate`, and `replace-with-real-command`,
