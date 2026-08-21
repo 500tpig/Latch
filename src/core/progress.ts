@@ -10,15 +10,19 @@ export {
   appendWorkspaceScope,
   PlanDeltaError,
   resolveOpenQuestions,
+  updateAcceptance,
   updateVerificationCommand,
 } from './progress/plan-delta.js'
 export type {
+  AcceptanceReplacement,
   AppendWorkspaceScopeInput,
   AppendWorkspaceScopeResult,
   OpenQuestionResolution,
   PlanDeltaErrorCode,
   ResolveOpenQuestionsInput,
   ResolveOpenQuestionsResult,
+  UpdateAcceptanceInput,
+  UpdateAcceptanceResult,
   UpdateVerificationCommandInput,
   UpdateVerificationCommandResult,
 } from './progress/plan-delta.js'

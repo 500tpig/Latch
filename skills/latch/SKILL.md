@@ -46,7 +46,8 @@ trigger C; gate count never selects a profile. If implementation reveals missing
 information, a changed root cause, a new product choice, plan change, or scope
 expansion, stop and re-run A/B/C. A stays in grill, B needs a precise delta
 authorization, and C shows short decision highlights plus the task ID and waits
-for reapproval. Core validates structure and revision; it does not classify.
+for reapproval; authorized `update-acceptance` replacements are exceptions.
+Core validates structure and revision; it does not classify.
 
 For decided-design status sync or a `proposed` artifact, read
 [task lifecycle](references/task-lifecycle.md); never bypass writer, scope,
@@ -54,14 +55,12 @@ approval, or revalidation.
 
 ## Happy path
 
-Use this single route:
-
 ```text
 list/status → checkpoint/approve → verify-all → submit/review → done
 ```
 
-Slashes select profile/state. Use compact JSON (`--json --brief`), reuse every
-successful `revision` and `next_action`, and never auto-retry a conflict.
+Use compact JSON (`--json --brief`), reuse successful `revision` and `next_action`,
+and never auto-retry a conflict.
 
 - Light: author the six fields directly, then atomically create and authorize with
   `checkpoint --profile light --authorize-request`. Implement, `verify-all`,

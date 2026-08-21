@@ -333,6 +333,24 @@ test('current docs describe the delivered update-verification-command lifecycle 
   assertTextMatches(design, /不运行新旧 gate command/)
 })
 
+test('current docs describe the delivered update-acceptance lifecycle contract', () => {
+  const handbook = text('docs/HANDBOOK.md')
+  const design = text('docs/DESIGN.md')
+  const skill = text('skills/latch/SKILL.md')
+  const lifecycle = text('skills/latch/references/task-lifecycle.md')
+  for (const content of [handbook, design, skill, lifecycle])
+    assertTextMatches(content, /`update-acceptance`/)
+  assertTextMatches(
+    handbook,
+    /latch update-acceptance <task-id> --expect-revision <revision>/,
+  )
+  assertTextMatches(handbook, /每个 `from`[\s\S]*原位替换/)
+  assertTextMatches(handbook, /`source: user_delta`[\s\S]*`source: user_approve`/)
+  assertTextMatches(design, /acceptance-replacement-only/)
+  assertTextMatches(design, /保留既有 `workspace_proof` baseline/)
+  assertTextMatches(lifecycle, /additions, deletions, reordering, duplicate results/)
+})
+
 test('current docs describe the delivered resolve-open-questions lifecycle contract', () => {
   const handbook = text('docs/HANDBOOK.md')
   const design = text('docs/DESIGN.md')

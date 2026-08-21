@@ -38,6 +38,9 @@ export const commandUsage: Record<string, string> = {
   'update-verification-command':
     'Usage: latch update-verification-command <task-id> --expect-revision <revision> --name <existing-gate-name> [--authorization-file <path|->] [--json] [--brief] -- <command> [arg...]\n' +
     implementationAuthorizationFileHelp(),
+  'update-acceptance':
+    'Usage: latch update-acceptance <task-id> --expect-revision <revision> --updates-file <path|-> [--authorization-file <path|->] [--json] [--brief]\n' +
+    implementationAuthorizationFileHelp(),
   'resolve-open-questions':
     'Usage: latch resolve-open-questions <task-id> --expect-revision <revision> --answers-file <path|-> [--authorization-file <path|->] [--json] [--brief]\n' +
     implementationAuthorizationFileHelp('user_approve'),
@@ -81,6 +84,7 @@ const commandGroups = [
       'save',
       'append-scope',
       'update-verification-command',
+      'update-acceptance',
       'resolve-open-questions',
       'reconcile',
       'reopen-review',
@@ -136,6 +140,7 @@ export const actorRequiredCommands = new Set([
   'save',
   'append-scope',
   'update-verification-command',
+  'update-acceptance',
   'resolve-open-questions',
   'approve',
   'verify',

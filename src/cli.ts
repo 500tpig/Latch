@@ -3,6 +3,7 @@ import { CliV2Error, fail } from './cli-support.js'
 import { runAppendScope } from './commands/append-scope.js'
 import { runBenchmark } from './commands/benchmark.js'
 import { runUpdateVerificationCommand } from './commands/update-verification-command.js'
+import { runUpdateAcceptance } from './commands/update-acceptance.js'
 import { runResolveOpenQuestions } from './commands/resolve-open-questions.js'
 import { runContext, runContextPack } from './commands/context.js'
 import { runKnowledge } from './commands/knowledge.js'
@@ -80,6 +81,7 @@ const taskIdCommands = new Set([
   'submit',
   'takeover',
   'update-verification-command',
+  'update-acceptance',
   'upgrade-v4',
   'verify',
   'verify-all',
@@ -174,6 +176,8 @@ async function run(argv: string[], cwd: string) {
       return runAppendScope(args, cwd, actor)
     case 'update-verification-command':
       return runUpdateVerificationCommand(args, cwd, actor)
+    case 'update-acceptance':
+      return runUpdateAcceptance(args, cwd, actor)
     case 'resolve-open-questions':
       return runResolveOpenQuestions(args, cwd, actor)
     case 'approve':

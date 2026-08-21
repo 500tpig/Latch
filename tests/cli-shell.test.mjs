@@ -28,6 +28,7 @@ test('top-level and command help have no side effects', () => {
     ['save', '--help'],
     ['approve', '--help'],
     ['verify-all', '--help'],
+    ['update-acceptance', '--help'],
     ['reconcile', '--help'],
     ['reopen-review', '--help'],
     ['artifact', '--help'],

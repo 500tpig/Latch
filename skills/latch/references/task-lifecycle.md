@@ -20,9 +20,9 @@ Read this reference for plan structure, checkpoint and approve details, feedback
 - Checkpoint plan validation failures use `invalid_arguments` with bounded `plan_validation` issues and `error.retry`; correct the JSON Pointer paths and retry `checkpoint` without reading recovery or parsing the human message. This does not add `checkpoint` to `next_action.command`.
 - After explicit approval of a Standard plan, default to `approve <task-id> --expect-revision <revision> --reason <text>`. Use `--authorization-file` only when structured authorization scope or notes are required, and keep `--retrospective-file` for honest after-the-fact records.
 - Attach known durable documents with `checkpoint --artifact <kind:path>`; use `artifact add` only for artifacts discovered or changed after planning.
-- In structured authorization files, use `source: user_request` for a complete low-risk request, `source: user_delta` for a precise low-risk plan addition, and `source: user_approve` after explicit approval of the current Standard plan.
+- In structured authorization files, use `source: user_request` for a complete low-risk request, `source: user_delta` for a precise change supported by a narrow delta command on an already authorized current plan, and `source: user_approve` after explicit approval of the current Standard plan.
 - Use `checkpoint --retrospective-file` only for an honest after-the-fact record when no matching open task exists.
-- Use `save --plan-file` when goal, scope, acceptance, contracts, user flow, or important boundaries change. This returns the task to `plan` and requires new approval.
+- Use `update-acceptance` only when the user explicitly authorizes exact in-place replacements of unique current `acceptance` items and no other plan field changes. It may atomically apply `user_delta` or `user_approve`; additions, deletions, reordering, duplicate results, or changes to goal, scope, contracts outside those items, user flow, gates, questions, or important boundaries use `save --plan-file`, return to `plan`, and require new approval.
 - Record durable task facts rather than chat logs. Keep review feedback, decisions, submissions, and closure summaries concise and user-readable.
 
 ## Feedback

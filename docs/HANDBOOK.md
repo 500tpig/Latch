@@ -222,7 +222,7 @@ artifact 均不替代该字段。不带 `/` 的条目只表示精确文件，不
 path 和目录 symlink 不会被自动解释为目录；后续 verify 发现 exact path 的后代越界时，
 warning 会建议将该条目改为以 `/` 结尾的目录前缀，但不会修改 plan 或扩大 scope。
 
-只追加机器范围或只更新既有 gate command 时，使用独立命令，不重写完整 plan：
+只处理受约束的 plan 变化时，使用独立命令，不重写完整 plan：
 
 ```bash
 latch append-scope <task-id> --expect-revision <revision> \
@@ -234,6 +234,11 @@ latch update-verification-command <task-id> --expect-revision <revision> \
 latch update-verification-command <task-id> --expect-revision <revision> \
   --name project-check --authorization-file authorization.json --json -- \
   pnpm check
+latch update-acceptance <task-id> --expect-revision <revision> \
+  --updates-file acceptance-updates.json
+latch update-acceptance <task-id> --expect-revision <revision> \
+  --updates-file acceptance-updates.json \
+  --authorization-file authorization.json --json
 latch resolve-open-questions <task-id> --expect-revision <revision> \
   --answers-file answers.json
 latch resolve-open-questions <task-id> --expect-revision <revision> \
@@ -252,10 +257,19 @@ diagnostic name、空 argv、相同 argv、sentinel 与 instruction-only gate co
 mutation 前返回 `invalid_arguments`。该命令不新增、删除或重命名 verification item，
 也不修改 `name`、`kind`、顺序、数量或其它 plan 字段。
 
-未提供 `--authorization-file` 时，两条命令都增加 `plan_revision`，回到 `plan`，并清空
+`update-acceptance` 的 `--updates-file` 只接受
+`{ "replacements": [{ "from": "...", "to": "..." }] }`。每个 `from` 必须精确匹配
+一个唯一现有 `acceptance` 条目，`to` 必须为非空新文本；命令按原顺序原位替换。空数组、
+额外字段、空文本、重复目标、匹配不到、匹配多次、no-op 和替换后出现重复条目均在 mutation
+前返回 `invalid_arguments`。该命令不新增、删除或重排验收项，也不修改其它 plan 字段；
+更广的 plan 变化继续使用完整 `save --plan-file`。`--updates-file` 与
+`--authorization-file` 最多一个使用 stdin `-`。
+
+未提供 `--authorization-file` 时，三条命令都增加 `plan_revision`，回到 `plan`，并清空
 旧验证与 submission。`append-scope` 还会移除 active `workspace_proof` 引用；
-`update-verification-command` 因 machine scope 未变而保留既有 baseline，但不运行新旧
-command，也不采集 evidence。提供 authorization 文件时，只接受 `source: user_delta` 或
+`update-verification-command` 与 `update-acceptance` 因 machine scope 未变而保留既有 baseline，
+但不运行 gate，也不采集 evidence。提供 authorization 文件时，只接受
+`source: user_delta` 或
 `source: user_approve`。`--authorization-file` 的 JSON 形状为
 `{"kind":"implementation_authorization","source":"user_delta","reason":"...","scope":{"summary":"..."}}`；
 `resolve-open-questions` 的示例 `source` 为 `user_approve`。缺少 `kind`、非法 `source`、
@@ -448,11 +462,13 @@ latch append-scope <task-id> --expect-revision 8 \
   --path docs/new.md --path src/new/
 latch update-verification-command <task-id> --expect-revision 9 \
   --name project-check -- pnpm check
-latch resolve-open-questions <task-id> --expect-revision 10 \
+latch update-acceptance <task-id> --expect-revision 10 \
+  --updates-file acceptance-updates.json
+latch resolve-open-questions <task-id> --expect-revision 11 \
   --answers-file answers.json
-latch artifact add <task-id> --expect-revision 11 \
+latch artifact add <task-id> --expect-revision 12 \
   doc:docs/example.md skill:skills/example/SKILL.md
-latch artifact remove <task-id> --expect-revision 12 \
+latch artifact remove <task-id> --expect-revision 13 \
   doc:docs/obsolete.md
 ```
 
@@ -467,6 +483,11 @@ authorization 时同样回到 `plan`，携带合法 authorization 时按新 plan
 gate 的 argv；未携带结构化 authorization 时回到 `plan`，携带合法 authorization 时按新
 plan revision 原子进入 `dev`。新增、删除、rename gate，或把 diagnostic 改成 gate，继续
 使用完整 `save --plan-file`。
+
+`update-acceptance` 是唯一的 acceptance-replacement-only plan delta。它只按 exact
+`from` 原位替换唯一现有验收项；未携带结构化 authorization 时回到 `plan`，携带合法
+`user_delta` 或 `user_approve` 时按新 plan revision 原子进入 `dev`。验收项新增、删除、
+重排，或同时改变其它 plan 字段时，继续使用完整 `save --plan-file`。
 
 `resolve-open-questions` 是唯一的原子问题 resolution delta。它只接受当前 `plan`
 阶段的全部 `open_questions`，要求 answers 与问题逐项精确匹配，并把 `answer` 与

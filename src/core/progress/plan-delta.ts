@@ -77,6 +77,25 @@ export type UpdateVerificationCommandResult = TaskWriteResultV2 & {
   authorizationApplied: boolean
 }
 
+export type AcceptanceReplacement = {
+  from: string
+  to: string
+}
+
+export type UpdateAcceptanceInput = {
+  expectRevision: number
+  actor: string
+  updates: unknown
+  authorization?: ImplementationAuthorizationInput
+}
+
+export type UpdateAcceptanceResult = TaskWriteResultV2 & {
+  replacements: AcceptanceReplacement[]
+  previousPlanRevision: number
+  previousWorkRevision: number
+  authorizationApplied: boolean
+}
+
 export type OpenQuestionResolution = {
   question: string
   answer: string
@@ -600,6 +619,118 @@ function exactKeys(value: Record<string, unknown>, keys: string[]) {
   const allowed = new Set(keys)
   const actual = Object.keys(value)
   return actual.length === allowed.size && actual.every((key) => allowed.has(key))
+}
+
+function resolveAcceptanceReplacements(
+  task: TaskV2,
+  payload: unknown,
+): AcceptanceReplacement[] {
+  if (!isRecord(payload) || !exactKeys(payload, ['replacements']))
+    invalidArguments(
+      'update-acceptance updates file must contain only the replacements property.',
+    )
+  if (!Array.isArray(payload.replacements) || payload.replacements.length === 0)
+    invalidArguments(
+      'update-acceptance replacements must contain at least one item.',
+    )
+
+  const seenFrom = new Set<string>()
+  const replacements = payload.replacements.map((value, index) => {
+    if (!isRecord(value) || !exactKeys(value, ['from', 'to']))
+      invalidArguments(
+        `update-acceptance replacement at index ${index} must contain only from and to.`,
+      )
+    if (typeof value.from !== 'string' || !value.from.trim())
+      invalidArguments(
+        `update-acceptance from at index ${index} must be non-empty text.`,
+      )
+    if (typeof value.to !== 'string' || !value.to.trim())
+      invalidArguments(
+        `update-acceptance to at index ${index} must be non-empty text.`,
+      )
+    if (value.from === value.to)
+      invalidArguments(
+        `update-acceptance replacement at index ${index} must change the acceptance text.`,
+      )
+    if (seenFrom.has(value.from))
+      invalidArguments(
+        `update-acceptance from at index ${index} duplicates an earlier replacement target.`,
+      )
+    seenFrom.add(value.from)
+    const matches = task.plan.acceptance.filter(
+      (acceptance) => acceptance === value.from,
+    ).length
+    if (matches !== 1)
+      invalidArguments(
+        `update-acceptance from at index ${index} must exactly match one current acceptance item; matched ${matches}.`,
+      )
+    return { from: value.from, to: value.to }
+  })
+
+  const replacementByFrom = new Map(
+    replacements.map((replacement) => [replacement.from, replacement.to]),
+  )
+  const nextAcceptance = task.plan.acceptance.map(
+    (acceptance) => replacementByFrom.get(acceptance) ?? acceptance,
+  )
+  if (new Set(nextAcceptance).size !== nextAcceptance.length)
+    invalidArguments(
+      'update-acceptance replacements must not create duplicate acceptance items.',
+    )
+  return replacements
+}
+
+function nextAcceptancePlan(
+  task: TaskV2,
+  replacements: AcceptanceReplacement[],
+) {
+  const replacementByFrom = new Map(
+    replacements.map((replacement) => [replacement.from, replacement.to]),
+  )
+  const plan: TaskPlan = {
+    ...structuredClone(task.plan),
+    acceptance: task.plan.acceptance.map(
+      (acceptance) => replacementByFrom.get(acceptance) ?? acceptance,
+    ),
+  }
+  try {
+    return normalizeTaskPlanInput(
+      plan,
+      profileOf(task),
+      'update-acceptance post-delta plan',
+    )
+  } catch (error) {
+    invalidArguments(error instanceof Error ? error.message : String(error))
+  }
+}
+
+export function updateAcceptance(
+  store: TaskStoreV2,
+  id: string,
+  input: UpdateAcceptanceInput,
+): UpdateAcceptanceResult {
+  const current = typedTaskRead(store, id)
+  assertWritableDeltaTask(current, input, 'update-acceptance')
+  const replacements = resolveAcceptanceReplacements(current, input.updates)
+  const plan = nextAcceptancePlan(current, replacements)
+  const { result, basis, previousPlanRevision, previousWorkRevision } =
+    applyPlanDeltaMutation(
+      store,
+      current,
+      input,
+      plan,
+      'update-acceptance',
+      {},
+      { clearWorkspaceProof: false },
+    )
+
+  return {
+    ...withWarnings(result, sharedWorktreeWarnings(store, result.task.id)),
+    replacements: structuredClone(replacements),
+    previousPlanRevision,
+    previousWorkRevision,
+    authorizationApplied: basis !== undefined,
+  }
 }
 
 function resolveAnswers(

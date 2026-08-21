@@ -46,6 +46,7 @@ plan 后等待明确 approve，通常先展示已创建的 task id。纯问答�
 - 新 plan 使用 `workspace_scope.paths` 保存机器范围；自然语言 `plan.scope`、授权摘要和 artifact 不替代该字段，获得 work basis 前 paths 必须非空。
 - `append-scope` 是独立的 scope-only plan delta：只追加 normalized path，拒绝 repo root、glob、删除、替换、缩小和 no-op。未提供结构化 authorization 时回到 `plan`；只有显式 `user_delta` 或 `user_approve` 通过 post-delta 校验后，才原子绑定新 plan revision 并进入 `dev`。
 - `update-verification-command` 是独立的 gate-command-only plan delta：只按 exact name 更新唯一现有 `kind: gate` 的 argv，拒绝未知 name、重复 name、diagnostic、空 argv、相同 argv、sentinel 与 instruction-only command。未提供结构化 authorization 时回到 `plan`；只有显式 `user_delta` 或 `user_approve` 通过 post-delta 校验后，才原子绑定新 plan revision 并进入 `dev`。
+- `update-acceptance` 是独立的 acceptance-replacement-only plan delta：只把唯一现有 `acceptance` 条目按 exact `from` 原位替换为非空 `to`，拒绝新增、删除、重排、重复目标、重复结果、no-op 和其它 plan 字段变化。未提供结构化 authorization 时回到 `plan`；只有显式 `user_delta` 或 `user_approve` 通过 post-delta 校验后，才原子绑定新 plan revision 并进入 `dev`。
 - `resolve-open-questions` 是独立的原子 open-question plan delta：只接受 `plan` 阶段当前全部问题的结构化 exact resolution，清空 `plan.open_questions`，并按输入顺序记录 `plan_updated` 与 `decision_recorded` events。未提供 authorization 时回到 `plan`；只有显式 `user_approve` 通过 post-delta 校验后，才原子绑定新 plan revision 并进入 `dev`。
 - named gate 保存 command outcome、before/after workspace evidence、workspace effect 和 proof generation；只有当前 generation 上的完整无 mutation proof 才能参与 submit。`--fix`、`--write` 或等价自动修复不得作为 gate；修复在 `dev` 阶段运行，gate 使用只检查命令。
 - `verify`、diagnostic 和 `verify-all` 共用不经过 shell 的 streaming command runner；stdout 与 stderr 分别使用固定容量 head/tail、原始 byte count 和 monotonic duration，输出超过摘要配额只标记截断，不改变 command outcome。
@@ -83,6 +84,7 @@ plan 后等待明确 approve，通常先展示已创建的 task id。纯问答�
 - 独立 `reconcile` mutation 只在 schema 5 的 `dev` / `check` 阶段按 violation 原始 `before` entry 精确恢复；当前 scope reclassification、近似内容和调用方选择都不能清除 violation。成功调用单次推进 proof generation、删除 submission，并要求重新验证；no-op 与拒绝不写 task、event 或 evidence。
 - `append-scope` 不采集 workspace，也不创建或重写 evidence。scope coverage 变化会移除 active `workspace_proof` 引用，保留历史 sidecar，并使旧验证与 submission 失效；后续 `verify` 或 `verify-all` 为追加后的完整 scope 建立新 generation。
 - `update-verification-command` 不采集 workspace，也不创建或重写 evidence。command 变化会清空全部 verification result 并删除 submission，但 machine scope 未变时保留既有 `workspace_proof` baseline；命令本身不运行新旧 gate command，也不推进 proof generation。
+- `update-acceptance` 不采集 workspace，也不创建或重写 evidence。acceptance replacement 会清空全部 verification result 并删除 submission，但 machine scope 未变时保留既有 `workspace_proof` baseline；命令本身不运行 gate，也不推进 proof generation。
 - `resolve-open-questions` 不采集 workspace，也不创建或重写 evidence。问题 resolution 会清空旧 verification 与 submission，但 machine scope 未变时保留既有 `workspace_proof` baseline；答案文件不进入 workspace evidence。
 - `context` 只读计算 live workspace status，不推进 generation，也不写 task、event 或 evidence。
 - 不同 task 可以在同一 workspace 独立推进；结构化 scope overlap 与 human warning 均不声明文件归属、不自动修改 provenance，也不阻止 lifecycle mutation；Group 只保留用户显式提供的精确标签，closeout 只展示剩余 open sibling，不自动处理 sibling。
