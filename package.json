@@ -1,0 +1,20 @@
+{
+  "name": "latch",
+  "version": "0.6.1",
+  "type": "module",
+  "bin": {
+    "latch": "./dist/cli.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  }
+}

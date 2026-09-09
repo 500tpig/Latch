@@ -1,0 +1,99 @@
+# Task lifecycle
+
+Read this reference for plan structure, checkpoint and approve details, feedback classification, gate execution, submit evidence, `knowledge_impact`, followup, or abandon.
+
+## Plan and authorization
+
+- A decided-design status sync is Light only when the design is frozen,
+  `open_questions` is empty, the user explicitly approved it, changes are limited
+  to artifact status and index metadata, and no product choice, public behavior,
+  or scope is added. Continue the open source task when its writer and approved
+  scope allow; otherwise resolve handoff or plan ownership before writing.
+- A design task may submit a `proposed` artifact only when its plan covers the
+  post-approval status and index sync. After approval, update it to `approved` and
+  reverify in the same task; do not create a Standard status-only task.
+
+- Create a task only from a complete plan file. Keep paths, identifiers, keys, and commands in inline code, and keep each plan item to one sentence.
+- New and updated plans require normalized repo-relative POSIX `workspace_scope.paths`; exact files omit `/`, while directory prefixes include it. Checkpoint and plan-file save reject an existing directory missing `/` before task mutation, while missing paths remain valid. A later descendant violation may suggest the corrected prefix but never changes the plan. Never infer scope from prose, authorization, or artifacts.
+- New tasks use schema 5 with minimum writer `0.5.0`. CLI `0.6.1` reads schema 2–5 but rejects schema 2–4 mutations. Historical tasks remain read-only; never migrate during context, build, or verification.
+- Shape validation preserves history; writable plans require `workspace_scope`. Scaffolds are shape-only. Light and Standard templates include a `verification_plan` item with `name`, `command: string[]`, and `kind: gate`, plus the `replace-with-real-command` sentinel; the template does not pass authorizable validation. Independent structural errors on the same verification item are reported in one deterministic response. Run profile authorizable validation before `work_basis` writes. Chat normally shows short decision highlights and the created task id; only the adjacent exception omits the id. Full plan stays in task store or `context`. Do not paste full plan JSON or dump fields by default.
+- Checkpoint plan validation failures use `invalid_arguments` with bounded `plan_validation` issues and `error.retry`; correct the JSON Pointer paths and retry `checkpoint` without reading recovery or parsing the human message. This does not add `checkpoint` to `next_action.command`.
+- After explicit approval of a Standard plan, default to `approve <task-id> --expect-revision <revision> --reason <text>`. Use `--authorization-file` only when structured authorization scope or notes are required, and keep `--retrospective-file` for honest after-the-fact records.
+- Attach known durable documents with `checkpoint --artifact <kind:path>`; use `artifact add` only for artifacts discovered or changed after planning.
+- In structured authorization files, use `source: user_request` for a complete low-risk request, `source: user_delta` for a precise change supported by a narrow delta command on an already authorized current plan, and `source: user_approve` after explicit approval of the current Standard plan.
+- Use `checkpoint --retrospective-file` only for an honest after-the-fact record when no matching open task exists.
+- Use `update-acceptance` only when the user explicitly authorizes exact in-place replacements of unique current `acceptance` items and no other plan field changes. It may atomically apply `user_delta` or `user_approve`; additions, deletions, reordering, duplicate results, or changes to goal, scope, contracts outside those items, user flow, gates, questions, or important boundaries use `save --plan-file`, return to `plan`, and require new approval.
+- Record durable task facts rather than chat logs. Keep review feedback, decisions, submissions, and closure summaries concise and user-readable.
+
+## Feedback
+
+- Changed behavior requires checking `acceptance`, `user_flow`, and other
+  affected fields; update and authorize the plan as above before implementation.
+- Use `approve --feedback` only for an executable implementation correction that leaves the approved plan intact; it starts a new work revision and invalidates prior proof.
+- Use `approve --non-implementation-feedback` only when implementation, configuration, generated inputs, gates, and public behavior are unchanged; it preserves existing proof.
+- Diagnose ambiguous feedback before mutating; uncertain plan impact stays in
+  grill. Default to implementation correction only when the plan remains intact.
+
+## Verify and submit
+
+- When authoring `verification_plan`, avoid redundant named gates: every gate must add distinct proof. If a final comprehensive gate already runs typecheck, build, or the full test suite, keep subsumed steps as development diagnostics unless they verify a distinct acceptance requirement. Once approved, never skip a named gate because its proof overlaps another gate.
+- Never use `echo`, `printf`, `true`, or a command whose only effect is to print instructions as a gate; a zero exit code from such a command does not prove that a manual step occurred.
+- Named gates must be check-only. Do not use `--fix`, `--write`, or equivalent auto-fix commands as gates; run those fixes in `dev`, then verify with check-only commands.
+- Put a manual step in a non-gating diagnostic when the plan needs to preserve it as an instruction, or in a repeated schema 5 `submit --unverified-item <summary>` item while acceptance remains outstanding; diagnostic success never verifies the manual action.
+- Run every named gate from the approved plan with the task's selected runner: `verify <task-id> --expect-revision <n> --name <gate-name> --json`.
+- A gate passes only when its command succeeds, workspace evidence is complete, covered workspace is unchanged, and its proof binds the current work revision and generation with no unresolved violation.
+- Preserve gate mutations for user inspection. Do not reset, clean, stash, or auto-approve a wider scope; scope changes return to plan and require explicit approval.
+- For an in-scope correction made during `dev` or `check` after proof exists, do not use review-only `approve --feedback`; run `verify-all`. Its preflight records the live baseline as a new proof generation before running every named gate made stale by the generation change.
+- `verify-all` stops on command failure, evidence error, workspace mutation, scope violation, or gate-to-gate baseline mismatch. Reuse each successful JSON revision and rerun all stale named gates on the current generation.
+- Use diagnostic argv only after `--`; diagnostic results never satisfy submit gates.
+- Submit only after all current named gates pass. For an approved plan without gates, use `--no-verify` with a concrete reason.
+- Before `submit` and `done`, reconcile delivered behavior and submission with
+  the approved plan; closure copies submission. Conflicts need the existing plan
+  change or correction route, revalidation, and resubmission, even if gates pass.
+- Submit performs a live workspace and evidence-integrity preflight. A mismatch advances proof generation, rejects submit, and does not run gates automatically; `context` reports live status read-only.
+- Prefer `--knowledge-impact-none <reason>` for a concrete no-impact record; use `--knowledge-impact-file <path>` for `updated` or other structured impacts. For `knowledge_impact.updated`, attach every `artifact_refs` entry to the task before submit. Submit lists every missing reference in one response and returns a copyable `latch artifact add` command with the current task ID, revision, and all missing refs. Do not auto-attach artifacts. Read [knowledge and context](knowledge-and-context.md) before preparing or correcting `knowledge_impact`.
+- Report non-`tracked` artifact delivery and untracked-worktree warnings as delivery risks; do not invent artifact ownership or turn them into automatic lifecycle failures.
+- Submit current work to `review` and wait. For `reopen_review`, use explicitly
+  authorized `reopen-review`, then `verify-all` and a new submission. Never auto-`done`.
+
+## Finish
+
+- Inspect open tasks and mutate only the named task.
+- Before `done`, reuse a current, untruncated `submit --json --brief`
+  `unverified_items` projection. If it is unavailable, truncated, or an
+  intervening mutation changed the revision, read
+  `context <task-id> --json --review`; do not read full Context only for item
+  IDs or repeat cold-start reads in the same-thread flow. Compare every current `submission.unverified_items` entry with the
+  user's latest explicit review acceptance. Archive intent alone is not risk
+  acceptance.
+- `resolved` requires actions and observations covering the original gap and
+  required environment; simulated mode alone cannot prove real-client integration.
+  Remaining gaps need explicit `accepted_risk` or an actionable, owned `followup`;
+  otherwise stay in review. Core checks structure; Agent and user judge coverage.
+- For schema 5, pass `--closeout-file <path>` containing exactly one resolution
+  for every item ID. Unknown, duplicate, or missing item IDs fail before task,
+  event, or archive writes. A task with zero items may omit `--closeout-file`.
+- Each schema 5 resolution has one of these exact shapes:
+
+```json
+{
+  "resolutions": [
+    { "item_id": "U1", "outcome": "resolved", "resolution": "Observed result" },
+    { "item_id": "U2", "outcome": "accepted_risk", "user_acceptance": { "statement": "Explicit user acceptance" } },
+    { "item_id": "U3", "outcome": "followup", "followup": { "action": "Concrete next action", "owner": { "kind": "external", "account_uri": "https://example.com/teams/runtime" } } }
+  ]
+}
+```
+
+- Core records `accepted_by: "user"` and `recorded_at` for `accepted_risk`.
+  `followup.owner.account_uri` must be an absolute `mailto:` address or an
+  absolute credential-free `https:` URL with a non-root path identifying a
+  concrete account or team page. Role text, relative URLs, unknown protocols,
+  and URLs containing credentials are invalid.
+- If required acceptance, an observed result, a stable owner, or the next action
+  is missing, remain in review and ask for it. Do not create follow-up tasks,
+  issues, Records, or reminders automatically.
+- Do not rerun an already passed, non-stale full build solely for closeout.
+- Run `done` only after explicit completion/archive authorization.
+- Run `abandon` only after explicit cancellation authorization.
+- Never treat task-level authorization as Git authorization.
