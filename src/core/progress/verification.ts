@@ -7,9 +7,13 @@ import {
   readTaskV2,
   updateTaskV2,
   updateTaskV4,
+  updateTaskV4WithRequiredEvents,
 } from '../task-store.js'
+import { isRecord } from '../task-store/validation.js'
 import type { TaskStoreV2, TaskWriteResultV2 } from '../task-store.js'
 import type {
+  CommittedWorkspaceEvidence,
+  CommittedWorkspaceResolution,
   TaskV2,
   VerifyResult,
   WorkspaceDelta,
@@ -19,6 +23,7 @@ import type {
 } from '../types.js'
 import { now } from '../utils.js'
 import {
+  captureCommittedWorkspaceEvidence,
   captureWorkspaceSnapshot,
   compareWorkspaceSnapshots,
   pathInWorkspaceScope,
@@ -74,10 +79,12 @@ export type VerifyAllTasksV2Result = TaskWriteResultV2 & {
 export type ReconcileWorkspaceViolationsInput = {
   expectRevision: number
   actor: string
+  resolution?: unknown
 }
 
 export type ReconcileWorkspaceViolationsResult = TaskWriteResultV2 & {
   resolvedIds: string[]
+  acceptedCommittedIds: string[]
   remainingIds: string[]
 }
 
@@ -232,7 +239,10 @@ export function invalidateWorkspaceProof(
   delta: WorkspaceDelta,
   reason: string,
   source: string,
-  reconcileOptions: { reclassifyInScope?: boolean } = {},
+  reconcileOptions: {
+    reclassifyInScope?: boolean
+    acceptedCommitted?: CommittedWorkspaceEvidence
+  } = {},
 ) {
   if (!task.workspace_proof)
     throw new Error('Cannot invalidate a missing workspace proof generation.')
@@ -246,7 +256,13 @@ export function invalidateWorkspaceProof(
   const deltaRef = writeWorkspaceEvidence(directory, source, 'delta', delta)
   const nextGeneration = task.workspace_proof.generation + 1
   const reconciled = reconcileViolations(task, snapshot, reconcileOptions)
-  return updateTaskV4(store, task.id, {
+  const accepted = reconcileOptions.acceptedCommitted
+  const acceptedIds = new Set(accepted?.entries.map((entry) => entry.violation.id))
+  const resolutionRef = accepted
+    ? writeWorkspaceEvidence(directory, source, 'resolution', accepted)
+    : undefined
+  const updateTask = accepted ? updateTaskV4WithRequiredEvents : updateTaskV4
+  return updateTask(store, task.id, {
     expectRevision: input.expectRevision,
     actor: input.actor,
     events: [
@@ -262,17 +278,59 @@ export function invalidateWorkspaceProof(
           changes_ref: deltaRef,
         },
       },
-      ...resolutionEvents(reconciled.restored, reconciled.reclassified),
+      ...resolutionEvents(
+        reconciled.restored.filter((id) => !acceptedIds.has(id)),
+        reconciled.reclassified,
+      ),
+      ...(accepted ? [{
+        type: 'workspace_violation_accepted' as const,
+        fields: {
+          violation_ids: [...acceptedIds].sort(),
+          resolution: 'accepted_committed',
+          evidence_ref: resolutionRef,
+        },
+      }] : []),
     ],
     update(next) {
       next.workspace_proof = {
         generation: nextGeneration,
         baseline_ref: liveRef,
         baseline_counts: structuredClone(snapshot.counts),
-        unresolved_violations: reconciled.remaining,
+        unresolved_violations: reconciled.remaining.filter((violation) => !acceptedIds.has(violation.id)),
       }
       delete next.submission
     },
+  })
+}
+
+function committedResolutions(task: TaskV2, input: unknown): CommittedWorkspaceResolution[] {
+  if (!isRecord(input) || Object.keys(input).length !== 1 ||
+      !Array.isArray(input.resolutions) || input.resolutions.length === 0)
+    throw new Error('Invalid --resolution-file: expected a non-empty resolutions array.')
+  const seen = new Set<string>()
+  const recordedAt = now()
+  return input.resolutions.map((entry) => {
+    if (!isRecord(entry) || Object.keys(entry).length !== 3 ||
+        typeof entry.violation_id !== 'string' || typeof entry.commit !== 'string' ||
+        !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(entry.commit) ||
+        !isRecord(entry.user_acceptance) || Object.keys(entry.user_acceptance).length !== 1 ||
+        typeof entry.user_acceptance.statement !== 'string' || !entry.user_acceptance.statement.trim())
+      throw new Error('Invalid --resolution-file: each resolution requires violation_id, full commit OID and user_acceptance.statement.')
+    const violation = task.workspace_proof!.unresolved_violations.find((item) => item.id === entry.violation_id)
+    if (!violation || violation.status !== 'unresolved' || seen.has(violation.id))
+      throw new Error(`Unknown or duplicate unresolved violation: ${entry.violation_id}`)
+    if (pathInWorkspaceScope(violation.path, requireWorkspaceScope(task)))
+      throw new LatchDomainError('workspace_violation', `Committed resolution requires an out-of-scope path: ${violation.path}`)
+    seen.add(violation.id)
+    return {
+      violation: structuredClone(violation),
+      commit: entry.commit,
+      user_acceptance: {
+        accepted_by: 'user',
+        statement: entry.user_acceptance.statement.trim(),
+        recorded_at: recordedAt,
+      },
+    }
   })
 }
 
@@ -308,6 +366,9 @@ export function reconcileWorkspaceViolations(
       'workspace_violation',
       'Current task does not have unresolved workspace violations.',
     )
+  const resolutions = input.resolution === undefined
+    ? []
+    : committedResolutions(current, input.resolution)
 
   const live = captureWorkspaceSnapshot(
     store.paths.workspaceRoot,
@@ -321,7 +382,8 @@ export function reconcileWorkspaceViolations(
   const reconciled = reconcileViolations(current, live, {
     reclassifyInScope: false,
   })
-  const resolvedIds = [...reconciled.restored].sort()
+  const acceptedCommittedIds = resolutions.map((entry) => entry.violation.id).sort()
+  const resolvedIds = [...new Set([...reconciled.restored, ...acceptedCommittedIds])].sort()
   if (resolvedIds.length === 0)
     throw new LatchDomainError(
       'workspace_violation',
@@ -337,6 +399,16 @@ export function reconcileWorkspaceViolations(
     )
   }
   const liveDelta = compareWorkspaceSnapshots(baseline, live, scope)
+  let acceptedCommitted: CommittedWorkspaceEvidence | undefined
+  if (resolutions.length > 0) {
+    try {
+      acceptedCommitted = captureCommittedWorkspaceEvidence(store.paths.workspaceRoot, resolutions, input.actor)
+    } catch (error) {
+      throw new LatchDomainError('workspace_violation', `Committed workspace evidence error: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+  // Git 核验可能耗时；在写 sidecar 前重新检查 task revision 和 writer。
+  assertTaskWritableV2(store, id, input.actor, input.expectRevision)
   const written = invalidateWorkspaceProof(
     store,
     current,
@@ -345,11 +417,12 @@ export function reconcileWorkspaceViolations(
     liveDelta,
     'workspace_violation_reconciled',
     'reconcile',
-    { reclassifyInScope: false },
+    { reclassifyInScope: false, ...(acceptedCommitted ? { acceptedCommitted } : {}) },
   )
   return {
     ...written,
     resolvedIds,
+    acceptedCommittedIds,
     remainingIds: written.task.workspace_proof!.unresolved_violations
       .map((violation) => violation.id)
       .sort(),

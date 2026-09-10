@@ -130,6 +130,28 @@ export type WorkspaceProofState = {
   unresolved_violations: WorkspaceViolation[]
 }
 
+export type CommittedWorkspaceResolution = {
+  violation: WorkspaceViolation
+  commit: string
+  user_acceptance: {
+    accepted_by: 'user'
+    statement: string
+    recorded_at: string
+  }
+}
+
+export type CommittedWorkspaceEvidence = {
+  resolution: 'accepted_committed'
+  actor: string
+  captured_at: string
+  head: string
+  entries: Array<CommittedWorkspaceResolution & {
+    blob_oid: string
+    mode: string
+    content_sha256: string
+  }>
+}
+
 export type CommandOutcome = {
   status: 'pass' | 'fail' | 'error'
   exit_code: number
@@ -386,6 +408,7 @@ export const LIGHT_EVENT_TYPES = [
   'proof_generation_started',
   'proof_invalidated',
   'workspace_violation_resolved',
+  'workspace_violation_accepted',
 ] as const
 
 export const GROUP_EVENT_TYPES = ['group_changed'] as const

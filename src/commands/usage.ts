@@ -53,7 +53,7 @@ export const commandUsage: Record<string, string> = {
   'verify-all':
     'Usage: latch verify-all <task-id> --expect-revision <revision> [--verbose] [--timeout-ms <milliseconds>] [--json] [--brief]',
   reconcile:
-    'Usage: latch reconcile <task-id> --expect-revision <revision> [--json] [--brief]',
+    'Usage: latch reconcile <task-id> --expect-revision <revision> [--resolution-file <path|->] [--json] [--brief]',
   'reopen-review':
     'Usage: latch reopen-review <task-id> --expect-revision <revision> --reason <text> [--json] [--brief]',
   artifact:

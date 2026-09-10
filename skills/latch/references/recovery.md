@@ -26,8 +26,17 @@ before the higher-priority condition is resolved.
 - `workspace_violation`: if an unintended change has already been precisely
   restored, run `reconcile` without selectors. If the change should enter scope,
   first obtain explicit plan-delta approval and use `append-scope`. If neither is
-  established, stop; never reset, clean, stash, roll back, ignore the violation,
-  or widen scope automatically.
+  established and the user explicitly accepts the committed state of an
+  out-of-scope regular tracked file, use `reconcile --resolution-file <path|->`:
+  `{"resolutions":[{"violation_id":"...","commit":"full OID","user_acceptance":{"statement":"explicit user decision"}}]}`.
+  Core verifies reachable commit, HEAD, index and worktree bytes/mode; clean
+  status alone is insufficient. This records `accepted_committed` through a
+  separate `workspace_violation_accepted` event, preserves history and requires
+  fresh gates. Never substitute task approval or archive intent for acceptance,
+  infer authorship from `source_gate`, or manufacture a `before` snapshot.
+  Unsupported file states or byte conversions remain unresolved. Otherwise
+  stop; never reset, clean, stash, roll back, ignore the violation, or widen scope
+  automatically.
 - In `dev` or `check`, correct an in-scope implementation issue and run
   `verify-all`. Do not use `approve --feedback`. Both `verify-all` and `reconcile`
   advance proof generation.

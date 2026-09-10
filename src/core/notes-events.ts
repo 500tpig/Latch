@@ -249,6 +249,23 @@ function validateTaskEvent(
     if (value.resolution !== 'restored' && value.resolution !== 'reclassified')
       throw new Error(`Invalid workspace violation resolution in ${path}.`)
   }
+  if (value.type === 'workspace_violation_accepted') {
+    if (
+      value.resolution !== 'accepted_committed' ||
+      !Array.isArray(value.violation_ids) || value.violation_ids.length === 0 ||
+      value.violation_ids.some((id) => typeof id !== 'string' || !id.trim()) ||
+      new Set(value.violation_ids).size !== value.violation_ids.length
+    )
+      throw new Error(`Invalid accepted workspace violations in ${path}.`)
+    const ref = value.evidence_ref
+    if (
+      !isRecord(ref) || !exactKeys(ref, ['path', 'sha256', 'entry_count']) ||
+      typeof ref.path !== 'string' || !/^evidence\/[^/\\]+\.json$/.test(ref.path) ||
+      typeof ref.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(ref.sha256) ||
+      ref.entry_count !== value.violation_ids.length
+    )
+      throw new Error(`Invalid accepted workspace evidence ref in ${path}.`)
+  }
   if (value.type === 'schema_upgraded') {
     if (
       value.from_schema_version !== 3 ||

@@ -263,6 +263,15 @@ function timelineEvent(task: TaskV2, event: TaskEvent): TimelineEvent {
       next_action: '重新运行全部 named gate。',
       details: technicalDetails,
     }
+  if (event.type === 'workspace_violation_accepted')
+    return {
+      ...base,
+      title: '接受范围外文件的已提交现状',
+      summary: '已记录用户接受，并核验提交、index 与工作区内容一致。',
+      impact: '保留历史越界事实，旧 gate proof 仍需重新验证。',
+      next_action: '重新运行全部 named gate。',
+      details: technicalDetails,
+    }
   if (event.type === 'review_feedback') {
     const feedback = feedbackText(event)!
     return {

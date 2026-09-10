@@ -6,9 +6,13 @@ import {
   mkdirSync,
   readFileSync,
   readlinkSync,
+  realpathSync,
 } from 'node:fs'
-import { join, normalize, relative, sep } from 'node:path'
+import { isAbsolute, join, normalize, relative, sep } from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
 import type {
+  CommittedWorkspaceEvidence,
+  CommittedWorkspaceResolution,
   TaskArtifact,
   WorkspaceDelta,
   WorkspaceEntry,
@@ -429,6 +433,78 @@ export function captureWorkspaceSnapshot(
   }
 }
 
+// 只证明用户接受的当前提交状态，不从 commit 时间或 source_gate 推断历史和写入者。
+export function captureCommittedWorkspaceEvidence(
+  workspaceRoot: string,
+  resolutions: CommittedWorkspaceResolution[],
+  actor: string,
+  options: WorkspaceCaptureOptions = {},
+): CommittedWorkspaceEvidence {
+  const root = realpathSync(workspaceRoot)
+  const git = (args: string[]) => runGit(root, [
+    '--no-optional-locks', '--no-replace-objects', '--literal-pathspecs', ...args,
+  ], options.gitCommand)
+  const readHead = () => git(['rev-parse', '--verify', 'HEAD^{commit}']).toString('utf8').trim()
+  const head = readHead()
+  for (const { commit } of resolutions) {
+    if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(commit) ||
+        git(['cat-file', '-t', commit]).toString('utf8').trim() !== 'commit')
+      throw new Error('Resolution commit must be a full commit OID.')
+    git(['merge-base', '--is-ancestor', commit, head])
+  }
+
+  function captureEntry(resolution: CommittedWorkspaceResolution) {
+    const path = resolution.violation.path
+    if (isAbsolute(path) || path.split('/').some((part) => !part || part === '.' || part === '..'))
+      throw new Error(`Invalid committed workspace path: ${path}`)
+    if ([resolution.violation.before, resolution.violation.after].some((entry) =>
+      entry && (entry.file_type !== 'file' || entry.original_path || entry.index_state === '?' ||
+        entry.index_state === '!' || entry.index_state === 'R' || entry.worktree_state === 'R'),
+    ))
+      throw new Error(`Committed resolution requires a tracked regular file: ${path}`)
+    const absolutePath = join(root, path)
+    const fingerprint = statFingerprint(absolutePath)
+    const stat = lstatSync(absolutePath)
+    if (!stat.isFile() || realpathSync(absolutePath) !== absolutePath)
+      throw new Error(`Committed resolution requires a regular file without symlinks: ${path}`)
+    const mode = stat.mode & 0o111 ? '100755' : '100644'
+    const tree = git(['ls-tree', '-z', resolution.commit, '--', path]).toString('utf8')
+    const match = /^(100644|100755) blob ([a-f0-9]+)\t([^\0]+)\0$/.exec(tree)
+    if (!match || match[3] !== path || match[1] !== mode ||
+        !git(['ls-tree', '-z', head, '--', path]).equals(Buffer.from(tree)))
+      throw new Error(`Commit and HEAD must contain the same regular file and mode: ${path}`)
+    const blobOid = match[2]
+    const index = git(['ls-files', '--stage', '-z', '--', path]).toString('utf8')
+    if (index !== `${mode} ${blobOid} 0\t${path}\0`)
+      throw new Error(`Index does not match the accepted commit: ${path}`)
+    const contentSha256 = sha256(readFileSync(absolutePath))
+    // 不使用 clean/smudge filter 放宽内容相等条件，不能用 status 干净替代原始字节证据。
+    if (contentSha256 !== sha256(git(['cat-file', 'blob', blobOid])))
+      throw new Error(`Worktree bytes do not match the accepted commit: ${path}`)
+    if (git(['status', '--porcelain=v2', '-z', '--untracked-files=all', '--', path]).length > 0)
+      throw new Error(`Committed workspace path is still dirty: ${path}`)
+    if (fingerprint !== statFingerprint(absolutePath))
+      throw new Error(`Workspace path changed during committed evidence capture: ${path}`)
+    return {
+      fingerprint,
+      entry: { ...resolution, blob_oid: blobOid, mode, content_sha256: contentSha256 },
+    }
+  }
+
+  const captured = resolutions.map(captureEntry)
+  // 跨全部目标复采，避免先读路径在后读路径核验期间变化而被漏掉。
+  const checked = resolutions.map(captureEntry)
+  if (head !== readHead() || !isDeepStrictEqual(captured, checked))
+    throw new Error('HEAD or workspace paths changed during committed evidence capture.')
+  return {
+    resolution: 'accepted_committed',
+    actor,
+    captured_at: now(),
+    head,
+    entries: captured.map(({ entry }) => entry),
+  }
+}
+
 function sameWorktreeContent(left: WorkspaceEntry, right: WorkspaceEntry) {
   const leftSubmoduleState =
     left.submodule_state === 'N...' ? undefined : left.submodule_state
@@ -622,8 +698,8 @@ function evidenceCount(value: unknown) {
 export function writeWorkspaceEvidence(
   taskDirectory: string,
   label: string,
-  kind: 'before' | 'after' | 'delta' | 'live',
-  value: WorkspaceSnapshot | WorkspaceDelta,
+  kind: 'before' | 'after' | 'delta' | 'live' | 'resolution',
+  value: WorkspaceSnapshot | WorkspaceDelta | CommittedWorkspaceEvidence,
 ) {
   const evidenceDirectory = join(taskDirectory, 'evidence')
   mkdirSync(evidenceDirectory, { recursive: true })

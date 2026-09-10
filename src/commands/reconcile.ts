@@ -1,9 +1,11 @@
 import {
+  assertOptionNotRepeated,
   json,
   mutationOptions,
   parseCommand,
   positiveInteger,
   printWarnings,
+  readInputFile,
   validateBrief,
 } from '../cli-support.js'
 import { reconcileWorkspaceViolations } from '../core/progress.js'
@@ -36,10 +38,12 @@ export function runReconcile(args: string[], cwd: string, actor: string) {
   const parsed = parseCommand(args, {
     ...mutationOptions(),
     'expect-revision': { type: 'string' },
+    'resolution-file': { type: 'string' },
   })
   if (parsed.values.help)
     return process.stdout.write(`${commandUsage.reconcile}\n`)
   validateBrief(parsed.values.json, parsed.values.brief)
+  assertOptionNotRepeated(args, '--resolution-file')
   requirePositionals('reconcile', parsed.positionals, 1)
   const expectRevision = positiveInteger(
     parsed.values['expect-revision'],
@@ -50,9 +54,14 @@ export function runReconcile(args: string[], cwd: string, actor: string) {
   const result = reconcileWorkspaceViolations(store, parsed.positionals[0], {
     expectRevision,
     actor,
+    ...(parsed.values['resolution-file'] !== undefined ? {
+      resolution: readInputFile<unknown>(cwd, parsed.values['resolution-file'], '--resolution-file'),
+    } : {}),
   })
   const resolved = boundedIds(result.resolvedIds)
   const remaining = boundedIds(result.remainingIds)
+  const acceptedCount = result.acceptedCommittedIds.length
+  const restoredCount = resolved.total - acceptedCount
   if (parsed.values.json)
     return json({
       ...mutationJson(
@@ -66,12 +75,16 @@ export function runReconcile(args: string[], cwd: string, actor: string) {
           details: {
             resolved_count: resolved.total,
             remaining_count: remaining.total,
+            restored_count: restoredCount,
+            accepted_committed_count: acceptedCount,
             resolved_ids: resolved,
             remaining_ids: remaining,
           },
           briefDetails: {
             resolved_count: resolved.total,
             remaining_count: remaining.total,
+            restored_count: restoredCount,
+            accepted_committed_count: acceptedCount,
             resolved_ids: resolved,
             remaining_ids: remaining,
           },
@@ -79,7 +92,9 @@ export function runReconcile(args: string[], cwd: string, actor: string) {
       ),
     })
   process.stdout.write(
-    `Reconciled ${result.task.id}: ${resolved.total} restored, ${remaining.total} remaining; ` +
+    `Reconciled ${result.task.id}: ${restoredCount} restored, ` +
+      (acceptedCount > 0 ? `${acceptedCount} accepted_committed, ` : '') +
+      `${remaining.total} remaining; ` +
       `revision ${expectRevision} -> ${result.task.revision}.\n` +
       `Resolved IDs: ${humanIds(resolved)}.\n` +
       `Remaining IDs: ${humanIds(remaining)}.\n`,
