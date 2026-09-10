@@ -112,3 +112,7 @@ printf '演示和响应保存在：%s\n' "$LATCH_DEMO_ROOT"
 ## 开发检查
 
 完整维护仓库运行 `pnpm check` 和 `git diff --check`；隔离试用检查入口为 `node scripts/verify-early-trial.mjs`。精简源码快照仅提供 `pnpm build`、`pnpm typecheck` 和 CLI，未附带维护仓库的测试与内部历史文档；上述维护检查入口不属于精简快照。
+
+## 致谢
+
+- [linux.do](https://linux.do) — 中文技术交流社区。本次早期试用面向该社区收集安装、流程和恢复反馈。
